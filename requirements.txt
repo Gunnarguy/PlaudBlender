@@ -1,0 +1,19 @@
+
+# Plaud API & OAuth
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# AI Processing
+openai>=1.0.0
+google-generativeai>=0.3.0
+
+# Vector Database (gRPC for better performance on data operations)
+pinecone[grpc]>=6.0.0
+
+# Visualization
+pyvis>=0.3.2
+networkx>=3.0
+matplotlib>=3.7.0
+plotly>=5.18.0
+wordcloud>=1.9.0
+pillow>=10.0.0
