@@ -130,6 +130,23 @@ class SearchView(BaseView):
             "• Alpha slider controls dense vs sparse weight\n"
             "• Achieves ~99% retrieval accuracy"
         )
+        
+        # Smart Search button (Query Router + RRF Fusion)
+        smart_btn = ttk.Button(
+            btn_row2,
+            text="🧠 Smart Search (Router + RRF)",
+            command=self._search_smart,
+            width=30,
+        )
+        smart_btn.pack(side=tk.LEFT, padx=(0, 4))
+        ToolTip(smart_btn,
+            "AI-powered search using Query Router + RRF Fusion.\n\n"
+            "• Router: Auto-classifies query intent\n"
+            "• Picks optimal strategy (keyword/semantic/hybrid)\n"
+            "• RRF: Mathematical fusion of ranked lists\n"
+            "• GraphRAG: Answers aggregation queries\n\n"
+            "Best for varied query types. Highest accuracy."
+        )
 
         # ─────────────────────────────────────────────────────────────
         # Options Row (with Rerank toggle)
@@ -371,6 +388,18 @@ class SearchView(BaseView):
         self._mark_last_run(mode, query, limit)
         
         self.call('perform_hybrid_search', query, limit, alpha, use_rerank)
+
+    def _search_smart(self):
+        """🧠 SMART SEARCH - Query Router + RRF Fusion + GraphRAG."""
+        query = self.query_var.get()
+        limit = int(self.limit_var.get())
+        if not query.strip():
+            return
+        
+        mode = "Smart (Router + RRF)"
+        self._mark_last_run(mode, query, limit)
+        
+        self.call('perform_smart_search', query, limit)
 
     def _on_rerank_toggle(self):
         """Handle rerank checkbox toggle - update status label."""

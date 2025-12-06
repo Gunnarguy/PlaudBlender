@@ -502,3 +502,358 @@ def query_graph(
                 result["documents"].append(doc)
     
     return result
+
+
+# ============================================================================
+# COMMUNITY SUMMARIZATION (GraphRAG Enhancement)
+# ============================================================================
+# Reference: gemini-deep-research2.txt - Microsoft GraphRAG with Leiden algorithm
+#
+# Community detection clusters related entities to answer GLOBAL queries like:
+# - "What are the main themes across all recordings?"
+# - "Summarize all discussions about the product roadmap"
+# - "What topics were most discussed this quarter?"
+#
+# These queries FAIL with pure vector search because no single document
+# contains the answer - it emerges from aggregating the entire corpus.
+
+@dataclass 
+class Community:
+    """A cluster of related entities in the knowledge graph."""
+    id: str
+    entities: List[str]           # Entity IDs in this community
+    summary: str = ""             # LLM-generated summary
+    keywords: List[str] = field(default_factory=list)
+    document_count: int = 0       # Documents touching this community
+    
+    def to_dict(self) -> Dict:
+        return {
+            "id": self.id,
+            "entity_count": len(self.entities),
+            "summary": self.summary,
+            "keywords": self.keywords,
+            "document_count": self.document_count,
+        }
+
+
+class CommunityDetector:
+    """
+    Detects communities (clusters) in the knowledge graph using a
+    simplified Louvain-style algorithm (NetworkX if available, else greedy).
+    
+    Communities enable answering GLOBAL queries that require synthesis
+    across the entire corpus rather than retrieval of single documents.
+    
+    Reference: Microsoft GraphRAG uses Leiden algorithm, we use Louvain
+    which is simpler and has better Python library support.
+    """
+    
+    SUMMARY_PROMPT = '''Summarize this cluster of related entities and their relationships in 2-3 sentences.
+
+Entities in cluster:
+{entities}
+
+Key relationships:
+{relationships}
+
+Write a concise summary describing what this cluster represents (e.g., "A project team working on X" or "Discussions about budget and timeline").
+Also provide 3-5 keywords that capture the essence of this cluster.
+
+Respond in JSON:
+{{"summary": "...", "keywords": ["keyword1", "keyword2", "keyword3"]}}'''
+
+    def __init__(self, min_community_size: int = 2):
+        """
+        Initialize community detector.
+        
+        Args:
+            min_community_size: Minimum entities per community (default 2)
+        """
+        self.min_size = min_community_size
+        self._llm = None
+    
+    def _get_llm(self):
+        """Lazy load LLM for summarization."""
+        if self._llm is None:
+            import google.generativeai as genai
+            api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+            if api_key:
+                genai.configure(api_key=api_key)
+                self._llm = genai.GenerativeModel("gemini-1.5-flash")
+        return self._llm
+    
+    def detect_communities(self, graph: KnowledgeGraph) -> List[Community]:
+        """
+        Detect communities in the knowledge graph.
+        
+        Uses NetworkX's Louvain algorithm if available, else falls back
+        to simple connected components.
+        
+        Args:
+            graph: KnowledgeGraph instance
+            
+        Returns:
+            List of Community objects
+        """
+        try:
+            import networkx as nx
+            from networkx.algorithms.community import louvain_communities
+            return self._detect_with_networkx(graph)
+        except ImportError:
+            logger.warning("NetworkX not available, using simple clustering")
+            return self._detect_simple(graph)
+    
+    def _detect_with_networkx(self, graph: KnowledgeGraph) -> List[Community]:
+        """Use NetworkX Louvain community detection."""
+        import networkx as nx
+        from networkx.algorithms.community import louvain_communities
+        
+        # Build NetworkX graph
+        G = nx.Graph()
+        
+        # Add nodes (entities)
+        for entity_id, entity in graph.entities.items():
+            G.add_node(entity_id, 
+                       name=entity.name, 
+                       type=entity.entity_type.value)
+        
+        # Add edges (relationships)
+        for rel in graph.relationships:
+            if rel.source_id in G.nodes and rel.target_id in G.nodes:
+                G.add_edge(rel.source_id, rel.target_id, 
+                           weight=rel.weight,
+                           type=rel.relation_type.value)
+        
+        # Detect communities
+        communities = louvain_communities(G, seed=42)
+        
+        # Convert to Community objects
+        result = []
+        for i, community_set in enumerate(communities):
+            entity_ids = list(community_set)
+            if len(entity_ids) >= self.min_size:
+                community = Community(
+                    id=f"community_{i}",
+                    entities=entity_ids,
+                )
+                # Count documents
+                doc_ids = set()
+                for eid in entity_ids:
+                    doc_ids.update(graph.get_related_documents(eid))
+                community.document_count = len(doc_ids)
+                
+                result.append(community)
+        
+        logger.info(f"🔗 Detected {len(result)} communities from {len(graph.entities)} entities")
+        return result
+    
+    def _detect_simple(self, graph: KnowledgeGraph) -> List[Community]:
+        """Simple connected components clustering (fallback)."""
+        # Build adjacency
+        adjacency: Dict[str, Set[str]] = {eid: set() for eid in graph.entities}
+        for rel in graph.relationships:
+            if rel.source_id in adjacency and rel.target_id in adjacency:
+                adjacency[rel.source_id].add(rel.target_id)
+                adjacency[rel.target_id].add(rel.source_id)
+        
+        # Find connected components via BFS
+        visited = set()
+        components = []
+        
+        for start_id in graph.entities:
+            if start_id in visited:
+                continue
+            
+            component = []
+            queue = [start_id]
+            while queue:
+                node = queue.pop(0)
+                if node in visited:
+                    continue
+                visited.add(node)
+                component.append(node)
+                queue.extend(n for n in adjacency[node] if n not in visited)
+            
+            if len(component) >= self.min_size:
+                components.append(component)
+        
+        # Convert to Community objects
+        result = []
+        for i, entity_ids in enumerate(components):
+            community = Community(id=f"community_{i}", entities=entity_ids)
+            doc_ids = set()
+            for eid in entity_ids:
+                doc_ids.update(graph.get_related_documents(eid))
+            community.document_count = len(doc_ids)
+            result.append(community)
+        
+        return result
+    
+    def summarize_community(self, community: Community, graph: KnowledgeGraph) -> Community:
+        """
+        Generate LLM summary for a community.
+        
+        Args:
+            community: Community to summarize
+            graph: KnowledgeGraph for entity/relationship details
+            
+        Returns:
+            Community with summary and keywords filled in
+        """
+        llm = self._get_llm()
+        if not llm:
+            community.summary = f"Cluster of {len(community.entities)} related entities"
+            return community
+        
+        # Build entity list
+        entities_text = []
+        for eid in community.entities[:20]:  # Limit for prompt size
+            entity = graph.entities.get(eid)
+            if entity:
+                entities_text.append(f"- {entity.name} ({entity.entity_type.value})")
+        
+        # Build relationship list
+        rels_text = []
+        community_set = set(community.entities)
+        for rel in graph.relationships:
+            if rel.source_id in community_set and rel.target_id in community_set:
+                source = graph.entities.get(rel.source_id)
+                target = graph.entities.get(rel.target_id)
+                if source and target:
+                    rels_text.append(
+                        f"- {source.name} --[{rel.relation_type.value}]--> {target.name}"
+                    )
+        
+        prompt = self.SUMMARY_PROMPT.format(
+            entities="\n".join(entities_text[:20]),
+            relationships="\n".join(rels_text[:15]),
+        )
+        
+        try:
+            response = llm.generate_content(prompt)
+            text = response.text.strip()
+            
+            # Parse JSON
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0]
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0]
+            
+            data = json.loads(text)
+            community.summary = data.get("summary", "")
+            community.keywords = data.get("keywords", [])
+            
+        except Exception as e:
+            logger.warning(f"Community summarization failed: {e}")
+            community.summary = f"Cluster containing: {', '.join(e.name for e in (graph.entities.get(eid) for eid in community.entities[:5]) if e)}"
+        
+        return community
+
+
+# Global community cache
+_community_cache: Optional[List[Community]] = None
+
+
+def detect_and_summarize_communities(force_refresh: bool = False) -> List[Community]:
+    """
+    Detect communities in the global knowledge graph and generate summaries.
+    
+    This enables answering GLOBAL queries like:
+    - "What are the main themes across all recordings?"
+    - "Summarize all discussions about budget"
+    
+    Args:
+        force_refresh: Force re-detection even if cached
+        
+    Returns:
+        List of summarized Community objects
+    """
+    global _community_cache
+    
+    if _community_cache is not None and not force_refresh:
+        return _community_cache
+    
+    graph = get_knowledge_graph()
+    if not graph.entities:
+        return []
+    
+    detector = CommunityDetector()
+    communities = detector.detect_communities(graph)
+    
+    # Summarize each community
+    for community in communities:
+        detector.summarize_community(community, graph)
+    
+    _community_cache = communities
+    
+    logger.info(f"📊 Generated {len(communities)} community summaries")
+    return communities
+
+
+def answer_global_query(query: str) -> Dict:
+    """
+    Answer a GLOBAL query using community summaries.
+    
+    This is for queries that require synthesis across the entire corpus,
+    not retrieval of specific documents.
+    
+    Examples:
+    - "What are the main themes discussed?"
+    - "Summarize all budget-related discussions"
+    - "What topics were most common this quarter?"
+    
+    Args:
+        query: Global/aggregation query
+        
+    Returns:
+        Dict with relevant communities and synthesized answer
+    """
+    communities = detect_and_summarize_communities()
+    
+    if not communities:
+        return {
+            "query": query,
+            "answer": "No community summaries available. Process some documents first.",
+            "communities": [],
+        }
+    
+    # Find relevant communities by keyword matching
+    query_lower = query.lower()
+    scored_communities = []
+    
+    for community in communities:
+        score = 0
+        # Match keywords
+        for keyword in community.keywords:
+            if keyword.lower() in query_lower:
+                score += 2
+        # Match summary content
+        if community.summary:
+            words = query_lower.split()
+            for word in words:
+                if len(word) > 3 and word in community.summary.lower():
+                    score += 1
+        
+        if score > 0:
+            scored_communities.append((community, score))
+    
+    # Sort by relevance
+    scored_communities.sort(key=lambda x: x[1], reverse=True)
+    top_communities = [c for c, s in scored_communities[:5]]
+    
+    # Synthesize answer from community summaries
+    if top_communities:
+        summaries = [c.summary for c in top_communities if c.summary]
+        combined = " ".join(summaries)
+        answer = f"Based on {len(top_communities)} related topic clusters: {combined}"
+    else:
+        # Return overview of all communities
+        all_summaries = [c.summary for c in communities[:3] if c.summary]
+        answer = f"Main themes across recordings: {' '.join(all_summaries)}"
+    
+    return {
+        "query": query,
+        "answer": answer,
+        "communities": [c.to_dict() for c in (top_communities or communities[:3])],
+        "total_communities": len(communities),
+    }

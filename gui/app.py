@@ -66,6 +66,7 @@ class PlaudBlenderApp:
             'perform_rerank_search': self.perform_rerank_search,
             'perform_hybrid_search': self.perform_hybrid_search,
             'perform_self_correcting_search': self.perform_self_correcting_search,
+            'perform_smart_search': self.perform_smart_search,
             'search_full_text': self.search_full_text,
             'search_summaries': self.search_summaries,
             'save_search': self.save_search,
@@ -1144,6 +1145,37 @@ class PlaudBlenderApp:
                 limit=limit,
                 include_context=True,
             )
+
+        def done(text):
+            self.views['search'].show_results(text)
+
+        self._execute_task(task, done)
+
+    def perform_smart_search(self, query: str, limit: int = 10):
+        """
+        Execute AI-powered search using Query Router + RRF Fusion.
+        
+        This is the most intelligent search mode:
+        1. Query Router classifies intent (keyword/semantic/aggregation)
+        2. Auto-selects optimal alpha and filters
+        3. RRF fusion combines results mathematically
+        4. GraphRAG answers aggregation queries
+        
+        Args:
+            query: Search query text
+            limit: Maximum results to return
+        """
+        self.set_status("🧠 Smart Search (Router + RRF)...", True)
+
+        def task():
+            from gui.services.hybrid_search_service import smart_search, format_smart_results
+            result = smart_search(
+                query=query,
+                limit=limit,
+                use_router=True,
+                use_graphrag=True,
+            )
+            return format_smart_results(result)
 
         def done(text):
             self.views['search'].show_results(text)
