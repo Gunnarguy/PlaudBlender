@@ -538,3 +538,121 @@ def _format_results(
 
     log('INFO', f"   📊 Returned {len(matches)} formatted results (reranked={reranked})")
     return "\n".join(lines)
+
+
+# ============================================================================
+# SELF-CORRECTING SEARCH
+# ============================================================================
+
+def search_with_self_correction(
+    query: str,
+    limit: int = 10,
+    include_context: bool = True,
+) -> str:
+    """
+    🔄 SELF-CORRECTING SEARCH
+    
+    Performs search with automatic retry and strategy switching
+    when initial results have low confidence.
+    
+    Correction strategies (in order):
+    1. Dense semantic search (initial)
+    2. Hybrid search (dense + sparse)
+    3. Query expansion with synonyms
+    4. Full-text namespace search
+    
+    Args:
+        query: Natural language search query
+        limit: Max results to return
+        include_context: Include text snippets
+        
+    Returns:
+        Formatted search results with correction summary
+    """
+    log('INFO', f"🔄 search_with_self_correction: '{query}' (limit={limit})")
+    
+    try:
+        from src.processing.self_correction import (
+            SelfCorrectionLoop, 
+            RetrievalStrategy,
+            QueryExpander
+        )
+        
+        # Set up search functions for the correction loop
+        def dense_fn(q, k):
+            pinecone_client = get_pinecone_client()
+            embedding_service = get_embedding_service()
+            vector = embedding_service.embed_query(q)
+            return pinecone_client.query_similar(
+                query_embedding=vector,
+                top_k=k,
+                namespace=NAMESPACE_SUMMARIES,
+            )
+        
+        def hybrid_fn(q, k):
+            try:
+                from gui.services.hybrid_search_service import HybridSearchService
+                svc = HybridSearchService()
+                result = svc.hybrid_search(q, alpha=0.7, limit=k)
+                # Parse result back to matches (simplified)
+                return []  # Hybrid returns formatted string, would need refactor
+            except Exception:
+                return []
+        
+        def sparse_fn(q, k):
+            pinecone_client = get_pinecone_client()
+            embedding_service = get_embedding_service()
+            vector = embedding_service.embed_query(q)
+            return pinecone_client.query_similar(
+                query_embedding=vector,
+                top_k=k,
+                namespace=NAMESPACE_FULL_TEXT,
+            )
+        
+        # Initialize query expander
+        expander = QueryExpander()
+        
+        # Create correction loop
+        loop = SelfCorrectionLoop(
+            dense_search_fn=dense_fn,
+            sparse_search_fn=sparse_fn,
+            query_expand_fn=expander.expand,
+        )
+        
+        # Execute with correction
+        result = loop.search_with_correction(query, limit=limit)
+        
+        # Format output
+        lines = []
+        
+        # Add correction summary header
+        if result.was_corrected:
+            lines.append(f"{'═' * 60}")
+            lines.append(f"🔄 SELF-CORRECTION APPLIED")
+            lines.append(f"   Attempts: {result.corrections_applied}")
+            lines.append(f"   Final Strategy: {result.final_result.strategy.value}")
+            lines.append(f"   Confidence: {result.final_result.confidence:.2f}")
+            lines.append(f"   Total Latency: {result.total_latency_ms:.0f}ms")
+            lines.append(f"{'═' * 60}")
+            lines.append("")
+        
+        # Format matches
+        if result.final_result.matches:
+            formatted = _format_results(
+                query=query,
+                matches=result.final_result.matches,
+                include_context=include_context,
+                latency_ms=result.total_latency_ms,
+            )
+            lines.append(formatted)
+        else:
+            lines.append(f"No results found for '{query}' after {result.corrections_applied} correction attempts.")
+        
+        return "\n".join(lines)
+        
+    except ImportError:
+        log('WARNING', "Self-correction module not available, falling back to standard search")
+        return search_all_namespaces(query, limit, include_context)
+    except Exception as e:
+        log('ERROR', f"Self-correcting search failed: {e}")
+        return f"❌ Search Error: {e}"

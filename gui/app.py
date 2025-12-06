@@ -17,6 +17,7 @@ from gui.views.search import SearchView
 from gui.views.settings import SettingsView
 from gui.views.logs import LogsView
 from gui.views.chat import ChatView
+from gui.views.knowledge_graph import KnowledgeGraphView
 from gui.services import transcripts_service, pinecone_service, search_service, settings_service, chat_service
 from gui.services.clients import get_oauth_client, get_pinecone_client
 from gui.services.embedding_service import get_embedding_service, EmbeddingError
@@ -64,12 +65,15 @@ class PlaudBlenderApp:
             'perform_cross_namespace_search': self.perform_cross_namespace_search,
             'perform_rerank_search': self.perform_rerank_search,
             'perform_hybrid_search': self.perform_hybrid_search,
+            'perform_self_correcting_search': self.perform_self_correcting_search,
             'search_full_text': self.search_full_text,
             'search_summaries': self.search_summaries,
             'save_search': self.save_search,
             'load_saved_search': self.load_saved_search,
             'goto_search': lambda: self.switch_view('search'),
             'goto_settings': lambda: self.switch_view('settings'),
+            'goto_knowledge_graph': lambda: self.switch_view('knowledge_graph'),
+            'refresh_knowledge_graph': self.refresh_knowledge_graph,
             'sync_all': self.sync_all,
             'generate_mindmap': self.generate_mindmap,
             'refresh_indexes': self.refresh_indexes,
@@ -107,6 +111,7 @@ class PlaudBlenderApp:
             ('transcripts', '📝 Transcripts'),
             ('pinecone', '🌲 Pinecone'),
             ('search', '🔍 Search'),
+            ('knowledge_graph', '🕸️ Graph'),
             ('chat', '💬 Chat'),
             ('settings', '⚙️ Settings'),
             ('logs', '📋 Logs'),
@@ -150,6 +155,7 @@ class PlaudBlenderApp:
         self.views['transcripts'] = TranscriptsView(self.view_container, self.actions)
         self.views['pinecone'] = PineconeView(self.view_container, self.actions)
         self.views['search'] = SearchView(self.view_container, self.actions)
+        self.views['knowledge_graph'] = KnowledgeGraphView(self.view_container, self.actions)
         self.views['chat'] = ChatView(self.view_container, self.actions)
         self.views['settings'] = SettingsView(self.view_container, self.actions)
         self.views['logs'] = LogsView(self.view_container, self.actions)
@@ -1117,6 +1123,33 @@ class PlaudBlenderApp:
 
         self._execute_task(task, done)
 
+    def perform_self_correcting_search(self, query: str, limit: int = 10):
+        """
+        Execute search with automatic self-correction on low confidence.
+        
+        When initial retrieval has low confidence, automatically:
+        1. Reformulates the query
+        2. Tries alternative strategies (hybrid, sparse)
+        3. Reports correction attempts in results
+        
+        Args:
+            query: Search query text
+            limit: Maximum results to return
+        """
+        self.set_status("🔄 Self-Correcting Search...", True)
+
+        def task():
+            return search_service.search_with_self_correction(
+                query=query,
+                limit=limit,
+                include_context=True,
+            )
+
+        def done(text):
+            self.views['search'].show_results(text)
+
+        self._execute_task(task, done)
+
     # ------------------- Chat (OpenAI Responses) --------------------
     def chat_send(self, payload: dict, on_success=None, on_finally=None):
         """Send chat payload via OpenAI Responses and return text output."""
@@ -1355,6 +1388,87 @@ class PlaudBlenderApp:
 
     def generate_mindmap(self):
         messagebox.showinfo("Mind Map", "Mind map generator coming soon")
+
+    def refresh_knowledge_graph(self):
+        """
+        Extract entities and relationships from all transcripts
+        and update the Knowledge Graph view.
+        """
+        self.set_status("🕸️ Extracting knowledge graph...", True)
+        
+        def task():
+            from src.processing.graph_rag import GraphRAGExtractor
+            
+            extractor = GraphRAGExtractor()
+            all_entities = []
+            all_relationships = []
+            transcript_connections = {}
+            
+            # Process each transcript
+            for transcript in state.transcripts[:50]:  # Limit for performance
+                text = transcript.get('full_text') or transcript.get('text', '')
+                if not text or len(text) < 100:
+                    continue
+                    
+                try:
+                    # Extract entities
+                    entities = extractor.extract_entities(text)
+                    
+                    # Track which transcripts mention which entities
+                    transcript_id = str(transcript.get('id', ''))
+                    for entity in entities:
+                        entity_name = entity.name
+                        if entity_name not in transcript_connections:
+                            transcript_connections[entity_name] = []
+                        transcript_connections[entity_name].append(transcript_id)
+                        
+                        # Convert to dict and add if not duplicate
+                        entity_dict = entity.__dict__
+                        if not any(e['name'] == entity_name for e in all_entities):
+                            all_entities.append(entity_dict)
+                    
+                    # Extract relationships
+                    relationships = extractor.extract_relationships(text, entities)
+                    for rel in relationships:
+                        rel_dict = rel.__dict__
+                        all_relationships.append(rel_dict)
+                        
+                except Exception as e:
+                    log('WARNING', f"GraphRAG extraction failed for transcript: {e}")
+                    continue
+            
+            return {
+                'entities': all_entities,
+                'relationships': all_relationships,
+                'transcript_connections': transcript_connections
+            }
+        
+        def done(result):
+            if 'knowledge_graph' in self.views:
+                self.views['knowledge_graph'].set_graph_data(
+                    entities=result['entities'],
+                    relationships=result['relationships'],
+                    transcript_connections=result['transcript_connections']
+                )
+            
+            entity_count = len(result['entities'])
+            rel_count = len(result['relationships'])
+            log('INFO', f"🕸️ Knowledge graph: {entity_count} entities, {rel_count} relationships")
+            
+            # Update dashboard with graph stats
+            self._update_dashboard_graph_stats(entity_count, rel_count)
+        
+        self._execute_task(task, done)
+    
+    def _update_dashboard_graph_stats(self, entity_count: int, relationship_count: int):
+        """Update dashboard with knowledge graph statistics."""
+        if 'dashboard' in self.views:
+            dashboard = self.views['dashboard']
+            if hasattr(dashboard, 'update_stats'):
+                dashboard.update_stats({
+                    'graph_entities': entity_count,
+                    'graph_relationships': relationship_count,
+                })
 
     def run(self):
         self.root.mainloop()

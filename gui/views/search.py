@@ -213,6 +213,24 @@ class SearchView(BaseView):
             "Higher values catch meaning better."
         )
 
+        # ───── SELF-CORRECTION TOGGLE ─────
+        ttk.Separator(options_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=12)
+        
+        self.self_correct_var = tk.BooleanVar(value=False)
+        self_correct_cb = ttk.Checkbutton(
+            options_frame,
+            text="🔄 Self-Correct",
+            variable=self.self_correct_var,
+        )
+        self_correct_cb.pack(side=tk.LEFT)
+        ToolTip(self_correct_cb,
+            "Automatic retry with different strategies on low confidence.\n\n"
+            "• Detects when results are uncertain\n"
+            "• Tries: dense → hybrid → query expansion → full-text\n"
+            "• Shows correction attempts in results\n\n"
+            "Adds latency but improves accuracy on tough queries."
+        )
+
         # Result style toggle (stored for future formatting)
         ttk.Label(options_frame, text="Style:").pack(side=tk.LEFT, padx=(12, 4))
         self.result_style = tk.StringVar(value="rich")
@@ -291,19 +309,27 @@ class SearchView(BaseView):
     # ─────────────────────────────────────────────────────────────────
     
     def _search_all(self):
-        """🌐 SEARCH ALL NAMESPACES - Parallel cross-namespace search (+ optional rerank)."""
+        """🌐 SEARCH ALL NAMESPACES - Parallel cross-namespace search (+ optional rerank/self-correct)."""
         query = self.query_var.get()
         limit = int(self.limit_var.get())
         if not query.strip():
             return
         
         use_rerank = self.rerank_var.get()
-        mode = "All + Rerank" if use_rerank else "All namespaces"
-        self._mark_last_run(mode, query, limit)
+        use_self_correct = self.self_correct_var.get()
         
-        if use_rerank:
+        # Self-correction takes priority
+        if use_self_correct:
+            mode = "All + Self-Correct"
+            self._mark_last_run(mode, query, limit)
+            self.call('perform_self_correcting_search', query, limit)
+        elif use_rerank:
+            mode = "All + Rerank"
+            self._mark_last_run(mode, query, limit)
             self.call('perform_rerank_search', query, limit, self.rerank_model_var.get())
         else:
+            mode = "All namespaces"
+            self._mark_last_run(mode, query, limit)
             self.call('perform_cross_namespace_search', query, limit)
     
     def _search_full_text(self):

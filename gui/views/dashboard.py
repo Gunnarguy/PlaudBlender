@@ -32,8 +32,8 @@ class DashboardView(BaseView):
             'recordings': StatCard(stats_frame, "Recordings", "🎧", 0),
             'pinecone': StatCard(stats_frame, "Pinecone Vectors", "🌲", 0),
             'namespaces': StatCard(stats_frame, "Namespaces", "🗂", 0),
+            'entities': StatCard(stats_frame, "Graph Entities", "🕸️", 0),
             'last_sync': StatCard(stats_frame, "Last Sync", "⏱", "—"),
-            'last_pinecone': StatCard(stats_frame, "Pinecone Refresh", "♻️", "—"),
         }
 
         for idx, card in enumerate(self.cards.values()):
@@ -140,7 +140,7 @@ class DashboardView(BaseView):
 
         buttons = [
             ("🔄 Sync All", 'sync_all'),
-            ("🧠 Mind Map", 'generate_mindmap'),
+            ("🕸️ Knowledge Graph", 'goto_knowledge_graph'),
             ("🔍 Semantic Search", 'goto_search'),
             ("⚙️ Settings", 'goto_settings'),
         ]
@@ -160,8 +160,8 @@ class DashboardView(BaseView):
             'recordings': ('recordings', str),
             'pinecone': ('pinecone', str),
             'pinecone_namespaces': ('namespaces', str),
+            'graph_entities': ('entities', lambda v: f"{v} entities"),
             'last_sync': ('last_sync', str),
-            'last_pinecone': ('last_pinecone', str),
         }
         for key, (card_key, transform) in mapping.items():
             if key in stats:
