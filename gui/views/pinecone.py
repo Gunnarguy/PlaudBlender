@@ -14,117 +14,169 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog, simpledialog
 from gui.views.base import BaseView
 from gui.theme import ModernTheme
+from gui.utils.tooltips import ToolTip
 
 
 class PineconeView(BaseView):
     def _build(self):
+        # State holders
         self.current_page = 1
         self.page_size = 100
         self.all_vectors = []
-        # Sorting state
         self.sort_column = "date"
         self.sort_reverse = True  # newest first by default
 
-        # ─────────────────────────────────────────────────────────────
-        # ROW 1: Index/Namespace selectors + Stats
-        # ─────────────────────────────────────────────────────────────
-        row1 = ttk.Frame(self, style="Main.TFrame")
-        row1.pack(fill=tk.X, pady=(0, 4))
+        root = ttk.Frame(self, style="Main.TFrame")
+        root.pack(fill=tk.BOTH, expand=True)
 
-        # Left: selectors
-        sel = ttk.Frame(row1, style="Main.TFrame")
-        sel.pack(side=tk.LEFT)
+        # ── Hero ----------------------------------------------------------
+        hero = ttk.Frame(root, style="Main.TFrame")
+        hero.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(hero, text="Pinecone Workspace", style="Header.TLabel").pack(anchor="w")
+        ttk.Label(hero, text="Query, inspect, and manage vectors without guesswork", style="Muted.TLabel").pack(anchor="w")
 
-        ttk.Label(sel, text="Index:", style="Muted.TLabel").pack(side=tk.LEFT)
+        # ── Target + stats ------------------------------------------------
+        target = ttk.LabelFrame(root, text="Target Index", padding=8, style="Panel.TLabelframe")
+        target.pack(fill=tk.X, pady=(0, 8))
+
+        sel_row = ttk.Frame(target, style="Main.TFrame")
+        sel_row.pack(fill=tk.X, pady=2)
+        ttk.Label(sel_row, text="Index", style="Muted.TLabel").pack(side=tk.LEFT)
         self.index_var = tk.StringVar()
-        self.index_dropdown = ttk.Combobox(sel, textvariable=self.index_var, state="readonly", width=14)
-        self.index_dropdown.pack(side=tk.LEFT, padx=(2, 8))
+        self.index_dropdown = ttk.Combobox(sel_row, textvariable=self.index_var, state="readonly", width=18)
+        self.index_dropdown.pack(side=tk.LEFT, padx=(4, 10))
         self.index_dropdown.bind("<<ComboboxSelected>>", lambda _: self.call("change_index", self.index_var.get()))
 
-        ttk.Label(sel, text="NS:", style="Muted.TLabel").pack(side=tk.LEFT)
+        ttk.Label(sel_row, text="Namespace", style="Muted.TLabel").pack(side=tk.LEFT)
         self.namespace_var = tk.StringVar()
-        self.namespace_dropdown = ttk.Combobox(sel, textvariable=self.namespace_var, state="readonly", width=12)
-        self.namespace_dropdown.pack(side=tk.LEFT, padx=(2, 0))
+        self.namespace_dropdown = ttk.Combobox(sel_row, textvariable=self.namespace_var, state="readonly", width=18)
+        self.namespace_dropdown.pack(side=tk.LEFT, padx=(4, 0))
         self.namespace_dropdown.bind("<<ComboboxSelected>>", lambda _: self.call("select_namespace", self.namespace_var.get()))
 
-        # Right: stats
-        stats = ttk.Frame(row1, style="Main.TFrame")
-        stats.pack(side=tk.RIGHT)
+        stats = ttk.Frame(target, style="Main.TFrame")
+        stats.pack(fill=tk.X, pady=(6, 0))
         self.stat_labels = {}
-        for key, lbl in [("vectors", "Vec"), ("dimension", "Dim"), ("metric", "Mtrc")]:
-            ttk.Label(stats, text=f"{lbl}:", style="Muted.TLabel").pack(side=tk.LEFT, padx=(6, 0))
-            val = ttk.Label(stats, text="—", style="TLabel")
-            val.pack(side=tk.LEFT, padx=(1, 0))
+        stat_fields = [
+            ("vectors", "Vectors"),
+            ("dimension", "Dim"),
+            ("metric", "Metric"),
+            ("provider", "Provider"),
+        ]
+        for key, label in stat_fields:
+            row = ttk.Frame(stats, style="Main.TFrame")
+            row.pack(side=tk.LEFT, padx=(0, 12))
+            ttk.Label(row, text=f"{label}:", style="Muted.TLabel").pack(side=tk.LEFT, padx=(0, 4))
+            val = ttk.Label(row, text="—", style="TLabel")
+            val.pack(side=tk.LEFT)
             self.stat_labels[key] = val
 
-        # ─────────────────────────────────────────────────────────────
-        # ROW 2: Primary actions (Query/Search)
-        # ─────────────────────────────────────────────────────────────
-        row2 = ttk.Frame(self, style="Main.TFrame")
-        row2.pack(fill=tk.X, pady=(0, 2))
+        self.mismatch_label = ttk.Label(target, text="", style="Muted.TLabel", foreground="#e67e22")
+        self.mismatch_label.pack(anchor="w", pady=(4, 0))
+        self.fix_button = ttk.Button(
+            target,
+            text="⚡ Auto-fix dimension",
+            style="Accent.TButton",
+            command=lambda: self.call("auto_fix_dim"),
+        )
+        self.fix_button.pack(anchor="w", pady=(4, 0))
+        self.fix_button.state(["disabled"])  # enabled only when mismatch
 
-        ttk.Button(row2, text="↻ Refresh", command=lambda: self.call("refresh_vectors")).pack(side=tk.LEFT, padx=(0, 2))
-        ttk.Button(row2, text="Similarity", command=self._similarity_search_dialog).pack(side=tk.LEFT, padx=(0, 2))
-        ttk.Button(row2, text="By Metadata", command=self._metadata_filter_dialog).pack(side=tk.LEFT, padx=(0, 2))
-        ttk.Button(row2, text="All NS", command=self._query_all_namespaces_dialog).pack(side=tk.LEFT, padx=(0, 2))
-        ttk.Button(row2, text="Fetch ID", command=self._fetch_by_id_dialog).pack(side=tk.LEFT, padx=(0, 2))
+        # ── Actions: Query/inspect ---------------------------------------
+        query_box = ttk.LabelFrame(root, text="Search & Inspect", padding=8, style="Panel.TLabelframe")
+        query_box.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(query_box, text="Run reads without changing data", style="Muted.TLabel").pack(anchor="w", pady=(0, 4))
+        btns = ttk.Frame(query_box, style="Main.TFrame")
+        btns.pack(fill=tk.X)
+        button_defs = [
+            ("↻ Refresh", lambda: self.call("refresh_vectors"), "Reload vectors for the selected namespace"),
+            ("Similarity", self._similarity_search_dialog, "Vector similarity search in the current namespace"),
+            ("Metadata", self._metadata_filter_dialog, "Filter vectors by metadata JSON"),
+            ("All namespaces", self._query_all_namespaces_dialog, "Parallel search across all namespaces"),
+            ("Fetch ID", self._fetch_by_id_dialog, "Fetch vector(s) by ID"),
+        ]
+        for text, cmd, tip in button_defs:
+            btn = ttk.Button(btns, text=text, command=cmd)
+            btn.pack(side=tk.LEFT, padx=2, pady=2)
+            ToolTip(btn, tip)
 
-        # Separator
-        ttk.Separator(row2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=4)
+        # ── Actions: Write/Edit ------------------------------------------
+        edit_box = ttk.LabelFrame(root, text="Write / Edit", padding=8, style="Panel.TLabelframe")
+        edit_box.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(edit_box, text="Modify vectors in the current namespace", style="Muted.TLabel").pack(anchor="w", pady=(0, 4))
+        row_edit = ttk.Frame(edit_box, style="Main.TFrame")
+        row_edit.pack(fill=tk.X)
+        edit_defs = [
+            ("+ Upsert", self._upsert_dialog, "Insert or replace a vector (auto-embed or manual)"),
+            ("Edit meta", self._edit_metadata_dialog, "Update metadata for selected vectors"),
+            ("Delete", self._delete_dialog, "Delete selected, by filter, or all in namespace"),
+        ]
+        for text, cmd, tip in edit_defs:
+            btn = ttk.Button(row_edit, text=text, command=cmd)
+            btn.pack(side=tk.LEFT, padx=2, pady=2)
+            ToolTip(btn, tip)
 
-        ttk.Button(row2, text="+ Upsert", command=self._upsert_dialog).pack(side=tk.LEFT, padx=(0, 2))
-        ttk.Button(row2, text="Edit Meta", command=self._edit_metadata_dialog).pack(side=tk.LEFT, padx=(0, 2))
-        ttk.Button(row2, text="Delete", command=self._delete_dialog).pack(side=tk.LEFT, padx=(0, 2))
+        # ── Actions: Bulk/Export ----------------------------------------
+        bulk_box = ttk.LabelFrame(root, text="Bulk / Export", padding=8, style="Panel.TLabelframe")
+        bulk_box.pack(fill=tk.X, pady=(0, 6))
+        row_bulk = ttk.Frame(bulk_box, style="Main.TFrame")
+        row_bulk.pack(fill=tk.X)
+        bulk_defs = [
+            ("Bulk import", self._bulk_import_dialog, "Load vectors from CSV/JSON"),
+            ("Export", self._export_dialog, "Export current list to CSV/JSON"),
+            ("Export visible CSV", self._export_visible_csv, "Download the currently visible table rows to CSV"),
+            ("Re-embed all", lambda: self.call("reembed_all"), "Re-embed and upsert all vectors to match current model/dimension"),
+        ]
+        for text, cmd, tip in bulk_defs:
+            btn = ttk.Button(row_bulk, text=text, command=cmd)
+            btn.pack(side=tk.LEFT, padx=2, pady=2)
+            ToolTip(btn, tip)
 
-        ttk.Separator(row2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=4)
+        # ── Namespaces ---------------------------------------------------
+        ns_box = ttk.LabelFrame(root, text="Namespaces", padding=8, style="Panel.TLabelframe")
+        ns_box.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(ns_box, text="Manage logical buckets for your vectors", style="Muted.TLabel").pack(anchor="w", pady=(0, 4))
+        row_ns = ttk.Frame(ns_box, style="Main.TFrame")
+        row_ns.pack(fill=tk.X)
+        ttk.Button(row_ns, text="+ Create", command=self._create_namespace_dialog).pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Button(row_ns, text="- Delete", command=self._delete_namespace_dialog).pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Button(row_ns, text="List", command=self._list_namespaces_dialog).pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Label(row_ns, textvariable=self.namespace_var, style="Muted.TLabel").pack(side=tk.LEFT, padx=(8, 0))
 
-        ttk.Button(row2, text="Bulk Import", command=self._bulk_import_dialog).pack(side=tk.LEFT, padx=(0, 2))
-        ttk.Button(row2, text="Export", command=self._export_dialog).pack(side=tk.LEFT, padx=(0, 2))
+        # ── Filter & pagination -----------------------------------------
+        filter_row = ttk.LabelFrame(root, text="Local filter & paging", padding=8, style="Panel.TLabelframe")
+        filter_row.pack(fill=tk.X, pady=(0, 6))
 
-        # ─────────────────────────────────────────────────────────────
-        # ROW 3: Namespace management
-        # ─────────────────────────────────────────────────────────────
-        row3 = ttk.Frame(self, style="Main.TFrame")
-        row3.pack(fill=tk.X, pady=(0, 4))
-
-        ttk.Label(row3, text="NS Mgmt:", style="Muted.TLabel").pack(side=tk.LEFT)
-        ttk.Button(row3, text="+ Create", command=self._create_namespace_dialog).pack(side=tk.LEFT, padx=2)
-        ttk.Button(row3, text="- Delete", command=self._delete_namespace_dialog).pack(side=tk.LEFT, padx=2)
-        ttk.Button(row3, text="List All", command=self._list_namespaces_dialog).pack(side=tk.LEFT, padx=2)
-
-        ttk.Separator(row3, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
-
-        ttk.Label(row3, text="Filter:", style="Muted.TLabel").pack(side=tk.LEFT)
+        ttk.Label(filter_row, text="Filter contains:", style="Muted.TLabel").pack(side=tk.LEFT)
         self.filter_var = tk.StringVar()
-        self.filter_entry = ttk.Entry(row3, textvariable=self.filter_var, width=25)
-        self.filter_entry.pack(side=tk.LEFT, padx=2)
+        self.filter_entry = ttk.Entry(filter_row, textvariable=self.filter_var, width=30)
+        self.filter_entry.pack(side=tk.LEFT, padx=4)
         self.filter_entry.bind("<KeyRelease>", lambda _: self._apply_local_filter())
 
-        ttk.Label(row3, text="Page:", style="Muted.TLabel").pack(side=tk.LEFT, padx=(8, 0))
-        self.page_size_var = tk.StringVar(value="100")
-        ttk.Combobox(row3, textvariable=self.page_size_var, values=["50", "100", "500", "1000"], width=5, state="readonly").pack(side=tk.LEFT, padx=2)
+        ttk.Button(filter_row, text="Clear", style="Pill.TButton", command=self._clear_filter).pack(side=tk.LEFT, padx=(0, 8))
 
-        # ─────────────────────────────────────────────────────────────
-        # MAIN: Treeview + Preview pane
-        # ─────────────────────────────────────────────────────────────
-        main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
+        ttk.Label(filter_row, text="Page size", style="Muted.TLabel").pack(side=tk.LEFT, padx=(12, 4))
+        self.page_size_var = tk.StringVar(value="100")
+        ttk.Combobox(filter_row, textvariable=self.page_size_var, values=["50", "100", "500", "1000"], width=6, state="readonly").pack(side=tk.LEFT)
+
+        # ── Main pane: table + preview ------------------------------------
+        main_pane = ttk.PanedWindow(root, orient=tk.HORIZONTAL)
         main_pane.pack(fill=tk.BOTH, expand=True)
 
         tree_frame = ttk.Frame(main_pane, style="Main.TFrame")
         columns = ("id", "title", "date", "dur", "tags", "flds")
         self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings", selectmode="extended")
-        # Column config with sort keys
+
         col_config = [
             ("id", 90, "ID", "id"),
             ("title", 180, "Title", "title"),
-            ("date", 70, "Date ▼", "date"),  # default sort
+            ("date", 70, "Date ▼", "date"),
             ("dur", 50, "Dur", "duration"),
             ("tags", 140, "Tags", "tags"),
             ("flds", 40, "#", "field_count"),
         ]
-        for col, w, txt, sort_key in col_config:
-            self.tree.heading(col, text=txt, command=lambda c=col, k=sort_key: self._sort_by(c, k))
-            self.tree.column(col, width=w)
+        for col, width, text, sort_key in col_config:
+            self.tree.heading(col, text=text, command=lambda c=col, k=sort_key: self._sort_by(c, k))
+            self.tree.column(col, width=width)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
@@ -136,15 +188,19 @@ class PineconeView(BaseView):
         main_pane.add(tree_frame, weight=3)
 
         preview = ttk.LabelFrame(main_pane, text="Details", padding=4)
-        self.preview = scrolledtext.ScrolledText(preview, wrap=tk.WORD, font=("JetBrains Mono", 9),
-                                                  bg="#0f172a", fg="#f8fafc", height=10)
+        self.preview = scrolledtext.ScrolledText(
+            preview,
+            wrap=tk.WORD,
+            font=("JetBrains Mono", 9),
+            bg="#0f172a",
+            fg="#f8fafc",
+            height=10,
+        )
         self.preview.pack(fill=tk.BOTH, expand=True)
         main_pane.add(preview, weight=1)
 
-        # ─────────────────────────────────────────────────────────────
-        # Pagination
-        # ─────────────────────────────────────────────────────────────
-        pager = ttk.Frame(self, style="Main.TFrame")
+        # ── Pager ---------------------------------------------------------
+        pager = ttk.Frame(root, style="Main.TFrame")
         pager.pack(fill=tk.X, pady=(3, 0))
 
         ttk.Button(pager, text="◀", command=self._prev_page, width=2).pack(side=tk.LEFT)
@@ -153,6 +209,9 @@ class PineconeView(BaseView):
         ttk.Button(pager, text="▶", command=self._next_page, width=2).pack(side=tk.LEFT)
         self.total_label = ttk.Label(pager, text="", style="Muted.TLabel")
         self.total_label.pack(side=tk.RIGHT)
+        self.selection_label = ttk.Label(pager, text="0 selected", style="Muted.TLabel")
+        self.selection_label.pack(side=tk.RIGHT, padx=(0, 10))
+        ttk.Button(pager, text="Clear selection", command=self._clear_selection, style="Pill.TButton").pack(side=tk.RIGHT, padx=(0, 6))
 
     # ═══════════════════════════════════════════════════════════════
     # PUBLIC API (called by app.py)
@@ -171,17 +230,61 @@ class PineconeView(BaseView):
             self.namespace_var.set(namespaces[0])
 
     def set_stats(self, stats: dict):
-        for key in ("vectors", "dimension", "metric"):
+        for key in ("vectors", "dimension", "metric", "provider"):
             val = stats.get(key, "—")
             if key == "vectors" and isinstance(val, int):
                 val = f"{val:,}"
             self.stat_labels[key].configure(text=str(val))
+        if stats.get("dim_mismatch"):
+            dim = stats.get("dimension", "?")
+            target = stats.get("target_dim", "?")
+            provider = stats.get("provider", "provider")
+            base = stats.get("index_name", "index")
+            suggestion = f"{base}-{target}" if target != "?" else base
+            tip = (
+                f"⚠︎ Dimension mismatch: index {dim}d vs {provider} target {target}d. "
+                f"Tip: switch/create '{suggestion}' (or pick a model matching {dim}d), then re-embed."
+            )
+            self.mismatch_label.configure(text=tip)
+            self.fix_button.state(["!disabled"])
+        else:
+            self.mismatch_label.configure(text="")
+            self.fix_button.state(["disabled"])
 
     def populate(self, vectors: list):
         self.all_vectors = vectors
         self.current_page = 1
         self._render_page()
         self.total_label.configure(text=f"{len(vectors):,} vectors")
+
+    def _export_visible_csv(self):
+        """Export currently visible page rows to CSV."""
+        try:
+            from tkinter import filedialog
+            import csv
+
+            rows = self._current_rows()
+            if not rows:
+                return
+            path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv"), ("All", "*.*")])
+            if not path:
+                return
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                writer.writeheader()
+                writer.writerows(rows)
+        except Exception as exc:
+            messagebox.showerror("Export", f"Could not export CSV: {exc}")
+
+    def _current_rows(self):
+        """Return the current page rows as list of dicts."""
+        children = self.tree.get_children()
+        rows = []
+        cols = self.tree.cget("columns")
+        for item in children:
+            values = self.tree.item(item, "values")
+            rows.append({col: values[idx] if idx < len(values) else "" for idx, col in enumerate(cols)})
+        return rows
 
     def get_selected_ids(self) -> list:
         return list(self.tree.selection())
@@ -235,11 +338,16 @@ class PineconeView(BaseView):
         def do_query():
             q = query_text.get("1.0", tk.END).strip()
             if not q:
+                messagebox.showwarning("Similarity Search", "Enter a query first")
                 return
             try:
-                flt = json.loads(filter_text.get("1.0", tk.END).strip()) or None
-            except:
-                flt = None
+                flt_raw = filter_text.get("1.0", tk.END).strip()
+                flt = json.loads(flt_raw) if flt_raw else None
+                if flt == {}:
+                    flt = None
+            except json.JSONDecodeError as e:
+                messagebox.showerror("JSON Error", f"Filter JSON is invalid: {e}")
+                return
             d.destroy()
             self.call("similarity_search", {
                 "method": method_var.get(),
@@ -248,7 +356,7 @@ class PineconeView(BaseView):
                 "namespace": ns_var.get() or None,
                 "include_metadata": inc_meta.get(),
                 "include_values": inc_vals.get(),
-                "filter": flt if flt != {} else None
+                "filter": flt
             })
 
         ttk.Button(d, text="Search", command=do_query).pack(pady=10)
@@ -297,6 +405,11 @@ class PineconeView(BaseView):
 
     def _query_all_namespaces_dialog(self):
         """Use query_namespaces() SDK method - parallel search across all namespaces."""
+        # If no namespaces yet, bail early with guidance
+        if not self.namespace_dropdown["values"]:
+            messagebox.showinfo("Namespaces", "No namespaces yet. Create/import vectors first, then try again.")
+            return
+
         d = tk.Toplevel(self.winfo_toplevel())
         d.title("Query All Namespaces")
         d.geometry("500x350")
@@ -321,21 +434,31 @@ class PineconeView(BaseView):
         def do_query():
             q = query_entry.get().strip()
             if not q:
+                messagebox.showwarning("Query All", "Enter text to search")
                 return
             try:
-                flt = json.loads(filter_txt.get("1.0", tk.END).strip()) or None
-            except:
-                flt = None
+                flt_raw = filter_txt.get("1.0", tk.END).strip()
+                flt = json.loads(flt_raw) if flt_raw else None
+                if flt == {}:
+                    flt = None
+            except json.JSONDecodeError as e:
+                messagebox.showerror("JSON Error", f"Filter JSON is invalid: {e}")
+                return
             d.destroy()
-            self.call("query_all_namespaces", {"query": q, "top_k": topk_var.get(), "filter": flt if flt != {} else None})
+            self.call("query_all_namespaces", {"query": q, "top_k": topk_var.get(), "filter": flt})
 
         ttk.Button(d, text="Search All Namespaces", command=do_query).pack(pady=10)
 
     def _fetch_by_id_dialog(self):
         """Fetch specific vectors by ID using SDK fetch()."""
         ids = simpledialog.askstring("Fetch by ID", "Vector ID(s), comma-separated:")
-        if ids:
-            self.call("fetch_by_ids", [x.strip() for x in ids.split(",") if x.strip()])
+        if not ids:
+            return
+        cleaned = [x.strip() for x in ids.split(",") if x.strip()]
+        if not cleaned:
+            messagebox.showwarning("Fetch by ID", "Provide at least one ID")
+            return
+        self.call("fetch_by_ids", cleaned)
 
     def _upsert_dialog(self):
         """Full upsert dialog with auto-embedding option."""
@@ -384,12 +507,24 @@ class PineconeView(BaseView):
                 messagebox.showerror("JSON Error", str(e))
                 return
 
+            manual_embedding = None
+            if embed_var.get() == "manual":
+                raw = embed_txt.get("1.0", tk.END).strip()
+                if not raw:
+                    messagebox.showerror("Error", "Provide manual embedding values or choose auto")
+                    return
+                try:
+                    manual_embedding = [float(x.strip()) for x in raw.split(',') if x.strip()]
+                except ValueError:
+                    messagebox.showerror("Error", "Embedding must be comma-separated floats")
+                    return
+
             d.destroy()
             self.call("upsert_vector", {
                 "id": vec_id,
                 "metadata": metadata,
                 "embed_mode": embed_var.get(),
-                "manual_embedding": embed_txt.get("1.0", tk.END).strip() if embed_var.get() == "manual" else None,
+                "manual_embedding": manual_embedding,
                 "namespace": self.namespace_var.get() or None
             })
 
@@ -433,6 +568,7 @@ class PineconeView(BaseView):
     def _delete_dialog(self):
         """Delete vectors with multiple options."""
         selected = self.get_selected_ids()
+        current_ns = self.namespace_var.get() or "(default)"
 
         d = tk.Toplevel(self.winfo_toplevel())
         d.title("Delete Vectors")
@@ -442,7 +578,7 @@ class PineconeView(BaseView):
         mode_var = tk.StringVar(value="selected")
         ttk.Radiobutton(d, text=f"Delete selected ({len(selected)})", variable=mode_var, value="selected").pack(anchor="w", padx=10, pady=(10, 2))
         ttk.Radiobutton(d, text="Delete by filter (metadata)", variable=mode_var, value="filter").pack(anchor="w", padx=10, pady=2)
-        ttk.Radiobutton(d, text="Delete ALL in namespace (⚠️)", variable=mode_var, value="all").pack(anchor="w", padx=10, pady=2)
+        ttk.Radiobutton(d, text=f"Delete ALL in namespace '{current_ns}' (⚠️)", variable=mode_var, value="all").pack(anchor="w", padx=10, pady=2)
 
         ttk.Label(d, text="Filter (for filter mode):").pack(anchor="w", padx=10, pady=(10, 0))
         filter_txt = scrolledtext.ScrolledText(d, height=5, font=("JetBrains Mono", 9),
@@ -471,7 +607,7 @@ class PineconeView(BaseView):
                 d.destroy()
                 self.call("delete_vectors", {"filter": flt})
             else:
-                if not messagebox.askyesno("⚠️ Danger", "Delete ALL vectors in namespace? This cannot be undone!"):
+                if not messagebox.askyesno("⚠️ Danger", f"Delete ALL vectors in namespace '{current_ns}'? This cannot be undone!"):
                     return
                 d.destroy()
                 self.call("delete_vectors", {"delete_all": True})
@@ -628,15 +764,39 @@ class PineconeView(BaseView):
         ttk.Button(btn_frame, text="Cancel", command=d.destroy).pack(side=tk.RIGHT)
 
     def _export_dialog(self):
-        """Export vectors to JSON."""
+        """Export vectors to JSON or CSV."""
         if not self.all_vectors:
             messagebox.showwarning("No Data", "No vectors to export")
             return
-        path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON", "*.json")])
-        if path:
-            with open(path, "w") as f:
-                json.dump(self.all_vectors, f, indent=2, default=str)
-            messagebox.showinfo("Exported", f"Saved {len(self.all_vectors)} vectors")
+        path = filedialog.asksaveasfilename(defaultextension=".json",
+                                            filetypes=[("JSON", "*.json"), ("CSV", "*.csv")])
+        if not path:
+            return
+        try:
+            if path.lower().endswith(".csv"):
+                import csv
+                # Flatten metadata keys
+                fieldnames = set()
+                for v in self.all_vectors:
+                    fieldnames.update(v.keys())
+                    if isinstance(v.get("metadata"), dict):
+                        fieldnames.update({f"meta_{k}" for k in v["metadata"].keys()})
+                fieldnames = list(fieldnames)
+                with open(path, "w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    for v in self.all_vectors:
+                        row = {k: v.get(k) for k in v.keys() if k != "metadata"}
+                        meta = v.get("metadata") or {}
+                        for mk, mv in meta.items():
+                            row[f"meta_{mk}"] = mv
+                        writer.writerow(row)
+            else:
+                with open(path, "w") as f:
+                    json.dump(self.all_vectors, f, indent=2, default=str)
+            messagebox.showinfo("Exported", f"Saved {len(self.all_vectors)} vectors to {path}")
+        except Exception as e:
+            messagebox.showerror("Export", f"Failed to export: {e}")
 
     def _context_menu(self, event):
         """Right-click context menu."""
@@ -733,6 +893,11 @@ class PineconeView(BaseView):
         self.current_page = 1
         self._render_page()
 
+    def _clear_filter(self):
+        """Reset the local filter text and rerender."""
+        self.filter_var.set("")
+        self._apply_local_filter()
+
     def _sort_by(self, col: str, sort_key: str):
         """Handle column header click for sorting."""
         # Toggle direction if clicking same column
@@ -758,10 +923,28 @@ class PineconeView(BaseView):
     def _on_select(self, _event):
         selected = self.tree.selection()
         if not selected:
+            self.selection_label.configure(text="0 selected")
+            self.preview.configure(state=tk.NORMAL)
+            self.preview.delete("1.0", tk.END)
+            self.preview.configure(state=tk.DISABLED)
             return
         vec = next((v for v in self.all_vectors if v["id"] == selected[0]), None)
         if vec:
             self.preview.configure(state=tk.NORMAL)
             self.preview.delete("1.0", tk.END)
-            self.preview.insert("1.0", json.dumps(vec.get("metadata", vec), indent=2, default=str))
+            header_lines = [
+                f"ID: {vec.get('id','—')}",
+                f"Title: {vec.get('title','Untitled')}",
+                f"Date: {vec.get('date','—')}",
+                f"Tags: {vec.get('tags','—')}",
+                "",
+                "Metadata:",
+            ]
+            meta_text = json.dumps(vec.get("metadata", vec), indent=2, default=str)
+            self.preview.insert("1.0", "\n".join(header_lines) + "\n" + meta_text)
             self.preview.configure(state=tk.DISABLED)
+        self.selection_label.configure(text=f"{len(selected)} selected")
+
+    def _clear_selection(self):
+        self.tree.selection_remove(self.tree.selection())
+        self._on_select(None)

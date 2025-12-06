@@ -1,12 +1,7 @@
-"""
-Centralized Embedding Service for PlaudBlender.
+"""Provider-agnostic embedding service for PlaudBlender.
 
-Uses Google's LATEST embedding model: gemini-embedding-001
-- Supports flexible dimensions: 128 to 3072
-- Task-type optimization for better results
-- Matryoshka embeddings (truncate without quality loss)
-
-This is the SINGLE SOURCE OF TRUTH for all embedding operations.
+Supports multiple providers (Google, OpenAI) via a strategy/factory while
+keeping a single entrypoint for callers.
 """
 import os
 import logging
@@ -14,9 +9,10 @@ from typing import List, Optional, Dict, Any, Literal
 from enum import Enum
 import numpy as np
 
-import google.generativeai as genai
-from google.generativeai import types
 from dotenv import load_dotenv
+
+from src.ai.embeddings import get_embedder, EmbeddingError as ProviderEmbeddingError
+from src.ai.providers import Provider
 
 load_dotenv()
 
@@ -140,62 +136,35 @@ class EmbeddingConfig:
 
 class EmbeddingService:
     """
-    Fully customizable embedding service using Google's latest models.
-    
-    Features:
-    - Latest gemini-embedding-001 model (June 2025)
-    - Flexible dimensions (128-3072)
-    - Task-type optimization
-    - Automatic normalization for smaller dimensions
-    - Batch embedding support
-    
-    Usage:
-        # Default config
-        service = EmbeddingService()
-        
-        # Custom config
-        config = EmbeddingConfig(
-            dimension=1536,
-            task_type_query=TaskType.SEMANTIC_SIMILARITY
-        )
-        service = EmbeddingService(config)
-        
-        # Generate embeddings
-        doc_vec = service.embed_document("My document text")
-        query_vec = service.embed_query("search query")
-        batch_vecs = service.embed_batch(["text1", "text2"])
+    Provider-agnostic embedding orchestrator.
+    Keeps task/dimension config for backward compatibility while delegating
+    embedding to provider-specific embedders (Google/OpenAI).
     """
-    
-    def __init__(self, config: Optional[EmbeddingConfig] = None):
-        """
-        Initialize embedding service.
-        
-        Args:
-            config: Optional EmbeddingConfig. Uses defaults if not provided.
-        """
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            raise EmbeddingError("GEMINI_API_KEY not found in environment")
-        
-        genai.configure(api_key=self.api_key)
-        
+
+    def __init__(self, config: Optional[EmbeddingConfig] = None, provider: Optional[Provider] = None):
         self.config = config or EmbeddingConfig()
-        
-        logger.info(f"✅ EmbeddingService initialized")
-        logger.info(f"   Model: {self.config.model.value}")
-        logger.info(f"   Dimension: {self.config.dimension}")
-        logger.info(f"   Task types: doc={self.config.task_type_document.value}, query={self.config.task_type_query.value}")
-        logger.info(f"   Normalize: {self.config.normalize}")
+        self.provider = provider or Provider(os.getenv("AI_PROVIDER", Provider.GOOGLE.value))
+        self._embedder = get_embedder(
+            provider=self.provider,
+            model=self._select_model(),
+            dimension=self.config.dimension,
+        )
+        logger.info(
+            "✅ EmbeddingService initialized (provider=%s, model=%s, dim=%s)",
+            self.provider.value,
+            self._embedder.model_name,
+            getattr(self._embedder, "dimension", "—"),
+        )
     
     @property
     def dimension(self) -> int:
         """Get the configured embedding dimension."""
-        return self.config.dimension
+        return getattr(self._embedder, "dimension", self.config.dimension)
     
     @property
     def model(self) -> str:
         """Get the configured model name."""
-        return self.config.model.value
+        return getattr(self._embedder, "model_name", self.config.model.value)
     
     # ========================================================================
     # CORE EMBEDDING METHODS
@@ -230,22 +199,17 @@ class EmbeddingService:
         task = task_type or self.config.task_type_document
         
         try:
-            # Use new API format
-            result = genai.embed_content(
-                model=self.config.model.value,
-                content=truncated,
-                task_type=task.value,
-                output_dimensionality=dim,
-            )
-            
-            embedding = result["embedding"]
-            
-            # Normalize for dimensions < 3072 (required for accuracy)
-            if self.config.normalize and dim < 3072:
+            embedding = self._embedder.embed_text(truncated)
+
+            # Normalize only for Google small dims; OpenAI returns ready vectors
+            if self.provider == Provider.GOOGLE and self.config.normalize and dim < 3072:
                 embedding = self._normalize(embedding)
-            
+
             return embedding
-            
+
+        except ProviderEmbeddingError as e:
+            logger.error(f"Embedding failed (provider): {e}")
+            raise EmbeddingError(f"Failed to generate embedding: {e}")
         except Exception as e:
             logger.error(f"Embedding failed: {e}")
             raise EmbeddingError(f"Failed to generate embedding: {e}")
@@ -272,38 +236,14 @@ class EmbeddingService:
         
         dim = dimension or self.config.dimension
         task = task_type or self.config.task_type_document
-        
+
         # Truncate texts
         truncated = [t[:MAX_INPUT_CHARS] for t in texts]
-        
-        all_embeddings = []
-        
+
         try:
-            # Process in batches
-            for i in range(0, len(truncated), MAX_BATCH_SIZE):
-                batch = truncated[i:i + MAX_BATCH_SIZE]
-                
-                result = genai.embed_content(
-                    model=self.config.model.value,
-                    content=batch,
-                    task_type=task.value,
-                    output_dimensionality=dim,
-                )
-                
-                # Handle response format
-                embeddings = result["embedding"]
-                if not isinstance(embeddings[0], list):
-                    embeddings = [embeddings]
-                
-                # Normalize if needed
-                if self.config.normalize and dim < 3072:
-                    embeddings = [self._normalize(e) for e in embeddings]
-                
-                all_embeddings.extend(embeddings)
-                logger.debug(f"Embedded batch {i//MAX_BATCH_SIZE + 1}: {len(batch)} texts")
-            
-            return all_embeddings
-            
+            embeddings = [self.embed_text(t, task_type=task, dimension=dim) for t in truncated]
+            logger.debug(f"Embedded batch: {len(truncated)} texts")
+            return embeddings
         except Exception as e:
             logger.error(f"Batch embedding failed: {e}")
             raise EmbeddingError(f"Batch embedding failed: {e}")
@@ -392,6 +332,14 @@ class EmbeddingService:
         """Update configuration at runtime."""
         self.config = config
         logger.info(f"Reconfigured: dim={config.dimension}, model={config.model.value}")
+
+    # ------------------- helpers -------------------
+    def _select_model(self) -> str:
+        if self.provider == Provider.GOOGLE:
+            return os.getenv("GEMINI_EMBEDDING_MODEL", DEFAULT_MODEL.value)
+        if self.provider == Provider.OPENAI:
+            return os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+        return DEFAULT_MODEL.value
 
 
 # ============================================================================

@@ -80,6 +80,40 @@ This will:
 - Test the API connection
 - Show your recent recordings
 
+### 4. Diagnostics & Testing
+
+- Print consent URL without running the full wizard:
+  ```bash
+  python scripts/plaud_auth_utils.py --print-consent-url
+  ```
+- Validate/auto-refresh your Plaud token and verify the API user:
+  ```bash
+  python scripts/plaud_auth_utils.py --check-token
+  ```
+- Run tests (shows skips with reasons):
+  ```bash
+  python -m pytest -rs
+  ```
+  Skips: `test_components.py` (legacy live component probes) and `test_gui_import.py` (legacy import probe covered elsewhere).
+
+### 5. OpenAI Responses MCP server (ChatGPT connectors)
+
+Expose PlaudBlender via the Model Context Protocol using OpenAI's Responses API. This runs over stdio and is ready for ChatGPT connectors or any MCP-capable client.
+
+```bash
+python -m scripts.mcp_server
+```
+
+Environment variables:
+- `OPENAI_API_KEY` (required)
+- `OPENAI_DEFAULT_MODEL` (optional, defaults to `gpt-4.1`)
+- `OPENAI_BASE_URL` (optional, for gateways/proxies)
+
+Available MCP tools:
+- `ping` — health probe.
+- `list_models` — list accessible OpenAI model IDs for the configured project.
+- `respond` — send a prompt through the OpenAI Responses API and return combined text output.
+
 ---
 
 ## 💻 Usage
@@ -122,6 +156,13 @@ python scripts/query_and_visualize.py --mindmap "all recordings" --output output
 # Open the visualization
 open output/knowledge_graph.html
 ```
+
+### In-app Chat (OpenAI Responses)
+
+- Set `OPENAI_API_KEY` (and optional `OPENAI_DEFAULT_MODEL`, `OPENAI_BASE_URL`) in `.env`.
+- Launch the GUI (`python gui.py`) and open the **💬 Chat** tab.
+- Configure model/temperature, optionally set a system prompt, and chat using the OpenAI Responses API.
+- Advanced: enable "Advanced overrides" to pass raw JSON overrides to `responses.create` (e.g., `{ "max_output_tokens": 200, "top_p": 0.9, "tools": [...], "tool_choice": "auto" }`).
 
 ---
 

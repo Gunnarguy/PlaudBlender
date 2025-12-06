@@ -14,6 +14,7 @@ from typing import List, Dict, Optional, Any
 
 from dotenv import load_dotenv
 import logging
+from pinecone import ServerlessSpec
 
 # Use gRPC client for better performance on upserts/queries
 try:
@@ -69,7 +70,7 @@ class PineconeClient:
     - Automatic retry with exponential backoff
     """
     
-    def __init__(self, pool_threads: int = DEFAULT_POOL_THREADS):
+    def __init__(self, pool_threads: int = DEFAULT_POOL_THREADS, index_name: Optional[str] = None, dimension: Optional[int] = None):
         """
         Initialize optimized Pinecone client.
         
@@ -81,7 +82,7 @@ class PineconeClient:
             raise ValueError("PINECONE_API_KEY must be set in .env file")
         
         self.pc = Pinecone(api_key=api_key)
-        self.index_name = os.getenv("PINECONE_INDEX_NAME", "transcripts")
+        self.index_name = index_name or os.getenv("PINECONE_INDEX_NAME", "transcripts")
         self.pool_threads = pool_threads
         
         # Initialize index with connection pooling for better parallel performance
@@ -97,6 +98,36 @@ class PineconeClient:
         
         transport = "gRPC" if USING_GRPC else "HTTP"
         logger.info(f"Pinecone client initialized [{transport}] for index: {self.index_name} (pool_threads={pool_threads})")
+
+    def create_index(self, name: str, dimension: int, metric: str = "cosine", cloud: str = "aws", region: str = "us-east-1") -> bool:
+        try:
+            existing = [idx.name for idx in self.pc.list_indexes()]
+            if name in existing:
+                return True
+            self.pc.create_index(
+                name=name,
+                dimension=dimension,
+                metric=metric,
+                spec=ServerlessSpec(cloud=cloud, region=region),
+            )
+            logger.info(f"Created Pinecone index '{name}' ({dimension}d, {metric})")
+            return True
+        except Exception as e:
+            logger.error(f"Error creating index '{name}': {e}")
+            return False
+
+    def list_index_dimensions(self) -> Dict[str, int]:
+        dims = {}
+        try:
+            for idx in self.pc.list_indexes():
+                try:
+                    desc = self.pc.describe_index(idx.name)
+                    dims[idx.name] = desc.dimension
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.error(f"Error listing index dimensions: {e}")
+        return dims
 
     @retry_on_error()
     def list_indexes(self) -> List[str]:
@@ -269,6 +300,17 @@ class PineconeClient:
                 self.usage = usage
         
         return MergedResults(merged_matches, total_usage)
+
+    @retry_on_error()
+    def fetch_vectors(self, ids: List[str], namespace: str = "") -> Dict[str, Any]:
+        """Fetch specific vectors by ids (small helper for existence checks)."""
+        ns_param = namespace if namespace else None
+        try:
+            res = self.index.fetch(ids=ids, namespace=ns_param)
+            return res.vectors if res else {}
+        except Exception as e:
+            logger.error(f"Error fetching vectors {ids}: {e}")
+            return {}
     
     @retry_on_error()
     def get_all_vectors(self, namespace: str = "") -> List[Any]:
@@ -338,6 +380,39 @@ class PineconeClient:
             return True
         except Exception as e:
             logger.error(f"Error deleting vectors: {e}")
+            return False
+
+    @retry_on_error()
+    def delete_by_filter(self, flt: Dict, namespace: str = "") -> bool:
+        """Delete vectors matching a metadata filter."""
+        try:
+            self.index.delete(filter=flt, namespace=namespace if namespace else None)
+            logger.info(f"Deleted vectors by filter in namespace '{namespace}'")
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting by filter: {e}")
+            return False
+
+    @retry_on_error()
+    def delete_all(self, namespace: str = "") -> bool:
+        """Delete all vectors in a namespace."""
+        try:
+            self.index.delete(delete_all=True, namespace=namespace if namespace else None)
+            logger.info(f"Deleted ALL vectors in namespace '{namespace}'")
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting all vectors: {e}")
+            return False
+
+    @retry_on_error()
+    def update_metadata(self, vec_id: str, metadata: Dict, namespace: str = "") -> bool:
+        """Update metadata for a vector."""
+        try:
+            self.index.update(id=vec_id, set_metadata=metadata, namespace=namespace if namespace else None)
+            logger.info(f"Updated metadata for {vec_id} in namespace '{namespace}'")
+            return True
+        except Exception as e:
+            logger.error(f"Error updating metadata: {e}")
             return False
     
     @retry_on_error()

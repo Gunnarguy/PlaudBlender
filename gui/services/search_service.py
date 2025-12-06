@@ -340,7 +340,8 @@ def _format_results(
         
         # Build result header
         score_pct = match.score * 100
-        header = f"#{idx} │ Score: {score_pct:.1f}%"
+        title = meta.get('title', 'Untitled')
+        header = f"#{idx} │ {title} │ Score: {score_pct:.1f}%"
         
         # Add namespace indicator
         if show_namespace and hasattr(match, 'namespace'):
@@ -350,7 +351,6 @@ def _format_results(
             header += f" │ {namespace_label}"
         
         lines.append(header)
-        lines.append(f"   Title: {meta.get('title', 'Untitled')}")
         lines.append(f"   Themes: {meta.get('themes', '—')}")
         
         # Handle date field variations
@@ -371,7 +371,7 @@ def _format_results(
             if text:
                 snippet = (text[:400] + '…') if len(text) > 400 else text
                 lines.append("")
-                lines.append(f"   {snippet}")
+                lines.append(f"   Snippet: {snippet}")
         
         lines.append("")
         lines.append(f"{'─' * 50}")

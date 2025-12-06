@@ -18,6 +18,7 @@ class AppState:
     pinecone_vectors: List[Any] = field(default_factory=list)
     pinecone_indexes: List[str] = field(default_factory=list)
     pinecone_stats: Dict[str, Any] = field(default_factory=dict)
+    pinecone_selected_index: Optional[str] = None
 
     saved_searches: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     search_results: List[Dict[str, Any]] = field(default_factory=list)

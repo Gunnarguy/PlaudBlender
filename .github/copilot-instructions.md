@@ -33,3 +33,7 @@ PlaudBlender transforms Plaud voice recordings into a searchable, visual knowled
 - `src/dual_store_processor.py`: Core logic for AI processing and Pinecone interaction.
 - `src/plaud_client.py`: Wrapper for Plaud API endpoints.
 - `test_components.py`: Integration tests for individual components (Notion, Gemini, Plaud).
+
+## Process & Checklist
+
+- **Live audit checklist:** `docs/audit-checklist.md` is the single source of truth for UX/feature/infra tasks. Update it as items are completed so contributors and Copilot have current status and next actions.

@@ -40,6 +40,8 @@ class ModernTheme:
         style.configure("Main.TFrame", background=colors["bg_main"])
         style.configure("Panel.TFrame", background=colors["bg_panel"], borderwidth=0)
         style.configure("Card.TFrame", background=colors["bg_card"], relief="flat", borderwidth=0)
+        style.configure("Panel.TLabelframe", background=colors["bg_panel"], borderwidth=0)
+        style.configure("Panel.TLabelframe.Label", background=colors["bg_panel"], foreground=colors["text_muted"], font=cls.FONTS["body_sm"])
 
         style.configure("TLabel", background=colors["bg_main"], foreground=colors["text_main"], font=cls.FONTS["body"])
         style.configure("Sidebar.TLabel", background=colors["bg_dark"], foreground=colors["text_muted"], font=cls.FONTS["body"])
@@ -47,6 +49,23 @@ class ModernTheme:
         style.configure("Muted.TLabel", background=colors["bg_main"], foreground=colors["text_muted"], font=cls.FONTS["body_sm"])
         style.configure("CardTitle.TLabel", background=colors["bg_card"], foreground=colors["text_muted"], font=cls.FONTS["body_sm"])
         style.configure("CardValue.TLabel", background=colors["bg_card"], foreground=colors["text_main"], font=cls.FONTS["h2"])
+
+        # Pills / badges for inline status chips
+        style.configure("Badge.TLabel", background=colors["bg_card"], foreground=colors["accent"],
+                padding=(8, 2), borderwidth=1, relief="solid", font=cls.FONTS["body_sm"])
+        style.configure("SuccessBadge.TLabel", background=colors["bg_card"], foreground=colors["success"],
+                padding=(8, 2), borderwidth=1, relief="solid", font=cls.FONTS["body_sm"])
+        style.configure("WarnBadge.TLabel", background=colors["bg_card"], foreground=colors["warning"],
+                padding=(8, 2), borderwidth=1, relief="solid", font=cls.FONTS["body_sm"])
+
+        # Toggleable pill buttons (used for filters)
+        style.configure("Pill.TButton", background=colors["bg_panel"], foreground=colors["text_muted"],
+                borderwidth=1, relief="solid", padding=(10, 4), font=cls.FONTS["body_sm"])
+        style.map("Pill.TButton",
+              background=[("active", colors["bg_card"])],
+              foreground=[("active", colors["text_main"])])
+        style.configure("PillActive.TButton", background=colors["accent"], foreground="black",
+                borderwidth=0, padding=(10, 4), font=cls.FONTS["body_sm"])
 
         style.configure("TButton", background=colors["bg_card"], foreground=colors["text_main"], borderwidth=0, padding=(6, 3))
         style.map("TButton", background=[("active", colors["accent_muted"])])

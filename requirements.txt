@@ -2,13 +2,20 @@
 # Plaud API & OAuth
 requests>=2.31.0
 python-dotenv>=1.0.0
+pydantic>=2.7.0
+sqlalchemy>=2.0.0
+pytest>=7.4.0
 
 # AI Processing
-openai>=1.0.0
+# Use a Responses API compatible version of the OpenAI SDK.
+openai>=1.63.0
 google-generativeai>=0.3.0
 
 # Vector Database (gRPC for better performance on data operations)
 pinecone[grpc]>=6.0.0
+
+# Model Context Protocol server
+mcp>=0.1.0
 
 # Visualization
 pyvis>=0.3.2

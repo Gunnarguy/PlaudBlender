@@ -1,5 +1,6 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox, simpledialog
+from gui.utils.tooltips import ToolTip
 from gui.views.base import BaseView
 
 
@@ -22,14 +23,14 @@ class SearchView(BaseView):
         ttk.Label(header, text="🔍 Semantic Search", style="Header.TLabel").pack(anchor='w')
         ttk.Label(
             header, 
-            text="Search your transcripts using natural language",
-            font=("Inter", 9),
+            text="Find anything across transcripts and summaries",
+            style="Muted.TLabel",
         ).pack(anchor='w')
 
         # ─────────────────────────────────────────────────────────────
         # Search Input
         # ─────────────────────────────────────────────────────────────
-        input_frame = ttk.Frame(self, style="Main.TFrame")
+        input_frame = ttk.LabelFrame(self, text="Query", padding=8, style="Panel.TLabelframe")
         input_frame.pack(fill=tk.X, pady=(0, 8))
 
         self.query_var = tk.StringVar()
@@ -41,10 +42,22 @@ class SearchView(BaseView):
         entry.pack(fill=tk.X, ipady=4)
         entry.bind('<Return>', lambda _: self._search_all())
 
+        # Preset prompts for fast inspiration
+        presets = ttk.Frame(input_frame, style="Main.TFrame")
+        presets.pack(fill=tk.X, pady=(6, 0))
+        for text in [
+            "Action items from last call",
+            "Mentions of pricing or budget",
+            "Key blockers mentioned",
+            "Summaries about roadmap",
+        ]:
+            ttk.Button(presets, text=text, style="Pill.TButton",
+                       command=lambda t=text: self._use_preset(t)).pack(side=tk.LEFT, padx=3)
+
         # ─────────────────────────────────────────────────────────────
         # Search Action Buttons - ULTRA GRANULAR
         # ─────────────────────────────────────────────────────────────
-        actions_frame = ttk.Frame(self, style="Main.TFrame")
+        actions_frame = ttk.LabelFrame(self, text="Actions", padding=8, style="Panel.TLabelframe")
         actions_frame.pack(fill=tk.X, pady=(0, 8))
         
         # Row 1: Primary search actions
@@ -58,6 +71,7 @@ class SearchView(BaseView):
             command=self._search_all,
             width=25,
         ).pack(side=tk.LEFT, padx=(0, 4))
+        ToolTip(btn_row1.winfo_children()[-1], "Cross-namespace search across full_text and summaries")
         
         ttk.Button(
             btn_row1,
@@ -65,6 +79,7 @@ class SearchView(BaseView):
             command=self._search_full_text,
             width=25,
         ).pack(side=tk.LEFT, padx=(0, 4))
+        ToolTip(btn_row1.winfo_children()[-1], "Search only transcript chunks (full_text namespace)")
         
         ttk.Button(
             btn_row1,
@@ -72,11 +87,12 @@ class SearchView(BaseView):
             command=self._search_summaries,
             width=25,
         ).pack(side=tk.LEFT)
+        ToolTip(btn_row1.winfo_children()[-1], "Search AI-generated summaries only")
 
         # ─────────────────────────────────────────────────────────────
         # Options Row
         # ─────────────────────────────────────────────────────────────
-        options_frame = ttk.Frame(self, style="Main.TFrame")
+        options_frame = ttk.LabelFrame(self, text="Options", padding=8, style="Panel.TLabelframe")
         options_frame.pack(fill=tk.X, pady=(0, 8))
         
         # Result limit selector
@@ -99,10 +115,29 @@ class SearchView(BaseView):
             variable=self.context_var,
         ).pack(side=tk.LEFT)
 
+        # Result style toggle (stored for future formatting)
+        ttk.Label(options_frame, text="Style:").pack(side=tk.LEFT, padx=(12, 4))
+        self.result_style = tk.StringVar(value="rich")
+        ttk.Combobox(options_frame, textvariable=self.result_style, values=["rich", "compact"], width=8, state="readonly").pack(side=tk.LEFT)
+
+        # ─────────────────────────────────────────────────────────────
+        # Saved Searches
+        # ─────────────────────────────────────────────────────────────
+        saved_frame = ttk.LabelFrame(self, text="Saved Searches", padding=8, style="Panel.TLabelframe")
+        saved_frame.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(saved_frame, text="Saved:").pack(side=tk.LEFT)
+        self.saved_var = tk.StringVar()
+        self.saved_combo = ttk.Combobox(saved_frame, textvariable=self.saved_var, state="readonly", width=25)
+        self.saved_combo.pack(side=tk.LEFT, padx=(4, 8))
+        self.saved_combo.bind("<<ComboboxSelected>>", lambda _: self._load_saved())
+
+        ttk.Button(saved_frame, text="Save Current", command=self._save_current).pack(side=tk.LEFT)
+        ttk.Button(saved_frame, text="Delete", command=self._delete_saved).pack(side=tk.LEFT, padx=(4, 0))
+
         # ─────────────────────────────────────────────────────────────
         # Help Text
         # ─────────────────────────────────────────────────────────────
-        help_frame = ttk.Frame(self, style="Main.TFrame")
+        help_frame = ttk.LabelFrame(self, text="Tips", padding=8, style="Panel.TLabelframe")
         help_frame.pack(fill=tk.X, pady=(0, 8))
         
         help_text = (
@@ -121,11 +156,17 @@ class SearchView(BaseView):
         # ─────────────────────────────────────────────────────────────
         # Results Area
         # ─────────────────────────────────────────────────────────────
-        results_label = ttk.Label(self, text="Results", font=("Inter", 10, "bold"))
-        results_label.pack(anchor='w', pady=(0, 4))
-        
+        results_frame = ttk.LabelFrame(self, text="Results", padding=6, style="Panel.TLabelframe")
+        results_frame.pack(fill=tk.BOTH, expand=True)
+
+        header_row = ttk.Frame(results_frame, style="Main.TFrame")
+        header_row.pack(fill=tk.X)
+        self.last_run = ttk.Label(header_row, text="No searches yet", style="Muted.TLabel")
+        self.last_run.pack(side=tk.LEFT)
+        ttk.Button(header_row, text="Clear", command=self._clear_results).pack(side=tk.RIGHT)
+
         self.results = tk.Text(
-            self, 
+            results_frame, 
             bg="#0f172a", 
             fg="#f8fafc", 
             insertbackground="#f8fafc",
@@ -133,11 +174,12 @@ class SearchView(BaseView):
             padx=12,
             pady=12,
             font=("JetBrains Mono", 10),
+            height=14,
         )
-        self.results.pack(fill=tk.BOTH, expand=True)
+        self.results.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # Add scrollbar
-        scrollbar = ttk.Scrollbar(self.results, command=self.results.yview)
+        scrollbar = ttk.Scrollbar(results_frame, command=self.results.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.results.config(yscrollcommand=scrollbar.set)
     
@@ -150,6 +192,7 @@ class SearchView(BaseView):
         query = self.query_var.get()
         limit = int(self.limit_var.get())
         if query.strip():
+            self._mark_last_run("All namespaces", query, limit)
             self.call('perform_cross_namespace_search', query, limit)
     
     def _search_full_text(self):
@@ -157,6 +200,7 @@ class SearchView(BaseView):
         query = self.query_var.get()
         limit = int(self.limit_var.get())
         if query.strip():
+            self._mark_last_run("Full text", query, limit)
             self.call('search_full_text', query, limit)
     
     def _search_summaries(self):
@@ -164,6 +208,7 @@ class SearchView(BaseView):
         query = self.query_var.get()
         limit = int(self.limit_var.get())
         if query.strip():
+            self._mark_last_run("Summaries", query, limit)
             self.call('search_summaries', query, limit)
 
     # ─────────────────────────────────────────────────────────────────
@@ -173,4 +218,60 @@ class SearchView(BaseView):
     def show_results(self, text):
         """Display search results in the text area."""
         self.results.delete('1.0', tk.END)
+        if not text:
+            text = "No results yet. Run a search to see matches."
+        # Simple error surfacing: if backend returned an error marker, also show a messagebox
+        if text.strip().startswith("❌"):
+            messagebox.showerror("Search", text)
         self.results.insert('1.0', text)
+
+    def _mark_last_run(self, scope: str, query: str, limit: int):
+        """Update the inline status above the results panel."""
+        preview = query[:70] + ("…" if len(query) > 70 else "")
+        self.last_run.configure(text=f"{scope} • top {limit} • \"{preview}\"")
+
+    def _use_preset(self, text: str):
+        self.query_var.set(text)
+        self._search_all()
+
+    def _clear_results(self):
+        self.results.delete('1.0', tk.END)
+        self.last_run.configure(text="Cleared")
+
+    def update_saved(self, names):
+        self.saved_combo['values'] = names
+        if names:
+            self.saved_var.set(names[0])
+        else:
+            self.saved_var.set("")
+
+    def set_query(self, q: str):
+        self.query_var.set(q)
+
+    def _save_current(self):
+        name = simpledialog.askstring("Save Search", "Name for this search:")
+        if not name:
+            return
+        self.call('save_search', name, self.query_var.get())
+
+    def _load_saved(self):
+        name = self.saved_var.get()
+        if name:
+            self.call('load_saved_search', name)
+
+    def _delete_saved(self):
+        name = self.saved_var.get()
+        if not name:
+            return
+        from gui.services import saved_searches_service as ss
+        ss.delete_search(name)
+        self.update_saved(ss.list_saved_names())
+
+    def on_show(self):
+        # Refresh saved searches and focus query box for faster flow
+        from gui.services import saved_searches_service as ss
+        self.update_saved(ss.list_saved_names())
+        try:
+            self.focus_set()
+        except Exception:
+            pass

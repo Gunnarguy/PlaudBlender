@@ -23,6 +23,7 @@ load_dotenv()
 # Auth is on app.plaud.ai, API is on platform.plaud.ai
 PLAUD_AUTH_URL = "https://app.plaud.ai/platform/oauth"
 PLAUD_TOKEN_URL = "https://platform.plaud.ai/developer/api/oauth/third-party/access-token"
+PLAUD_REFRESH_URL = PLAUD_TOKEN_URL + "/refresh"
 PLAUD_API_BASE = "https://platform.plaud.ai/developer/api/open/third-party"
 
 # Local callback configuration
@@ -66,6 +67,17 @@ class PlaudOAuthClient:
         
         # Try to load existing tokens
         self._load_tokens()
+
+    def _clear_tokens(self):
+        """Remove cached tokens to force re-auth when refresh fails."""
+        self._access_token = None
+        self._refresh_token = None
+        self._token_expiry = None
+        if TOKEN_FILE.exists():
+            try:
+                TOKEN_FILE.unlink()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(f"Could not delete token file: {exc}")
     
     def _load_tokens(self):
         """Load tokens from local storage if available."""
@@ -144,8 +156,13 @@ class PlaudOAuthClient:
         
         data = f"code={code}&redirect_uri={self.redirect_uri}"
         
-        response = requests.post(PLAUD_TOKEN_URL, headers=headers, data=data)
-        response.raise_for_status()
+        try:
+            response = requests.post(PLAUD_TOKEN_URL, headers=headers, data=data)
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            logger.error("Plaud token refresh failed (%s) — clearing tokens, please re-authenticate", exc)
+            self._clear_tokens()
+            raise
         
         token_data = response.json()
         
@@ -174,20 +191,31 @@ class PlaudOAuthClient:
         if not self._refresh_token:
             raise ValueError("No refresh token available. Please re-authenticate.")
         
-        # Plaud uses Basic auth header
+        # Try legacy refresh with Basic auth first
         credentials = f"{self.client_id}:{self.client_secret}"
         basic_auth = base64.b64encode(credentials.encode()).decode()
-        
+
         headers = {
             "Authorization": f"Basic {basic_auth}",
             "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json"
         }
-        
+
         data = f"refresh_token={self._refresh_token}&grant_type=refresh_token"
-        
-        response = requests.post(PLAUD_TOKEN_URL, headers=headers, data=data)
-        response.raise_for_status()
+
+        try:
+            response = requests.post(PLAUD_TOKEN_URL, headers=headers, data=data)
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            logger.warning("Legacy refresh failed (%s); trying /refresh fallback", exc)
+            # Fallback: Plaud docs show /access-token/refresh with just refresh_token
+            fallback_headers = {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+            }
+            fallback_data = f"refresh_token={self._refresh_token}"
+            response = requests.post(PLAUD_REFRESH_URL, headers=fallback_headers, data=fallback_data)
+            response.raise_for_status()
         
         token_data = response.json()
         
@@ -214,11 +242,15 @@ class PlaudOAuthClient:
         # Check if we need to refresh
         if self._token_expiry and datetime.now() >= self._token_expiry - timedelta(minutes=5):
             logger.info("Token expired or expiring soon, refreshing...")
-            self.refresh_access_token()
-        
+            try:
+                self.refresh_access_token()
+            except Exception as exc:
+                logger.error("Automatic refresh failed: %s", exc)
+                raise
+
         if not self._access_token:
             raise ValueError("No access token available. Please authenticate first.")
-        
+
         return self._access_token
     
     @property

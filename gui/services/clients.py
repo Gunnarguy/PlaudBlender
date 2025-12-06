@@ -20,9 +20,13 @@ def get_plaud_client() -> PlaudClient:
     return state.plaud_client
 
 
-def get_pinecone_client() -> PineconeClient:
+def get_pinecone_client(index_name: str = None, dimension: int = None) -> PineconeClient:
+    # If a different index is requested than cached, create new instance
+    if state.pinecone_client:
+        if index_name and state.pinecone_client.index_name != index_name:
+            state.pinecone_client = PineconeClient(index_name=index_name, dimension=dimension)
     if not state.pinecone_client:
-        state.pinecone_client = PineconeClient()
+        state.pinecone_client = PineconeClient(index_name=index_name, dimension=dimension)
     return state.pinecone_client
 
 

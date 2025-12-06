@@ -1,23 +1,26 @@
 """
-Plaud API Client - Interact with Plaud API to fetch recordings and transcripts
+Plaud API Client - Interact with Plaud API to fetch recordings and transcripts.
+
+Adds optional persistence to the local SQL database so recordings are stored
+deterministically before being processed and indexed.
 """
 import os
 import requests
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
-from dotenv import load_dotenv
-import logging
 
 from .plaud_oauth import PlaudOAuthClient
-
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-load_dotenv()
+from .config import get_settings
+from .utils.logger import get_logger
+from src.database.engine import init_db, SessionLocal
+from src.database.repository import upsert_recording
+from src.models.schemas import RecordingSchema
 
 # Plaud API Configuration - matches endpoints from developer portal
 PLAUD_API_BASE = "https://platform.plaud.ai/developer/api/open/third-party"
+
+settings = get_settings()
+logger = get_logger(__name__)
 
 
 class PlaudClient:
@@ -42,6 +45,17 @@ class PlaudClient:
         
         if not self.oauth.is_authenticated:
             logger.warning("Not authenticated. Call authenticate() or oauth.authenticate_interactive()")
+
+    @staticmethod
+    def _parse_datetime(value: Optional[str]) -> datetime:
+        """Best-effort parsing of Plaud timestamps."""
+        if not value:
+            return datetime.utcnow()
+        try:
+            # Plaud timestamps are usually ISO-8601
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            return datetime.utcnow()
     
     def _get_headers(self) -> dict:
         """Get authorization headers for API requests."""
@@ -67,11 +81,15 @@ class PlaudClient:
         headers = self._get_headers()
         
         response = requests.request(method, url, headers=headers, **kwargs)
-        
-        # Handle token refresh
-        if response.status_code == 401:
-            logger.info("Token expired, refreshing...")
-            self.oauth.refresh_access_token()
+
+        # Handle token refresh / invalid token
+        if response.status_code in (401, 422):
+            logger.info("Token rejected (%s), refreshing...", response.status_code)
+            try:
+                self.oauth.refresh_access_token()
+            except Exception as exc:
+                logger.error("Refresh failed: %s. Please re-authenticate via plaud_setup.py", exc)
+                raise
             headers = self._get_headers()
             response = requests.request(method, url, headers=headers, **kwargs)
         
@@ -313,6 +331,89 @@ class PlaudClient:
         
         logger.info(f"📊 Loaded {len(processed)} recordings with transcripts")
         return processed
+
+    def fetch_and_store_recordings(self, limit: int = 50) -> List[str]:
+        """Fetch recordings from Plaud and persist validated rows to SQLite.
+
+        Returns a list of recording IDs that were stored.
+        """
+        init_db()
+        session = SessionLocal()
+        stored: List[str] = []
+        try:
+            recordings = self.list_recordings(limit=limit)
+            for rec in recordings:
+                rec_id = rec.get("id")
+                if not rec_id:
+                    continue
+
+                try:
+                    transcript_text = self.get_transcript_text(rec_id)
+                    payload = RecordingSchema(
+                        id=rec_id,
+                        title=rec.get("title") or "Untitled Recording",
+                        duration_ms=rec.get("duration") or rec.get("duration_ms") or 0,
+                        created_at=self._parse_datetime(rec.get("created_at") or rec.get("start_at")),
+                        transcript=transcript_text,
+                        language=rec.get("language"),
+                        source="plaud",
+                    )
+                except Exception as exc:
+                    logger.warning(f"⏭️ Skipping recording {rec_id}: {exc}")
+                    continue
+
+                # Capture Plaud-provided extras (e.g., summaries/outlines/keywords) for later use
+                extra_payload = {"recording_type": rec.get("type"), "raw": rec}
+                plaud_summary = self._extract_summary(rec)
+                if plaud_summary:
+                    extra_payload["plaud_summary"] = plaud_summary
+                plaud_outline = rec.get("outline") or rec.get("summary_outline")
+                if plaud_outline:
+                    extra_payload["plaud_outline"] = plaud_outline
+                plaud_keywords = rec.get("keywords") or rec.get("tags")
+                if plaud_keywords:
+                    extra_payload["plaud_keywords"] = plaud_keywords
+
+                upsert_recording(
+                    session,
+                    payload=payload,
+                    filename=rec.get("filename") or rec.get("name"),
+                    status="raw",
+                    extra=extra_payload,
+                )
+                stored.append(rec_id)
+
+            session.commit()
+            logger.info(f"💾 Stored {len(stored)} recordings to SQLite")
+        finally:
+            session.close()
+
+        return stored
+
+    # -------------------- Helpers --------------------
+    def _extract_summary(self, rec: dict) -> Optional[str]:
+        """Best-effort extraction of Plaud-provided summary text from a recording payload."""
+        if not isinstance(rec, dict):
+            return None
+        for key in [
+            "summary",
+            "ai_summary",
+            "summary_text",
+            "overall_summary",
+            "semantic_summary",
+        ]:
+            val = rec.get(key)
+            if isinstance(val, str) and len(val.strip()) > 10:
+                return val.strip()
+        # Some payloads may nest summaries inside extra fields
+        extra = rec.get("extra") or {}
+        if isinstance(extra, dict):
+            for key in extra:
+                if "summary" in key.lower():
+                    val = extra.get(key)
+                    if isinstance(val, str) and len(val.strip()) > 10:
+                        return val.strip()
+        return None
 
 
 def get_client() -> PlaudClient:
