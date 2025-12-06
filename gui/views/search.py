@@ -1,3 +1,4 @@
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 from gui.utils.tooltips import ToolTip
@@ -12,6 +13,9 @@ class SearchView(BaseView):
     - 🌐 Search All: Cross-namespace parallel search
     - 📄 Full Text: Search transcripts only
     - 📝 Summaries: Search AI summaries only
+    - 🏆 Rerank: Optional 2-stage search for highest relevance (toggle)
+    
+    Shows retrieval_score and rerank_score in results for transparency.
     """
     
     def _build(self):
@@ -64,33 +68,51 @@ class SearchView(BaseView):
         btn_row1 = ttk.Frame(actions_frame, style="Main.TFrame")
         btn_row1.pack(fill=tk.X, pady=(0, 4))
         
-        ttk.Button(
+        search_all_btn = ttk.Button(
             btn_row1,
             text="🌐 Search All Namespaces",
             style="Accent.TButton",
             command=self._search_all,
             width=25,
-        ).pack(side=tk.LEFT, padx=(0, 4))
-        ToolTip(btn_row1.winfo_children()[-1], "Cross-namespace search across full_text and summaries")
+        )
+        search_all_btn.pack(side=tk.LEFT, padx=(0, 4))
+        ToolTip(search_all_btn, 
+            "Cross-namespace parallel search.\n\n"
+            "• Searches BOTH full_text AND summaries\n"
+            "• Results merged and ranked by vector similarity\n"
+            "• Enable 🏆 Rerank for higher accuracy (+~200ms)"
+        )
         
-        ttk.Button(
+        search_ft_btn = ttk.Button(
             btn_row1,
             text="📄 Search Full Text Only",
             command=self._search_full_text,
             width=25,
-        ).pack(side=tk.LEFT, padx=(0, 4))
-        ToolTip(btn_row1.winfo_children()[-1], "Search only transcript chunks (full_text namespace)")
+        )
+        search_ft_btn.pack(side=tk.LEFT, padx=(0, 4))
+        ToolTip(search_ft_btn,
+            "Search the full_text namespace only.\n\n"
+            "• Contains chunked transcript text\n"
+            "• Best for finding specific quotes/passages\n"
+            "• Higher recall, more detailed results"
+        )
         
-        ttk.Button(
+        search_sum_btn = ttk.Button(
             btn_row1,
             text="📝 Search Summaries Only",
             command=self._search_summaries,
             width=25,
-        ).pack(side=tk.LEFT)
-        ToolTip(btn_row1.winfo_children()[-1], "Search AI-generated summaries only")
+        )
+        search_sum_btn.pack(side=tk.LEFT)
+        ToolTip(search_sum_btn,
+            "Search the summaries namespace only.\n\n"
+            "• Contains AI-generated syntheses\n"
+            "• Best for thematic/topic-level queries\n"
+            "• Faster, more focused results"
+        )
 
         # ─────────────────────────────────────────────────────────────
-        # Options Row
+        # Options Row (with Rerank toggle)
         # ─────────────────────────────────────────────────────────────
         options_frame = ttk.LabelFrame(self, text="Options", padding=8, style="Panel.TLabelframe")
         options_frame.pack(fill=tk.X, pady=(0, 8))
@@ -106,19 +128,47 @@ class SearchView(BaseView):
             state="readonly",
         )
         limit_combo.pack(side=tk.LEFT, padx=(4, 12))
+        ToolTip(limit_combo, "Maximum number of results to return")
         
         # Include context toggle
         self.context_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
+        context_cb = ttk.Checkbutton(
             options_frame,
             text="Include text snippets",
             variable=self.context_var,
-        ).pack(side=tk.LEFT)
+        )
+        context_cb.pack(side=tk.LEFT)
+        ToolTip(context_cb, "Show text excerpts in results (disable for compact view)")
+
+        # ───── RERANK TOGGLE (2-stage search for best relevance) ─────
+        ttk.Separator(options_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=12)
+        
+        # Initialize from env or default to False
+        rerank_default = os.getenv("PINECONE_RERANK_ENABLED", "false").lower() == "true"
+        self.rerank_var = tk.BooleanVar(value=rerank_default)
+        rerank_cb = ttk.Checkbutton(
+            options_frame,
+            text="🏆 Rerank",
+            variable=self.rerank_var,
+            command=self._on_rerank_toggle,
+        )
+        rerank_cb.pack(side=tk.LEFT)
+        ToolTip(rerank_cb, 
+            "Two-stage search: dense retrieval → neural reranking.\n"
+            "Uses Pinecone's bge-reranker-v2-m3 model.\n"
+            "Higher quality results but adds ~200ms latency."
+        )
+        
+        # Rerank model selector (advanced)
+        self.rerank_model_var = tk.StringVar(value=os.getenv("PINECONE_RERANK_MODEL", "bge-reranker-v2-m3"))
+        # (Hidden by default, shown when rerank is enabled for power users)
 
         # Result style toggle (stored for future formatting)
         ttk.Label(options_frame, text="Style:").pack(side=tk.LEFT, padx=(12, 4))
         self.result_style = tk.StringVar(value="rich")
-        ttk.Combobox(options_frame, textvariable=self.result_style, values=["rich", "compact"], width=8, state="readonly").pack(side=tk.LEFT)
+        style_combo = ttk.Combobox(options_frame, textvariable=self.result_style, values=["rich", "compact"], width=8, state="readonly")
+        style_combo.pack(side=tk.LEFT)
+        ToolTip(style_combo, "rich: Full details with scores\ncompact: Minimal display")
 
         # ─────────────────────────────────────────────────────────────
         # Saved Searches
@@ -135,7 +185,7 @@ class SearchView(BaseView):
         ttk.Button(saved_frame, text="Delete", command=self._delete_saved).pack(side=tk.LEFT, padx=(4, 0))
 
         # ─────────────────────────────────────────────────────────────
-        # Help Text
+        # Help Text (with rerank explanation)
         # ─────────────────────────────────────────────────────────────
         help_frame = ttk.LabelFrame(self, text="Tips", padding=8, style="Panel.TLabelframe")
         help_frame.pack(fill=tk.X, pady=(0, 8))
@@ -144,7 +194,10 @@ class SearchView(BaseView):
             "💡 Tips:\n"
             "• 🌐 Search All: Searches both full transcripts AND summaries in parallel\n"
             "• 📄 Full Text: Best for finding specific quotes or passages\n"
-            "• 📝 Summaries: Best for finding topics or themes"
+            "• 📝 Summaries: Best for finding topics or themes\n"
+            "• 🏆 Rerank: Fetches 3x candidates, reranks with neural model for best relevance\n"
+            "\n"
+            "📊 Scores: retrieval_score = vector similarity, rerank_score = semantic relevance"
         )
         ttk.Label(
             help_frame,
@@ -188,11 +241,19 @@ class SearchView(BaseView):
     # ─────────────────────────────────────────────────────────────────
     
     def _search_all(self):
-        """🌐 SEARCH ALL NAMESPACES - Parallel cross-namespace search."""
+        """🌐 SEARCH ALL NAMESPACES - Parallel cross-namespace search (+ optional rerank)."""
         query = self.query_var.get()
         limit = int(self.limit_var.get())
-        if query.strip():
-            self._mark_last_run("All namespaces", query, limit)
+        if not query.strip():
+            return
+        
+        use_rerank = self.rerank_var.get()
+        mode = "All + Rerank" if use_rerank else "All namespaces"
+        self._mark_last_run(mode, query, limit)
+        
+        if use_rerank:
+            self.call('perform_rerank_search', query, limit, self.rerank_model_var.get())
+        else:
             self.call('perform_cross_namespace_search', query, limit)
     
     def _search_full_text(self):
@@ -200,16 +261,34 @@ class SearchView(BaseView):
         query = self.query_var.get()
         limit = int(self.limit_var.get())
         if query.strip():
-            self._mark_last_run("Full text", query, limit)
-            self.call('search_full_text', query, limit)
+            use_rerank = self.rerank_var.get()
+            mode = "Full text + Rerank" if use_rerank else "Full text"
+            self._mark_last_run(mode, query, limit)
+            if use_rerank:
+                self.call('perform_rerank_search', query, limit, self.rerank_model_var.get(), ['full_text'])
+            else:
+                self.call('search_full_text', query, limit)
     
     def _search_summaries(self):
         """📝 SEARCH SUMMARIES - Search only the summaries namespace."""
         query = self.query_var.get()
         limit = int(self.limit_var.get())
         if query.strip():
-            self._mark_last_run("Summaries", query, limit)
-            self.call('search_summaries', query, limit)
+            use_rerank = self.rerank_var.get()
+            mode = "Summaries + Rerank" if use_rerank else "Summaries"
+            self._mark_last_run(mode, query, limit)
+            if use_rerank:
+                self.call('perform_rerank_search', query, limit, self.rerank_model_var.get(), ['summaries'])
+            else:
+                self.call('search_summaries', query, limit)
+
+    def _on_rerank_toggle(self):
+        """Handle rerank checkbox toggle - update status label."""
+        enabled = self.rerank_var.get()
+        status = "🏆 Rerank ON (neural reranking)" if enabled else "Rerank OFF"
+        # Could update a status bar here; for now just log
+        from gui.utils.logging import log
+        log('INFO', f"Rerank toggled: {status}")
 
     # ─────────────────────────────────────────────────────────────────
     # Display Methods

@@ -62,6 +62,7 @@ class PlaudBlenderApp:
             # Search / settings
             'perform_search': self.perform_search,
             'perform_cross_namespace_search': self.perform_cross_namespace_search,
+            'perform_rerank_search': self.perform_rerank_search,
             'search_full_text': self.search_full_text,
             'search_summaries': self.search_summaries,
             'save_search': self.save_search,
@@ -1057,6 +1058,34 @@ class PlaudBlenderApp:
 
         def task():
             return search_service.search_summaries(query, limit=limit)
+
+        def done(text):
+            self.views['search'].show_results(text)
+
+        self._execute_task(task, done)
+
+    def perform_rerank_search(self, query, limit: int = 5, model: str = "bge-reranker-v2-m3", namespaces=None):
+        """
+        🏆 SEARCH + RERANK (highest quality)
+        
+        Two-stage search: dense vector retrieval → neural reranking.
+        Uses Pinecone inference API for best relevance ordering.
+        
+        Args:
+            query: Search query
+            limit: Max results after reranking
+            model: Reranker model (default: bge-reranker-v2-m3)
+            namespaces: Optional list of namespaces (default: all)
+        """
+        self.set_status("🏆 Searching + Reranking...", True)
+
+        def task():
+            return search_service.search_with_rerank(
+                query=query,
+                limit=limit,
+                rerank_model=model,
+                namespaces=namespaces,
+            )
 
         def done(text):
             self.views['search'].show_results(text)

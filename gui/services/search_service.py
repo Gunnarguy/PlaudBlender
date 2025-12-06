@@ -270,17 +270,22 @@ def search_with_rerank(
             log('WARNING', f"Rerank failed: {rerank_result['error']}; returning unranked results")
             return _format_results(query, results.matches[:limit], include_context, show_namespace=True)
 
-        # Rebuild matches in reranked order
+        # Rebuild matches in reranked order, stashing original retrieval score
         reranked_matches = []
         for item in rerank_result.get("data", []):
             doc_id = item.get("document", {}).get("id") or f"doc_{item.get('index', 0)}"
             if doc_id in match_map:
                 match = match_map[doc_id]
-                match.score = item.get("score", match.score)  # Update score from reranker
+                # Stash original vector similarity score for transparency
+                if match.metadata is None:
+                    match.metadata = {}
+                match.metadata['_retrieval_score'] = match.score
+                # Update to rerank score
+                match.score = item.get("score", match.score)
                 reranked_matches.append(match)
 
         log('INFO', f"   🏆 Reranked {len(reranked_matches)} results")
-        return _format_results(query, reranked_matches, include_context, show_namespace=True)
+        return _format_results(query, reranked_matches, include_context, show_namespace=True, reranked=True)
 
     except Exception as e:
         log('ERROR', f"Search with rerank failed: {e}")
@@ -431,27 +436,48 @@ def _format_results(
     include_context: bool,
     show_namespace: bool = False,
     namespace_label: Optional[str] = None,
+    reranked: bool = False,
 ) -> str:
-    """Internal: Format search results for display."""
+    """
+    Internal: Format search results for display.
+    
+    Shows retrieval_score (vector similarity) and rerank_score (semantic relevance)
+    when reranking is enabled, giving users transparency into ranking quality.
+    """
     
     if not matches:
         return f"No matches found for '{query}'."
     
+    # Header with search mode indicator
+    mode_indicator = "🏆 RERANKED " if reranked else "🔍 "
     lines = [
-        f"{'═' * 50}",
-        f"🔍 SEARCH RESULTS for: '{query}'",
+        f"{'═' * 60}",
+        f"{mode_indicator}SEARCH RESULTS for: '{query}'",
         f"   Found {len(matches)} matches",
-        f"{'═' * 50}",
+        f"{'═' * 60}",
         "",
     ]
 
     for idx, match in enumerate(matches, 1):
         meta = match.metadata or {}
         
-        # Build result header
+        # ──────────── SCORE DISPLAY (granular) ────────────
+        # Primary score: always show as percentage
         score_pct = match.score * 100
+        
+        # Check if this is reranked (score came from reranker vs vector similarity)
+        # Rerank scores are typically 0-1 scale from the cross-encoder
+        retrieval_score = meta.get('_retrieval_score')  # Stashed original if reranked
+        
+        # Build score string with transparency
+        if reranked and retrieval_score is not None:
+            # Show both scores for full transparency
+            score_str = f"rerank: {score_pct:.1f}% │ retrieval: {retrieval_score*100:.1f}%"
+        else:
+            score_str = f"score: {score_pct:.1f}%"
+        
         title = meta.get('title', 'Untitled')
-        header = f"#{idx} │ {title} │ Score: {score_pct:.1f}%"
+        header = f"#{idx} │ {title}"
         
         # Add namespace indicator
         if show_namespace and hasattr(match, 'namespace'):
@@ -461,13 +487,14 @@ def _format_results(
             header += f" │ {namespace_label}"
         
         lines.append(header)
-        lines.append(f"   Themes: {meta.get('themes', '—')}")
+        lines.append(f"   📊 {score_str}")
+        lines.append(f"   🏷️  Themes: {meta.get('themes', '—')}")
         
         # Handle date field variations
         date_val = meta.get('date') or meta.get('start_at') or meta.get('created') or '—'
         if isinstance(date_val, str) and len(date_val) > 10:
             date_val = date_val[:10]
-        lines.append(f"   Date: {date_val}")
+        lines.append(f"   📅 Date: {date_val}")
         
         # Include context snippet
         if include_context:
@@ -481,11 +508,11 @@ def _format_results(
             if text:
                 snippet = (text[:400] + '…') if len(text) > 400 else text
                 lines.append("")
-                lines.append(f"   Snippet: {snippet}")
+                lines.append(f"   💬 Snippet: {snippet}")
         
         lines.append("")
-        lines.append(f"{'─' * 50}")
+        lines.append(f"{'─' * 60}")
         lines.append("")
 
-    log('INFO', f"   📊 Returned {len(matches)} formatted results")
+    log('INFO', f"   📊 Returned {len(matches)} formatted results (reranked={reranked})")
     return "\n".join(lines)
