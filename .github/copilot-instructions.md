@@ -4,6 +4,10 @@
 
 PlaudBlender transforms Plaud voice recordings into a searchable, visual knowledge graph. It integrates Plaud's API, Google's Gemini models (via LlamaIndex), Notion, and Pinecone to process, store, and visualize transcript data.
 
+## User Philosophy
+
+_Gunnar loves data, granularity, and depth—the ability to drill down and see what's happening under the hood. The ultimate goal is a GUI he'll use daily: one that surfaces contextual tooltips, shows retrieval scores and system status, and meshes Plaud recordings, Pinecone vectors, Notion pages, and future data streams into a unified knowledge hub. The MCP+Notion integration is a key enabler for linking scattered platforms (notes, projects, ideas) into one coherent web. Treat every UI addition as an opportunity to expose useful information, not hide it._
+
 ## Architecture & Data Flow
 
 1.  **Ingestion:** `src/plaud_client.py` fetches recordings/transcripts from Plaud API using OAuth (`src/plaud_oauth.py`).
@@ -26,6 +30,7 @@ PlaudBlender transforms Plaud voice recordings into a searchable, visual knowled
 - **Logging:** Use the standard `logging` library. Initialize with `logging.basicConfig(level=logging.INFO)` in scripts.
 - **UI Development:** `gui.py` uses `tkinter`. Heavy operations must run in separate threads to avoid freezing the main loop.
 - **LLM Integration:** Use `llama_index` abstractions for Gemini interactions. Respect token limits when chunking (`MAX_CHUNK_TOKENS = 8000`).
+- **Tooltips & Transparency:** When adding UI elements, include tooltips explaining what each control does and expose relevant metrics (scores, latency, counts) where practical.
 
 ## Key Files
 
@@ -38,3 +43,4 @@ PlaudBlender transforms Plaud voice recordings into a searchable, visual knowled
 
 - **Live audit checklist:** `docs/audit-checklist.md` is the single source of truth for UX/feature/infra tasks. Update it as items are completed so contributors and Copilot have current status and next actions.
 - **Pinecone playbook (authoritative):** Always read `docs/pinecone-integration-playbook.md` before touching Pinecone/search code. It defines required metadata, namespaces, and the exact action items for agents. Keep it updated as changes land.
+- **RAG accuracy roadmap:** `docs/gemini-deep-research-RAG.txt` is the reference for achieving 99.9% retrieval accuracy (hybrid search, reranking, hierarchical chunking, GraphRAG). Section 23 of the audit checklist tracks progress.

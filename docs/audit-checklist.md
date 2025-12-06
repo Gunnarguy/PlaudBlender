@@ -2,6 +2,12 @@
 
 _Comprehensive, end-to-end checklist to track UX, functionality, and platform hardening (UI/logic/infra). Use this as the single source of truth for cleanup and future SQL integration._
 
+**Progress log (2025-12-06)**
+- Integrated Pinecone 2025-10 API: fetch_by_metadata, rerank, hosted embeddings, namespace management, deletion protection
+- Added `src/models/vector_metadata.py` for schema enforcement
+- Added `search_with_rerank()` for higher-quality search
+- Updated playbook (`docs/pinecone-integration-playbook.md`) with implemented features
+
 **Progress log (2025-12-05)**
 - Added stdio MCP server powered by OpenAI Responses (ping/list_models/respond tools)
 - Added in-app Chat tab using OpenAI Responses API (model/temp controls, system prompt)
@@ -14,6 +20,9 @@ _Comprehensive, end-to-end checklist to track UX, functionality, and platform ha
 - Pinecone view reorganized into grouped toolbars (Search/Inspect, Write/Edit, Bulk/Export, Namespaces) with clearer selectors/stats and filter card
 - Added dimension-safe "Re-embed all" workflow (auto creates/switches matching index) from Pinecone Bulk row
 - Global UI: panel labelframe styling for consistent cards; dashboard/transcripts/search/logs/pinecone now use coherent hero + card layouts
+
+## User Philosophy
+_Gunnar loves data, granularity, and depth. The goal is a GUI he'll use daily—one that shows what's happening under the hood, offers contextual tooltips, and meshes Plaud recordings, Pinecone vectors, Notion pages, and future data streams into a unified knowledge hub. The MCP+Notion integration is a key enabler for linking scattered platforms into one coherent web._
 
 ## Legend
 - [ ] Not started
@@ -182,4 +191,61 @@ _Comprehensive, end-to-end checklist to track UX, functionality, and platform ha
 - [ ] Phase 4: MCP optional layer (only if it provides net value), plus additional data sources (email/GitHub) guarded by schema/namespace separation
 
 ---
-_Updated: 2025-12-04_
+
+## 23) RAG Accuracy Roadmap (Target: 99.9%)
+
+_Reference: `docs/gemini-deep-research-RAG.txt` — comprehensive blueprint for high-precision RAG._
+
+### Current State (~80% accuracy)
+- [x] Dense vector search (cosine similarity, embedding-3 / Gemini)
+- [x] Dual namespace architecture (full_text, summaries)
+- [x] Basic metadata filtering (recording_id, source, themes)
+- [x] Rerank endpoint wired (search_with_rerank, off by default)
+- [x] Metadata schema enforcement (VectorMetadata)
+- [ ] Hierarchical chunking (parent/child)
+- [ ] Hybrid search (dense + sparse/BM25)
+- [ ] GraphRAG / entity extraction
+
+### 99.9% Upgrades (prioritized)
+1. **Hybrid Search (Dense + Sparse)**
+   - [ ] Add BM25/SPLADE sparse vectors alongside dense embeddings
+   - [ ] Alpha weighting configurable per query type (keyword-heavy vs semantic)
+   - [ ] Surface hybrid toggle in Search view
+
+2. **Reranker Integration** ✅ (wired, needs UI toggle)
+   - [x] `search_with_rerank()` calls Pinecone rerank endpoint
+   - [ ] Surface rerank toggle + model selector in Settings/Search view
+   - [ ] Default ON for high-stakes queries
+
+3. **Hierarchical Chunking**
+   - [ ] Split transcripts into Parent (full section) + Child (512 tokens) chunks
+   - [ ] Index Children, return Parents to LLM for context
+   - [ ] Improves "Lost in the Middle" issue
+
+4. **Metadata Router / Query Classifier**
+   - [ ] Pre-classify query intent (manual lookup vs semantic exploration)
+   - [ ] Auto-extract filters (recording_id, date range, keyword)
+   - [ ] Route to optimal search strategy (sparse-heavy vs dense-heavy)
+
+5. **GraphRAG / Entity Extraction**
+   - [ ] Extract entities (people, topics, projects) at ingestion
+   - [ ] Build lightweight knowledge graph (nodes + edges)
+   - [ ] Enable multi-hop reasoning across unrelated documents
+
+6. **Self-Correction Loop**
+   - [ ] After LLM response, Critic agent reviews for hallucinations
+   - [ ] Auto-retry with refined query if low confidence
+
+7. **Multimodal (Future)**
+   - [ ] ColPali-style visual embeddings for image-heavy manuals
+   - [ ] Direct PDF page embedding (not OCR)
+
+### UI & Observability for 99.9%
+- [ ] Tooltips explaining each search mode (full_text vs summaries vs hybrid vs rerank)
+- [ ] Show retrieval scores, rerank scores, and confidence in results
+- [ ] Status bar: read/write units, latency per query
+- [ ] Settings: alpha slider for hybrid weight, rerank model picker
+- [ ] Dashboard: RAG health metrics (accuracy proxy via user feedback, retrieval latency)
+
+---
+_Updated: 2025-12-06_
