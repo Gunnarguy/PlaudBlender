@@ -24,3 +24,18 @@ matplotlib>=3.7.0
 plotly>=5.18.0
 wordcloud>=1.9.0
 pillow>=10.0.0
+
+# ─────────────────────────────────────────────────────────────
+# Audio Processing (optional - install for audio features)
+# ─────────────────────────────────────────────────────────────
+# Whisper for transcription with speaker diarization
+openai-whisper>=20231117
+# CLAP for audio embeddings (audio-to-audio similarity)
+laion-clap>=1.1.4
+# Audio I/O utilities
+soundfile>=0.12.1
+librosa>=0.10.1
+pydub>=0.25.1
+# Note: Whisper requires ffmpeg installed on system
+# macOS: brew install ffmpeg
+# Ubuntu: apt install ffmpeg

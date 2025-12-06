@@ -147,6 +147,40 @@ class SearchView(BaseView):
             "• GraphRAG: Answers aggregation queries\n\n"
             "Best for varied query types. Highest accuracy."
         )
+        
+        # Row 3: Audio search
+        btn_row3 = ttk.Frame(actions_frame, style="Main.TFrame")
+        btn_row3.pack(fill=tk.X, pady=(4, 0))
+        
+        audio_search_btn = ttk.Button(
+            btn_row3,
+            text="🎵 Audio Similarity Search",
+            command=self._search_audio,
+            width=25,
+        )
+        audio_search_btn.pack(side=tk.LEFT, padx=(0, 4))
+        ToolTip(audio_search_btn,
+            "Find recordings with similar audio characteristics.\n\n"
+            "• Uses CLAP audio embeddings (512-dim)\n"
+            "• Matches tone, speaker patterns, ambiance\n"
+            "• Query by recording ID or upload audio file\n"
+            "• Works independently of transcript content"
+        )
+        
+        audio_analysis_btn = ttk.Button(
+            btn_row3,
+            text="🔊 Analyze Audio",
+            command=self._analyze_audio,
+            width=20,
+        )
+        audio_analysis_btn.pack(side=tk.LEFT, padx=(0, 4))
+        ToolTip(audio_analysis_btn,
+            "Deep audio analysis using Gemini.\n\n"
+            "• Speaker identification & diarization\n"
+            "• Tone and sentiment analysis\n"
+            "• Background noise detection\n"
+            "• Meeting vs call vs monologue classification"
+        )
 
         # ─────────────────────────────────────────────────────────────
         # Options Row (with Rerank toggle)
@@ -400,6 +434,42 @@ class SearchView(BaseView):
         self._mark_last_run(mode, query, limit)
         
         self.call('perform_smart_search', query, limit)
+
+    def _search_audio(self):
+        """🎵 AUDIO SIMILARITY SEARCH - Find recordings with similar audio characteristics."""
+        query = self.query_var.get()
+        limit = int(self.limit_var.get())
+        if not query.strip():
+            messagebox.showinfo(
+                "Audio Search",
+                "Enter a recording ID or title to find similar audio.\n\n"
+                "This searches by audio characteristics (tone, speaker patterns)\n"
+                "rather than transcript content."
+            )
+            return
+        
+        mode = "Audio Similarity"
+        self._mark_last_run(mode, query, limit)
+        self.call('perform_audio_similarity_search', query, limit)
+
+    def _analyze_audio(self):
+        """🔊 ANALYZE AUDIO - Deep audio analysis using Gemini."""
+        query = self.query_var.get()
+        if not query.strip():
+            messagebox.showinfo(
+                "Audio Analysis",
+                "Enter a recording ID to analyze its audio.\n\n"
+                "This provides:\n"
+                "• Speaker diarization (who spoke when)\n"
+                "• Tone and sentiment analysis\n"
+                "• Background noise detection\n"
+                "• Meeting type classification"
+            )
+            return
+        
+        mode = "Audio Analysis"
+        self._mark_last_run(mode, query, 1)
+        self.call('perform_audio_analysis', query)
 
     def _on_rerank_toggle(self):
         """Handle rerank checkbox toggle - update status label."""

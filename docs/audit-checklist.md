@@ -2,6 +2,33 @@
 
 _Comprehensive, end-to-end checklist to track UX, functionality, and platform hardening (UI/logic/infra). Use this as the single source of truth for cleanup and future SQL integration._
 
+**Progress log (2025-01-07 – Audio Processing Pipeline)**
+- Implemented full audio ingestion and analysis pipeline:
+  - ✅ **Audio Processor Module** (`src/processing/audio_processor.py`):
+    - `AudioDownloader`: Download and cache audio from Plaud API
+    - `WhisperTranscriber`: Transcription with speaker diarization
+    - `CLAPEmbedder`: 512-dim audio embeddings for audio-to-audio similarity
+    - `GeminiAudioAnalyzer`: Rich analysis (tone, sentiment, speakers, topics)
+    - `AudioProcessor`: Unified processor combining all components
+  - ✅ **Database Models Updated** (`src/database/models.py`):
+    - `audio_path`: Local cached audio file path
+    - `audio_url`: Remote Plaud audio URL
+    - `audio_embedding`: CLAP 512-dim vector (JSON)
+    - `speaker_diarization`: Whisper speaker segments (JSON)
+    - `audio_analysis`: Gemini tone/sentiment/topics (JSON)
+  - ✅ **Search View UI** (`gui/views/search.py`):
+    - 🎵 Audio Similarity Search button
+    - 🔊 Analyze Audio button
+  - ✅ **App Handlers** (`gui/app.py`):
+    - `perform_audio_similarity_search()`: Find similar audio by CLAP embedding
+    - `perform_audio_analysis()`: Display cached audio analysis
+  - ✅ **Pipeline Integration** (`src/dual_store_processor.py`):
+    - `process_audio()`: Standalone audio processing
+    - `process_transcript_with_audio()`: Combined text + audio pipeline
+  - ✅ **Dependencies** (`requirements.txt`):
+    - openai-whisper, laion-clap, soundfile, librosa, pydub
+    - Note: Requires ffmpeg on system
+
 **Progress log (2025-12-06 – RAG Accuracy Sprint v2: Deep Research Cross-Reference)**
 - Implemented advanced RAG features from gemini-deep-research2.txt and gemini-final-prompt.txt:
   - ✅ **Query Router** (`src/processing/query_router.py`): Pre-classifies query intent before search

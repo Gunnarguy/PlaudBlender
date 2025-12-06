@@ -67,6 +67,8 @@ class PlaudBlenderApp:
             'perform_hybrid_search': self.perform_hybrid_search,
             'perform_self_correcting_search': self.perform_self_correcting_search,
             'perform_smart_search': self.perform_smart_search,
+            'perform_audio_similarity_search': self.perform_audio_similarity_search,
+            'perform_audio_analysis': self.perform_audio_analysis,
             'search_full_text': self.search_full_text,
             'search_summaries': self.search_summaries,
             'save_search': self.save_search,
@@ -1176,6 +1178,200 @@ class PlaudBlenderApp:
                 use_graphrag=True,
             )
             return format_smart_results(result)
+
+        def done(text):
+            self.views['search'].show_results(text)
+
+        self._execute_task(task, done)
+
+    def perform_audio_similarity_search(self, query: str, limit: int = 5):
+        """
+        Execute audio similarity search using CLAP embeddings.
+        
+        Finds recordings with similar audio characteristics:
+        - Tone and speaking style
+        - Background ambiance
+        - Speaker patterns
+        
+        Args:
+            query: Recording ID or title to find similar audio
+            limit: Maximum results to return
+        """
+        self.set_status("🎵 Audio Similarity Search...", True)
+
+        def task():
+            from src.database.repository import get_session
+            from src.database.models import Recording
+            import numpy as np
+            
+            session = get_session()
+            lines = []
+            
+            try:
+                # Find the source recording by ID or title
+                source_rec = session.query(Recording).filter(
+                    (Recording.id == query) | (Recording.title.ilike(f"%{query}%"))
+                ).first()
+                
+                if not source_rec:
+                    return f"❌ Recording not found: {query}"
+                
+                if not source_rec.audio_embedding:
+                    return (
+                        f"❌ Recording '{source_rec.title}' has no audio embedding.\n\n"
+                        "Run audio processing first:\n"
+                        "• Go to Transcripts view\n"
+                        "• Select recording and click 'Process Audio'"
+                    )
+                
+                source_embedding = np.array(source_rec.audio_embedding)
+                lines.append(f"🎵 Audio Similarity Search")
+                lines.append(f"Source: {source_rec.title}")
+                lines.append("=" * 50)
+                lines.append("")
+                
+                # Find all recordings with embeddings
+                candidates = session.query(Recording).filter(
+                    Recording.audio_embedding.isnot(None),
+                    Recording.id != source_rec.id
+                ).all()
+                
+                if not candidates:
+                    return "No other recordings have audio embeddings yet."
+                
+                # Calculate cosine similarity
+                similarities = []
+                for rec in candidates:
+                    if rec.audio_embedding:
+                        cand_embedding = np.array(rec.audio_embedding)
+                        # Cosine similarity
+                        dot = np.dot(source_embedding, cand_embedding)
+                        norm_a = np.linalg.norm(source_embedding)
+                        norm_b = np.linalg.norm(cand_embedding)
+                        similarity = dot / (norm_a * norm_b) if norm_a and norm_b else 0
+                        similarities.append((rec, similarity))
+                
+                # Sort by similarity descending
+                similarities.sort(key=lambda x: x[1], reverse=True)
+                
+                for i, (rec, sim) in enumerate(similarities[:limit], 1):
+                    lines.append(f"#{i} [{sim:.3f}] {rec.title}")
+                    if rec.audio_analysis:
+                        analysis = rec.audio_analysis
+                        if 'tone' in analysis:
+                            lines.append(f"    Tone: {analysis['tone']}")
+                        if 'sentiment' in analysis:
+                            lines.append(f"    Sentiment: {analysis['sentiment']}")
+                    lines.append("")
+                
+                return "\n".join(lines)
+                
+            finally:
+                session.close()
+
+        def done(text):
+            self.views['search'].show_results(text)
+
+        self._execute_task(task, done)
+
+    def perform_audio_analysis(self, recording_id: str):
+        """
+        Execute deep audio analysis on a recording using Gemini.
+        
+        Provides:
+        - Speaker diarization (who spoke when)
+        - Tone and sentiment analysis
+        - Background noise detection
+        - Meeting type classification
+        
+        Args:
+            recording_id: Recording ID to analyze
+        """
+        self.set_status("🔊 Analyzing Audio...", True)
+
+        def task():
+            from src.database.repository import get_session
+            from src.database.models import Recording
+            
+            session = get_session()
+            lines = []
+            
+            try:
+                # Find the recording
+                rec = session.query(Recording).filter(
+                    (Recording.id == recording_id) | (Recording.title.ilike(f"%{recording_id}%"))
+                ).first()
+                
+                if not rec:
+                    return f"❌ Recording not found: {recording_id}"
+                
+                lines.append(f"🔊 Audio Analysis: {rec.title}")
+                lines.append("=" * 50)
+                lines.append("")
+                
+                # Check if we have cached analysis
+                if rec.audio_analysis:
+                    analysis = rec.audio_analysis
+                    lines.append("📊 Cached Analysis (from previous processing)")
+                    lines.append("")
+                    
+                    if 'tone' in analysis:
+                        lines.append(f"🎭 Tone: {analysis['tone']}")
+                    if 'sentiment' in analysis:
+                        lines.append(f"💭 Sentiment: {analysis['sentiment']}")
+                    if 'speakers' in analysis:
+                        lines.append(f"👥 Speakers: {analysis['speakers']}")
+                    if 'meeting_type' in analysis:
+                        lines.append(f"📋 Type: {analysis['meeting_type']}")
+                    if 'topics' in analysis:
+                        lines.append(f"📌 Topics: {', '.join(analysis['topics'])}")
+                    if 'background_noise' in analysis:
+                        lines.append(f"🔈 Background: {analysis['background_noise']}")
+                    
+                    lines.append("")
+                    lines.append("─" * 50)
+                    lines.append("")
+                
+                # Show diarization if available
+                if rec.speaker_diarization:
+                    lines.append("🎤 Speaker Diarization")
+                    lines.append("")
+                    diarization = rec.speaker_diarization
+                    
+                    if isinstance(diarization, list):
+                        for segment in diarization[:10]:  # Show first 10 segments
+                            start = segment.get('start', 0)
+                            end = segment.get('end', 0)
+                            speaker = segment.get('speaker', 'Unknown')
+                            text = segment.get('text', '')[:100]
+                            lines.append(f"  [{start:.1f}s - {end:.1f}s] {speaker}")
+                            lines.append(f"    \"{text}...\"")
+                            lines.append("")
+                        
+                        if len(diarization) > 10:
+                            lines.append(f"  ... and {len(diarization) - 10} more segments")
+                    
+                    lines.append("")
+                
+                # If no analysis exists, provide instructions
+                if not rec.audio_analysis and not rec.speaker_diarization:
+                    lines.append("⚠️ No audio analysis available yet.")
+                    lines.append("")
+                    lines.append("To analyze this recording:")
+                    lines.append("1. Ensure audio file is downloaded")
+                    lines.append("2. Go to Transcripts view")
+                    lines.append("3. Select this recording")
+                    lines.append("4. Click 'Process Audio'")
+                    lines.append("")
+                    lines.append("Audio processing includes:")
+                    lines.append("• Whisper diarization (speaker identification)")
+                    lines.append("• CLAP embedding (audio similarity)")
+                    lines.append("• Gemini analysis (tone, sentiment, topics)")
+                
+                return "\n".join(lines)
+                
+            finally:
+                session.close()
 
         def done(text):
             self.views['search'].show_results(text)

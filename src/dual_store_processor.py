@@ -601,3 +601,132 @@ Keep it comprehensive but concise (max 500 words)."""
             enhanced_results.append(result)
         
         return enhanced_results
+
+    # ═══════════════════════════════════════════════════════════════════
+    # Audio Processing Integration
+    # ═══════════════════════════════════════════════════════════════════
+    
+    def process_audio(
+        self,
+        audio_path: str,
+        recording_id: str,
+        title: str = "Untitled"
+    ) -> Dict:
+        """
+        Process audio file with full analysis pipeline.
+        
+        Pipeline:
+        1. Whisper diarization (speaker identification)
+        2. CLAP embedding (audio similarity vectors)
+        3. Gemini analysis (tone, sentiment, topics)
+        
+        Args:
+            audio_path: Path to audio file
+            recording_id: Database recording ID
+            title: Recording title for logging
+            
+        Returns:
+            Dict with processing results (diarization, embedding, analysis)
+        """
+        logger.info(f"🎵 Processing audio: {title[:50]}")
+        
+        results = {
+            "success": False,
+            "recording_id": recording_id,
+            "diarization": None,
+            "embedding": None,
+            "analysis": None,
+            "errors": []
+        }
+        
+        try:
+            # Import audio processor (lazy load to avoid startup overhead)
+            from src.processing.audio_processor import AudioProcessor
+            processor = AudioProcessor()
+            
+            # Process the audio file
+            audio_result = processor.process_file(audio_path, recording_id)
+            
+            if audio_result.error:
+                results["errors"].append(audio_result.error)
+                logger.warning(f"⚠️ Audio processing error: {audio_result.error}")
+            else:
+                results["diarization"] = audio_result.diarization
+                results["embedding"] = audio_result.embedding
+                results["analysis"] = audio_result.analysis
+                results["success"] = True
+                
+                logger.info(f"✅ Audio processing complete for {title}")
+                
+                if audio_result.diarization:
+                    logger.info(f"   🎤 Diarization: {len(audio_result.diarization)} segments")
+                if audio_result.embedding:
+                    logger.info(f"   📊 Embedding: {len(audio_result.embedding)}-dim vector")
+                if audio_result.analysis:
+                    logger.info(f"   🔊 Analysis: {list(audio_result.analysis.keys())}")
+        
+        except ImportError as e:
+            error_msg = (
+                "Audio processing dependencies not installed.\n"
+                "Install with: pip install openai-whisper laion-clap soundfile librosa pydub\n"
+                f"Error: {e}"
+            )
+            results["errors"].append(error_msg)
+            logger.error(error_msg)
+        
+        except Exception as e:
+            results["errors"].append(str(e))
+            logger.error(f"❌ Audio processing failed: {e}")
+        
+        return results
+    
+    def process_transcript_with_audio(
+        self,
+        transcript_text: str,
+        page_id: str,
+        title: str = "Untitled",
+        created_at: Optional[str] = None,
+        audio_path: Optional[str] = None
+    ) -> Dict:
+        """
+        Process transcript with optional audio analysis.
+        
+        Combines text processing pipeline with audio processing:
+        1. Standard transcript processing (themes, chunks, synthesis, GraphRAG)
+        2. Audio processing if audio_path provided (diarization, CLAP, Gemini)
+        
+        Args:
+            transcript_text: Full transcript text
+            page_id: Notion page ID
+            title: Transcript title
+            created_at: Creation timestamp
+            audio_path: Optional path to audio file
+            
+        Returns:
+            Dict with combined processing results
+        """
+        # First, process the transcript
+        result = self.process_transcript(
+            transcript_text=transcript_text,
+            page_id=page_id,
+            title=title,
+            created_at=created_at
+        )
+        
+        # Then, process audio if provided
+        if audio_path:
+            audio_result = self.process_audio(
+                audio_path=audio_path,
+                recording_id=page_id,
+                title=title
+            )
+            
+            # Merge audio results
+            result["audio_processing"] = audio_result
+            
+            if audio_result["success"]:
+                result["diarization"] = audio_result["diarization"]
+                result["audio_embedding"] = audio_result["embedding"]
+                result["audio_analysis"] = audio_result["analysis"]
+        
+        return result
