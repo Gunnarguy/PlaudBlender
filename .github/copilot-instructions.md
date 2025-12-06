@@ -37,3 +37,4 @@ PlaudBlender transforms Plaud voice recordings into a searchable, visual knowled
 ## Process & Checklist
 
 - **Live audit checklist:** `docs/audit-checklist.md` is the single source of truth for UX/feature/infra tasks. Update it as items are completed so contributors and Copilot have current status and next actions.
+- **Pinecone playbook (authoritative):** Always read `docs/pinecone-integration-playbook.md` before touching Pinecone/search code. It defines required metadata, namespaces, and the exact action items for agents. Keep it updated as changes land.

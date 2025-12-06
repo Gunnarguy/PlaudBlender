@@ -136,6 +136,8 @@ def find_matching_index(dimension: int) -> Optional[str]:
 
 def reembed_all_into_index(index_name: str, namespace: str = "") -> None:
     """Re-embed all Plaud recordings into the target index/namespace."""
+    from src.models.vector_metadata import build_metadata, compute_text_hash
+
     log('INFO', f"Re-embed start -> index={index_name}, namespace={namespace or 'full_text'}")
     embedder = get_embedding_service()
     target_ns = namespace or "full_text"
@@ -162,6 +164,7 @@ def reembed_all_into_index(index_name: str, namespace: str = "") -> None:
     for rec in recordings:
         rec_id = str(rec.get('id') or rec.get('recording_id') or rec.get('file_id') or "").strip()
         if not rec_id:
+            log('WARNING', "Skipping record with missing recording_id")
             failed.append("(missing id)")
             continue
         try:
@@ -171,29 +174,47 @@ def reembed_all_into_index(index_name: str, namespace: str = "") -> None:
                 continue
 
             # Change-detection: compare hash to existing vector metadata; skip if unchanged
-            import hashlib
-            text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
-            existing = client.fetch_vectors([rec_id], namespace=target_ns).get(rec_id)
+            text_hash = compute_text_hash(text)
+
+            # Try fetch_by_metadata first (more efficient), fallback to fetch by id
             existing_hash = None
-            if existing and existing.metadata:
-                existing_hash = existing.metadata.get("text_hash") or existing.metadata.get("hash")
+            try:
+                existing_result = client.fetch_by_metadata(
+                    {"recording_id": {"$eq": rec_id}},
+                    namespace=target_ns,
+                    limit=1,
+                )
+                vectors = existing_result.get("vectors", {})
+                if vectors:
+                    first_vec = next(iter(vectors.values()), None)
+                    if first_vec and first_vec.get("metadata"):
+                        existing_hash = first_vec["metadata"].get("text_hash")
+            except Exception:
+                # Fallback to fetch by id
+                existing = client.fetch_vectors([rec_id], namespace=target_ns).get(rec_id)
+                if existing and existing.metadata:
+                    existing_hash = existing.metadata.get("text_hash") or existing.metadata.get("hash")
+
             if existing_hash and existing_hash == text_hash:
                 skipped.append(rec_id)
                 continue
 
             embedding = embedder.embed_text(text, dimension=embedder.dimension)
             provider_name = getattr(embedder, 'provider', None)
-            meta = {
-                "title": rec.get('display_name') or rec.get('name') or rec.get('file_name') or "Untitled",
-                "source": "plaud",
-                "start_at": rec.get('start_at') or rec.get('created_at'),
-                "duration_ms": rec.get('duration') or rec.get('duration_ms'),
-                "themes": rec.get('themes') or rec.get('tags'),
-                "provider": provider_name.value if provider_name else None,
-                "model": getattr(embedder, 'model', None),
-                "dimension": embedder.dimension,
-                "text_hash": text_hash,
-            }
+
+            # Build validated metadata using schema
+            meta = build_metadata(
+                recording_id=rec_id,
+                text=text,
+                model=getattr(embedder, 'model', 'unknown'),
+                dimension=embedder.dimension,
+                source="plaud",
+                provider=provider_name.value if provider_name else None,
+                title=rec.get('display_name') or rec.get('name') or rec.get('file_name') or "Untitled",
+                start_at=rec.get('start_at') or rec.get('created_at'),
+                duration_ms=rec.get('duration') or rec.get('duration_ms'),
+                themes=rec.get('themes') or rec.get('tags'),
+            )
 
             batch.append({
                 "id": rec_id,

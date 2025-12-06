@@ -234,6 +234,76 @@ class IndexManager:
         """Clear cached dimension (call after index changes)."""
         self._cached_dimension = None
 
+    # =========================================================================
+    # CONTROL-PLANE GOVERNANCE (2025-10 API)
+    # =========================================================================
+
+    def enable_deletion_protection(self) -> Dict[str, Any]:
+        """Enable deletion protection on the current index."""
+        return self._configure_index(deletion_protection="enabled")
+
+    def disable_deletion_protection(self) -> Dict[str, Any]:
+        """Disable deletion protection on the current index."""
+        return self._configure_index(deletion_protection="disabled")
+
+    def set_index_tags(self, tags: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Set custom tags on the current index.
+
+        Args:
+            tags: Key-value pairs (max 80/120 chars for key/value)
+
+        Returns:
+            Updated index info or error dict
+        """
+        return self._configure_index(tags=tags)
+
+    def get_deletion_protection_status(self) -> str:
+        """Get current deletion protection status ('enabled' or 'disabled')."""
+        try:
+            info = self.pc.describe_index(self._index_name)
+            return getattr(info, "deletion_protection", "disabled")
+        except Exception as e:
+            logger.error(f"Error getting deletion protection status: {e}")
+            return "unknown"
+
+    def _configure_index(
+        self,
+        deletion_protection: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Internal helper to configure index via PATCH /indexes/{name}.
+
+        Uses Pinecone 2025-10 API for serverless index configuration.
+        """
+        import requests
+
+        try:
+            url = f"https://api.pinecone.io/indexes/{self._index_name}"
+            headers = {
+                "Api-Key": os.getenv("PINECONE_API_KEY"),
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Pinecone-Api-Version": "2025-10",
+            }
+            body: Dict[str, Any] = {}
+            if deletion_protection:
+                body["deletion_protection"] = deletion_protection
+            if tags is not None:
+                body["tags"] = tags
+            if not body:
+                return {"error": "No configuration changes specified"}
+
+            resp = requests.patch(url, json=body, headers=headers, timeout=30)
+            resp.raise_for_status()
+            result = resp.json()
+            logger.info(f"Configured index '{self._index_name}': {body}")
+            return result
+        except Exception as e:
+            logger.error(f"Error configuring index: {e}")
+            return {"error": str(e)}
+
 
 # Singleton instance
 _index_manager: Optional[IndexManager] = None
@@ -267,3 +337,18 @@ def get_compatible_dimension() -> int:
         The dimension that's compatible with the existing index
     """
     return get_index_manager().get_compatible_dimension()
+
+
+def enable_deletion_protection() -> Dict[str, Any]:
+    """Convenience: Enable deletion protection on current index."""
+    return get_index_manager().enable_deletion_protection()
+
+
+def disable_deletion_protection() -> Dict[str, Any]:
+    """Convenience: Disable deletion protection on current index."""
+    return get_index_manager().disable_deletion_protection()
+
+
+def set_index_tags(tags: Dict[str, str]) -> Dict[str, Any]:
+    """Convenience: Set tags on current index."""
+    return get_index_manager().set_index_tags(tags)

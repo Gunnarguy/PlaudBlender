@@ -188,6 +188,82 @@ class OpenAIEmbedder(EmbeddingProvider):
         return Provider.OPENAI
 
 
+class PineconeEmbedder(EmbeddingProvider):
+    """Pinecone hosted inference embedding provider.
+
+    Uses Pinecone's /embed API endpoint for embedding generation.
+
+    Models (as of 2025-10):
+    - multilingual-e5-large: 1024d, high quality multilingual
+    - llama-text-embed-v2: 1024d, optimized for Llama
+    - See docs.pinecone.io for full model list
+
+    Benefits:
+    - No external API key needed (uses Pinecone API key)
+    - Optimized for Pinecone index compatibility
+    - Supports input_type (passage/query) for asymmetric search
+    """
+
+    # Known model dimensions (update as Pinecone adds models)
+    MODEL_DIMS = {
+        "multilingual-e5-large": 1024,
+        "llama-text-embed-v2": 1024,
+    }
+
+    def __init__(self, model: str = "multilingual-e5-large", dimension: int = None):
+        self._model = model
+        self._dimension = dimension or self.MODEL_DIMS.get(model, 1024)
+        self._api_key = _sanitize_key(os.getenv("PINECONE_API_KEY"))
+        if not self._api_key:
+            raise EmbeddingError("PINECONE_API_KEY not found in environment")
+
+    def embed_text(self, text: str, input_type: str = "passage") -> List[float]:
+        """Embed text using Pinecone hosted inference.
+
+        Args:
+            text: Text to embed
+            input_type: 'passage' for documents, 'query' for search queries
+        """
+        if not text or not text.strip():
+            raise EmbeddingError("Cannot embed empty text")
+
+        import requests
+
+        url = "https://api.pinecone.io/embed"
+        headers = {
+            "Api-Key": self._api_key,
+            "Content-Type": "application/json",
+            "X-Pinecone-Api-Version": "2025-10",
+        }
+        body = {
+            "model": self._model,
+            "inputs": [{"text": text[:8000]}],  # Truncate to safe limit
+            "parameters": {"input_type": input_type, "truncate": "END"},
+        }
+
+        try:
+            resp = requests.post(url, json=body, headers=headers, timeout=30)
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            if data:
+                return data[0].get("values", [])
+            raise EmbeddingError("Empty response from Pinecone embed API")
+        except requests.RequestException as e:
+            raise EmbeddingError(f"Pinecone embed request failed: {e}") from e
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
+    @property
+    def provider(self) -> Provider:
+        return Provider.PINECONE
+
+
 def get_embedder(
     provider: Optional[Provider] = None, 
     model: Optional[str] = None, 
@@ -197,10 +273,10 @@ def get_embedder(
     """Factory function to get the appropriate embedder.
     
     Args:
-        provider: google or openai (defaults to AI_PROVIDER env var)
+        provider: google, openai, or pinecone (defaults to AI_PROVIDER env var)
         model: Model name (defaults to provider-specific env var)
         dimension: Output dimension (defaults to provider-specific env var or native)
-        task_type: Task type for Gemini (ignored for OpenAI)
+        task_type: Task type for Gemini (ignored for OpenAI/Pinecone)
     
     Returns:
         Configured EmbeddingProvider instance
@@ -211,6 +287,12 @@ def get_embedder(
         return OpenAIEmbedder(
             model=model or os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large"),
             dimension=dimension,  # Will use env or native default if None
+        )
+
+    if provider == Provider.PINECONE:
+        return PineconeEmbedder(
+            model=model or os.getenv("PINECONE_EMBEDDING_MODEL", "multilingual-e5-large"),
+            dimension=dimension,  # Will use model default if None
         )
 
     # Default: Google Gemini

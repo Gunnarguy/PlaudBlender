@@ -482,3 +482,307 @@ class PineconeClient:
         except Exception as e:
             logger.error(f"Error upserting vectors: {e}")
             return 0
+
+    # =========================================================================
+    # NEW 2025-10 DATA-PLANE METHODS
+    # =========================================================================
+
+    @retry_on_error()
+    def fetch_by_metadata(
+        self,
+        filter_dict: Dict,
+        namespace: str = "",
+        limit: int = 100,
+        pagination_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Fetch vectors by metadata filter (Pinecone 2025-10 API).
+
+        Args:
+            filter_dict: Metadata filter expression (e.g., {"recording_id": {"$eq": "abc"}})
+            namespace: Namespace to fetch from
+            limit: Max vectors to return (default 100)
+            pagination_token: Token for paginated results
+
+        Returns:
+            Dict with 'vectors', 'namespace', 'usage', 'pagination' keys
+        """
+        try:
+            params: Dict[str, Any] = {
+                "filter": filter_dict,
+                "limit": limit,
+            }
+            if namespace:
+                params["namespace"] = namespace
+            if pagination_token:
+                params["pagination_token"] = pagination_token
+
+            # SDK may expose this as index.fetch_by_metadata; fall back to REST if needed
+            if hasattr(self.index, "fetch_by_metadata"):
+                result = self.index.fetch_by_metadata(**params)
+            else:
+                # Fallback: use underlying HTTP POST (requires requests)
+                import requests
+                host = self.pc.describe_index(self.index_name).host
+                url = f"https://{host}/vectors/fetch_by_metadata"
+                headers = {
+                    "Api-Key": os.getenv("PINECONE_API_KEY"),
+                    "Content-Type": "application/json",
+                    "X-Pinecone-Api-Version": "2025-10",
+                }
+                resp = requests.post(url, json=params, headers=headers, timeout=30)
+                resp.raise_for_status()
+                result = resp.json()
+
+            logger.info(f"fetch_by_metadata returned {len(result.get('vectors', {}))} vectors")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error in fetch_by_metadata: {e}")
+            return {"vectors": {}, "error": str(e)}
+
+    @retry_on_error()
+    def list_namespaces_v2(self, limit: int = 100, prefix: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        List namespaces using the 2025-10 /namespaces endpoint (serverless only).
+
+        Args:
+            limit: Max namespaces per page
+            prefix: Filter namespaces starting with this prefix
+
+        Returns:
+            List of namespace dicts with 'name' and 'record_count'
+        """
+        try:
+            if hasattr(self.index, "list_namespaces"):
+                result = self.index.list_namespaces(limit=limit, prefix=prefix)
+                return result.get("namespaces", [])
+            else:
+                import requests
+                host = self.pc.describe_index(self.index_name).host
+                url = f"https://{host}/namespaces"
+                headers = {
+                    "Api-Key": os.getenv("PINECONE_API_KEY"),
+                    "X-Pinecone-Api-Version": "2025-10",
+                }
+                params = {"limit": limit}
+                if prefix:
+                    params["prefix"] = prefix
+                resp = requests.get(url, params=params, headers=headers, timeout=30)
+                resp.raise_for_status()
+                return resp.json().get("namespaces", [])
+        except Exception as e:
+            logger.warning(f"list_namespaces_v2 failed (may not be serverless): {e}")
+            # Fallback to legacy stats-based listing
+            return [{"name": ns, "record_count": None} for ns in self.list_namespaces()]
+
+    @retry_on_error()
+    def create_namespace(
+        self,
+        name: str,
+        schema: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a namespace (serverless indexes only, 2025-10 API).
+
+        Args:
+            name: Namespace name
+            schema: Optional schema with filterable fields
+
+        Returns:
+            Created namespace info or error dict
+        """
+        try:
+            import requests
+            host = self.pc.describe_index(self.index_name).host
+            url = f"https://{host}/namespaces"
+            headers = {
+                "Api-Key": os.getenv("PINECONE_API_KEY"),
+                "Content-Type": "application/json",
+                "X-Pinecone-Api-Version": "2025-10",
+            }
+            body: Dict[str, Any] = {"name": name}
+            if schema:
+                body["schema"] = schema
+            resp = requests.post(url, json=body, headers=headers, timeout=30)
+            resp.raise_for_status()
+            logger.info(f"Created namespace '{name}'")
+            return resp.json()
+        except Exception as e:
+            logger.error(f"Error creating namespace '{name}': {e}")
+            return {"error": str(e)}
+
+    @retry_on_error()
+    def delete_namespace(self, name: str) -> bool:
+        """
+        Delete a namespace (serverless indexes only, 2025-10 API).
+
+        Args:
+            name: Namespace to delete (use '__default__' for default ns)
+
+        Returns:
+            True if successful
+        """
+        try:
+            import requests
+            host = self.pc.describe_index(self.index_name).host
+            url = f"https://{host}/namespaces/{name}"
+            headers = {
+                "Api-Key": os.getenv("PINECONE_API_KEY"),
+                "X-Pinecone-Api-Version": "2025-10",
+            }
+            resp = requests.delete(url, headers=headers, timeout=30)
+            resp.raise_for_status()
+            logger.info(f"Deleted namespace '{name}'")
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting namespace '{name}': {e}")
+            return False
+
+    # =========================================================================
+    # CONTROL-PLANE GOVERNANCE
+    # =========================================================================
+
+    @retry_on_error()
+    def configure_index(
+        self,
+        deletion_protection: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Configure index settings (deletion protection, tags).
+
+        Args:
+            deletion_protection: 'enabled' or 'disabled'
+            tags: Key-value tags for the index
+
+        Returns:
+            Updated index info or error dict
+        """
+        try:
+            import requests
+            url = f"https://api.pinecone.io/indexes/{self.index_name}"
+            headers = {
+                "Api-Key": os.getenv("PINECONE_API_KEY"),
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Pinecone-Api-Version": "2025-10",
+            }
+            body: Dict[str, Any] = {}
+            if deletion_protection:
+                body["deletion_protection"] = deletion_protection
+            if tags is not None:
+                body["tags"] = tags
+            if not body:
+                return {"error": "No configuration changes specified"}
+            resp = requests.patch(url, json=body, headers=headers, timeout=30)
+            resp.raise_for_status()
+            logger.info(f"Configured index '{self.index_name}': {body}")
+            return resp.json()
+        except Exception as e:
+            logger.error(f"Error configuring index: {e}")
+            return {"error": str(e)}
+
+    # =========================================================================
+    # INFERENCE: RERANK
+    # =========================================================================
+
+    @retry_on_error()
+    def rerank(
+        self,
+        query: str,
+        documents: List[Dict[str, str]],
+        model: str = "bge-reranker-v2-m3",
+        top_n: Optional[int] = None,
+        return_documents: bool = True,
+        rank_fields: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Rerank documents by relevance to query using Pinecone inference.
+
+        Args:
+            query: The search query
+            documents: List of dicts, each with 'id' and 'text' (or custom fields)
+            model: Reranker model (default: bge-reranker-v2-m3)
+            top_n: Number of top results to return (default: all)
+            return_documents: Include document text in response
+            rank_fields: Fields to consider (default: ['text'])
+
+        Returns:
+            Dict with 'data' (reranked list) and 'usage'
+        """
+        try:
+            import requests
+            url = "https://api.pinecone.io/rerank"
+            headers = {
+                "Api-Key": os.getenv("PINECONE_API_KEY"),
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Pinecone-Api-Version": "2025-10",
+            }
+            body: Dict[str, Any] = {
+                "model": model,
+                "query": query,
+                "documents": documents,
+                "return_documents": return_documents,
+            }
+            if top_n:
+                body["top_n"] = top_n
+            if rank_fields:
+                body["rank_fields"] = rank_fields
+            resp = requests.post(url, json=body, headers=headers, timeout=60)
+            resp.raise_for_status()
+            result = resp.json()
+            logger.info(f"Reranked {len(documents)} docs -> {len(result.get('data', []))} results")
+            return result
+        except Exception as e:
+            logger.error(f"Error in rerank: {e}")
+            return {"data": [], "error": str(e)}
+
+    # =========================================================================
+    # INFERENCE: HOSTED EMBEDDINGS
+    # =========================================================================
+
+    @retry_on_error()
+    def generate_embeddings(
+        self,
+        texts: List[str],
+        model: str = "multilingual-e5-large",
+        input_type: str = "passage",
+        truncate: str = "END",
+    ) -> List[List[float]]:
+        """
+        Generate embeddings using Pinecone hosted inference.
+
+        Args:
+            texts: List of texts to embed
+            model: Pinecone embedding model
+            input_type: 'passage' for documents, 'query' for queries
+            truncate: 'END' or 'NONE'
+
+        Returns:
+            List of embedding vectors
+        """
+        try:
+            import requests
+            url = "https://api.pinecone.io/embed"
+            headers = {
+                "Api-Key": os.getenv("PINECONE_API_KEY"),
+                "Content-Type": "application/json",
+                "X-Pinecone-Api-Version": "2025-10",
+            }
+            inputs = [{"text": t} for t in texts]
+            body = {
+                "model": model,
+                "inputs": inputs,
+                "parameters": {"input_type": input_type, "truncate": truncate},
+            }
+            resp = requests.post(url, json=body, headers=headers, timeout=60)
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            embeddings = [item.get("values", []) for item in data]
+            logger.info(f"Generated {len(embeddings)} embeddings via Pinecone inference")
+            return embeddings
+        except Exception as e:
+            logger.error(f"Error generating embeddings: {e}")
+            return []

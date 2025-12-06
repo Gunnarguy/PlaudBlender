@@ -6,6 +6,7 @@ Provides ultra-granular, clearly-named search actions:
 - search_all_namespaces(): Cross-namespace parallel search
 - search_full_text(): Search only the full_text namespace
 - search_summaries(): Search only the summaries namespace
+- search_with_rerank(): Search + Pinecone rerank for better relevance
 
 All embedding is delegated to the centralized EmbeddingService.
 Dimensions are automatically synced with Pinecone via IndexManager.
@@ -16,6 +17,13 @@ from typing import List, Optional, Dict, Any
 from gui.services.embedding_service import get_embedding_service, EmbeddingError
 from gui.services.clients import get_pinecone_client
 from gui.utils.logging import log
+
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+RERANK_ENABLED = os.getenv("PINECONE_RERANK_ENABLED", "false").lower() == "true"
+RERANK_MODEL = os.getenv("PINECONE_RERANK_MODEL", "bge-reranker-v2-m3")
 
 
 # ============================================================================
@@ -174,6 +182,108 @@ def search_all_namespaces(
         
     except Exception as e:
         log('ERROR', f"Cross-namespace search failed: {e}")
+        return f"❌ Search Error: {e}"
+
+
+def search_with_rerank(
+    query: str,
+    limit: int = 5,
+    include_context: bool = True,
+    filter_dict: Optional[Dict] = None,
+    namespaces: Optional[List[str]] = None,
+    rerank_model: str = RERANK_MODEL,
+) -> str:
+    """
+    🏆 SEARCH + RERANK (highest quality)
+
+    Performs cross-namespace search then reranks results via Pinecone inference
+    for the best relevance ordering.
+
+    Args:
+        query: Natural language search query
+        limit: Max results to return after reranking
+        include_context: Include text snippets in results
+        filter_dict: Optional Pinecone metadata filters
+        namespaces: Namespaces to search (default: all)
+        rerank_model: Pinecone reranker model (default: bge-reranker-v2-m3)
+
+    Returns:
+        Formatted search results, reranked by query relevance
+    """
+    log('INFO', f"🏆 search_with_rerank: '{query}' (limit={limit}, model={rerank_model})")
+
+    if not query.strip():
+        return "❌ Error: Please provide a search query."
+
+    _ensure_dimension_sync()
+
+    try:
+        embedding_service = get_embedding_service()
+        vector = embedding_service.embed_query(query)
+        log('INFO', f"   ✅ Generated {len(vector)}-dim embedding")
+    except EmbeddingError as e:
+        return f"❌ Embedding Error: {e}"
+
+    pinecone_client = get_pinecone_client()
+    target_namespaces = namespaces or ALL_NAMESPACES
+
+    # Fetch more candidates than needed for reranking
+    candidate_limit = max(limit * 3, 15)
+
+    try:
+        results = pinecone_client.query_namespaces(
+            query_embedding=vector,
+            namespaces=target_namespaces,
+            top_k=candidate_limit,
+            filter_dict=filter_dict,
+            include_metadata=True,
+        )
+
+        if not results.matches:
+            return f"No matches found for '{query}'."
+
+        # Build documents for reranking
+        docs = []
+        match_map = {}
+        for i, match in enumerate(results.matches):
+            meta = match.metadata or {}
+            text = meta.get('synthesis') or meta.get('text') or meta.get('summary') or meta.get('title') or ''
+            if text:
+                doc_id = f"doc_{i}"
+                docs.append({"id": doc_id, "text": text[:2000]})  # Truncate for reranker
+                match_map[doc_id] = match
+
+        if not docs:
+            log('WARNING', "No text found in matches for reranking; returning unranked results")
+            return _format_results(query, results.matches[:limit], include_context, show_namespace=True)
+
+        # Call rerank
+        rerank_result = pinecone_client.rerank(
+            query=query,
+            documents=docs,
+            model=rerank_model,
+            top_n=limit,
+            return_documents=False,
+        )
+
+        if "error" in rerank_result:
+            log('WARNING', f"Rerank failed: {rerank_result['error']}; returning unranked results")
+            return _format_results(query, results.matches[:limit], include_context, show_namespace=True)
+
+        # Rebuild matches in reranked order
+        reranked_matches = []
+        for item in rerank_result.get("data", []):
+            doc_id = item.get("document", {}).get("id") or f"doc_{item.get('index', 0)}"
+            if doc_id in match_map:
+                match = match_map[doc_id]
+                match.score = item.get("score", match.score)  # Update score from reranker
+                reranked_matches.append(match)
+
+        log('INFO', f"   🏆 Reranked {len(reranked_matches)} results")
+        return _format_results(query, reranked_matches, include_context, show_namespace=True)
+
+    except Exception as e:
+        log('ERROR', f"Search with rerank failed: {e}")
         return f"❌ Search Error: {e}"
 
 
