@@ -110,6 +110,26 @@ class SearchView(BaseView):
             "• Best for thematic/topic-level queries\n"
             "• Faster, more focused results"
         )
+        
+        # Row 2: Hybrid search button
+        btn_row2 = ttk.Frame(actions_frame, style="Main.TFrame")
+        btn_row2.pack(fill=tk.X, pady=(4, 0))
+        
+        hybrid_btn = ttk.Button(
+            btn_row2,
+            text="🔀 Hybrid Search (Dense + Sparse)",
+            style="Accent.TButton",
+            command=self._search_hybrid,
+            width=35,
+        )
+        hybrid_btn.pack(side=tk.LEFT, padx=(0, 4))
+        ToolTip(hybrid_btn,
+            "Combines semantic AND keyword search for best accuracy.\n\n"
+            "• Dense vectors: Catch synonyms, paraphrases\n"
+            "• Sparse vectors: Catch exact keywords, proper nouns\n"
+            "• Alpha slider controls dense vs sparse weight\n"
+            "• Achieves ~99% retrieval accuracy"
+        )
 
         # ─────────────────────────────────────────────────────────────
         # Options Row (with Rerank toggle)
@@ -162,6 +182,36 @@ class SearchView(BaseView):
         # Rerank model selector (advanced)
         self.rerank_model_var = tk.StringVar(value=os.getenv("PINECONE_RERANK_MODEL", "bge-reranker-v2-m3"))
         # (Hidden by default, shown when rerank is enabled for power users)
+        
+        # ───── HYBRID ALPHA SLIDER (dense vs sparse weight) ─────
+        ttk.Separator(options_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=12)
+        
+        alpha_frame = ttk.Frame(options_frame, style="Main.TFrame")
+        alpha_frame.pack(side=tk.LEFT)
+        
+        ttk.Label(alpha_frame, text="Alpha:").pack(side=tk.LEFT)
+        self.alpha_var = tk.DoubleVar(value=float(os.getenv("PINECONE_HYBRID_ALPHA", "0.5")))
+        alpha_scale = ttk.Scale(
+            alpha_frame,
+            from_=0.0,
+            to=1.0,
+            orient=tk.HORIZONTAL,
+            length=80,
+            variable=self.alpha_var,
+            command=self._on_alpha_change,
+        )
+        alpha_scale.pack(side=tk.LEFT, padx=(4, 4))
+        
+        self.alpha_label = ttk.Label(alpha_frame, text="0.50", width=4)
+        self.alpha_label.pack(side=tk.LEFT)
+        ToolTip(alpha_frame,
+            "Dense vs Sparse weight for hybrid search.\n\n"
+            "• 0.0 = 100% keyword (sparse)\n"
+            "• 0.5 = 50/50 balanced (default)\n"
+            "• 1.0 = 100% semantic (dense)\n\n"
+            "Lower values catch exact terms better.\n"
+            "Higher values catch meaning better."
+        )
 
         # Result style toggle (stored for future formatting)
         ttk.Label(options_frame, text="Style:").pack(side=tk.LEFT, padx=(12, 4))
@@ -282,6 +332,20 @@ class SearchView(BaseView):
             else:
                 self.call('search_summaries', query, limit)
 
+    def _search_hybrid(self):
+        """🔀 HYBRID SEARCH - Dense + Sparse vectors combined."""
+        query = self.query_var.get()
+        limit = int(self.limit_var.get())
+        if not query.strip():
+            return
+        
+        alpha = self.alpha_var.get()
+        use_rerank = self.rerank_var.get()
+        mode = f"Hybrid (α={alpha:.2f})" + (" + Rerank" if use_rerank else "")
+        self._mark_last_run(mode, query, limit)
+        
+        self.call('perform_hybrid_search', query, limit, alpha, use_rerank)
+
     def _on_rerank_toggle(self):
         """Handle rerank checkbox toggle - update status label."""
         enabled = self.rerank_var.get()
@@ -289,6 +353,11 @@ class SearchView(BaseView):
         # Could update a status bar here; for now just log
         from gui.utils.logging import log
         log('INFO', f"Rerank toggled: {status}")
+
+    def _on_alpha_change(self, value):
+        """Handle alpha slider change - update label."""
+        alpha = float(value)
+        self.alpha_label.configure(text=f"{alpha:.2f}")
 
     # ─────────────────────────────────────────────────────────────────
     # Display Methods

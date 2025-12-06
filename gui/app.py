@@ -63,6 +63,7 @@ class PlaudBlenderApp:
             'perform_search': self.perform_search,
             'perform_cross_namespace_search': self.perform_cross_namespace_search,
             'perform_rerank_search': self.perform_rerank_search,
+            'perform_hybrid_search': self.perform_hybrid_search,
             'search_full_text': self.search_full_text,
             'search_summaries': self.search_summaries,
             'save_search': self.save_search,
@@ -1086,6 +1087,30 @@ class PlaudBlenderApp:
                 rerank_model=model,
                 namespaces=namespaces,
             )
+
+        def done(text):
+            self.views['search'].show_results(text)
+
+        self._execute_task(task, done)
+
+    def perform_hybrid_search(self, query: str, alpha: float = 0.7, limit: int = 20):
+        """
+        Execute hybrid search combining dense + sparse vectors.
+        
+        Hybrid search merges semantic understanding (dense) with exact keyword
+        matching (sparse) for improved recall and precision.
+        
+        Args:
+            query: Search query text
+            alpha: Balance between dense (1.0) and sparse (0.0). Default 0.7 favors semantic.
+            limit: Maximum results to return
+        """
+        self.set_status(f"🔀 Hybrid Search (α={alpha:.2f})...", True)
+
+        def task():
+            from gui.services.hybrid_search_service import HybridSearchService
+            hybrid_svc = HybridSearchService()
+            return hybrid_svc.hybrid_search(query=query, alpha=alpha, limit=limit)
 
         def done(text):
             self.views['search'].show_results(text)

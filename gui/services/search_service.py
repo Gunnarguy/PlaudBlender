@@ -12,11 +12,13 @@ All embedding is delegated to the centralized EmbeddingService.
 Dimensions are automatically synced with Pinecone via IndexManager.
 """
 import os
+import time
 from typing import List, Optional, Dict, Any
 
 from gui.services.embedding_service import get_embedding_service, EmbeddingError
 from gui.services.clients import get_pinecone_client
 from gui.utils.logging import log
+from gui.state import state
 
 
 # ============================================================================
@@ -391,7 +393,7 @@ def _execute_search(
     filter_dict: Optional[Dict] = None,
     namespace_label: Optional[str] = None,
 ) -> str:
-    """Internal: Execute a single-namespace search."""
+    """Internal: Execute a single-namespace search with timing instrumentation."""
     
     if not query.strip():
         return "❌ Error: Please provide a search query."
@@ -399,11 +401,16 @@ def _execute_search(
     # AUTO-SYNC: Ensure embedding dimension matches Pinecone index
     _ensure_dimension_sync()
     
+    # Start timing
+    start_time = time.perf_counter()
+    
     # Get embedding from centralized service
     try:
         embedding_service = get_embedding_service()
         vector = embedding_service.embed_query(query)
-        log('INFO', f"   ✅ Generated {len(vector)}-dim embedding")
+        embed_time = time.perf_counter()
+        embed_latency = (embed_time - start_time) * 1000
+        log('INFO', f"   ✅ Generated {len(vector)}-dim embedding ({embed_latency:.1f}ms)")
     except EmbeddingError as e:
         return f"❌ Embedding Error: {e}"
     
@@ -411,18 +418,31 @@ def _execute_search(
     pinecone_client = get_pinecone_client()
     
     try:
+        query_start = time.perf_counter()
         matches = pinecone_client.query_similar(
             query_embedding=vector,
             top_k=limit,
             filter_dict=filter_dict,
             namespace=namespace,
         )
+        query_time = time.perf_counter()
+        query_latency = (query_time - query_start) * 1000
+        total_latency = (query_time - start_time) * 1000
+        
+        # Update global state with metrics for status bar
+        state.set_metrics(
+            latency_ms=total_latency,
+            read_units=limit,  # Approximate RU = top_k
+            namespace=namespace or "default"
+        )
+        log('INFO', f"   ⏱ Query: {query_latency:.1f}ms | Total: {total_latency:.1f}ms")
         
         return _format_results(
             query=query,
             matches=matches,
             include_context=include_context,
             namespace_label=namespace_label,
+            latency_ms=total_latency,
         )
         
     except Exception as e:
@@ -437,6 +457,7 @@ def _format_results(
     show_namespace: bool = False,
     namespace_label: Optional[str] = None,
     reranked: bool = False,
+    latency_ms: Optional[float] = None,
 ) -> str:
     """
     Internal: Format search results for display.
@@ -448,12 +469,13 @@ def _format_results(
     if not matches:
         return f"No matches found for '{query}'."
     
-    # Header with search mode indicator
+    # Header with search mode indicator and timing
     mode_indicator = "🏆 RERANKED " if reranked else "🔍 "
+    latency_str = f" │ ⏱ {latency_ms:.0f}ms" if latency_ms else ""
     lines = [
         f"{'═' * 60}",
         f"{mode_indicator}SEARCH RESULTS for: '{query}'",
-        f"   Found {len(matches)} matches",
+        f"   Found {len(matches)} matches{latency_str}",
         f"{'═' * 60}",
         "",
     ]
