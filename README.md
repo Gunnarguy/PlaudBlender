@@ -164,6 +164,10 @@ open output/knowledge_graph.html
 - Configure model/temperature, optionally set a system prompt, and chat using the OpenAI Responses API.
 - Advanced: enable "Advanced overrides" to pass raw JSON overrides to `responses.create` (e.g., `{ "max_output_tokens": 200, "top_p": 0.9, "tools": [...], "tool_choice": "auto" }`).
 
+### Pinecone quick links
+
+See `docs/pinecone-cheatsheet.md` for the most relevant Pinecone API links (query/upsert, namespaces, control-plane, assistant chat options, error handling, and cost/ops).
+
 ---
 
 ## 📁 Project Structure
