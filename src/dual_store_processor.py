@@ -4,6 +4,8 @@ Optimized for PlaudAI → Notion → Zapier → Pinecone pipeline
 
 Features:
 - Dual namespace storage (full_text + summaries)
+- Hierarchical chunking (parent/child for better context retrieval)
+- GraphRAG entity extraction for knowledge graph
 - gRPC transport for improved performance
 - AI-powered theme extraction and synthesis
 - Configurable embedding dimensions via EmbeddingService
@@ -40,25 +42,56 @@ except ImportError:
     def get_embedding_model():
         return "gemini-embedding-001"
 
+# Import hierarchical chunking and GraphRAG
+try:
+    from src.processing.hierarchical_chunking import HierarchicalChunker
+    HIERARCHICAL_CHUNKING_AVAILABLE = True
+except ImportError:
+    HIERARCHICAL_CHUNKING_AVAILABLE = False
+
+try:
+    from src.processing.graph_rag import GraphRAGExtractor
+    GRAPH_RAG_AVAILABLE = True
+except ImportError:
+    GRAPH_RAG_AVAILABLE = False
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 load_dotenv()
+
+# Feature flags from environment
+USE_HIERARCHICAL_CHUNKING = os.getenv("USE_HIERARCHICAL_CHUNKING", "true").lower() == "true"
+USE_GRAPH_RAG = os.getenv("USE_GRAPH_RAG", "true").lower() == "true"
 
 
 class DualStoreTranscriptProcessor:
     """
     Process transcripts with dual namespace storage:
-    - 'full_text': Complete transcripts (chunked for long ones)
+    - 'full_text': Complete transcripts (hierarchically chunked)
     - 'summaries': AI-generated syntheses
+    
+    Enhanced with:
+    - Hierarchical chunking (parent/child for context-aware retrieval)
+    - GraphRAG entity extraction (entities, relationships for knowledge graph)
     """
     
-    # Constants
+    # Constants (legacy - hierarchical chunker has its own)
     MAX_CHUNK_TOKENS = 8000  # Pinecone limit consideration
     OVERLAP_TOKENS = 200     # Overlap between chunks for context
     
-    def __init__(self):
-        """Initialize with dual namespace support"""
+    def __init__(self, use_hierarchical: bool = None, use_graph_rag: bool = None):
+        """
+        Initialize with dual namespace support and optional advanced features.
+        
+        Args:
+            use_hierarchical: Enable hierarchical chunking (default: env var or True)
+            use_graph_rag: Enable GraphRAG extraction (default: env var or True)
+        """
         logger.info("🚀 Initializing Dual Store Transcript Processor...")
+        
+        # Feature flags
+        self.use_hierarchical = use_hierarchical if use_hierarchical is not None else USE_HIERARCHICAL_CHUNKING
+        self.use_graph_rag = use_graph_rag if use_graph_rag is not None else USE_GRAPH_RAG
         
         # Initialize Gemini
         gemini_key = os.getenv("GEMINI_API_KEY")
@@ -75,6 +108,25 @@ class DualStoreTranscriptProcessor:
         
         # Initialize tokenizer for chunking
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        
+        # Initialize hierarchical chunker if available and enabled
+        self.hierarchical_chunker = None
+        if self.use_hierarchical and HIERARCHICAL_CHUNKING_AVAILABLE:
+            self.hierarchical_chunker = HierarchicalChunker()
+            logger.info("✅ Hierarchical chunker enabled (parent/child strategy)")
+        elif self.use_hierarchical:
+            logger.warning("⚠️ Hierarchical chunking requested but module not available")
+        
+        # Initialize GraphRAG extractor if available and enabled
+        self.graph_extractor = None
+        if self.use_graph_rag and GRAPH_RAG_AVAILABLE:
+            try:
+                self.graph_extractor = GraphRAGExtractor()
+                logger.info("✅ GraphRAG extractor enabled (entity/relationship extraction)")
+            except Exception as e:
+                logger.warning(f"⚠️ GraphRAG initialization failed: {e}")
+        elif self.use_graph_rag:
+            logger.warning("⚠️ GraphRAG requested but module not available")
         
         # Initialize Pinecone with optimized settings
         pc_key = os.getenv("PINECONE_API_KEY")
@@ -134,7 +186,13 @@ class DualStoreTranscriptProcessor:
     
     def _chunk_text(self, text: str, page_id: str, title: str, metadata: Dict) -> List[Document]:
         """
-        Chunk long transcripts for efficient storage and retrieval
+        Chunk transcripts using hierarchical strategy for optimal retrieval.
+        
+        Hierarchical chunking creates:
+        - Parent chunks (2000 tokens): Full context for LLM
+        - Child chunks (512 tokens): Retrieval units for search
+        
+        Falls back to legacy chunking if hierarchical not available.
         
         Args:
             text: Full transcript text
@@ -143,8 +201,51 @@ class DualStoreTranscriptProcessor:
             metadata: Additional metadata
             
         Returns:
-            List of Document objects (chunks)
+            List of Document objects (chunks with parent/child relationships)
         """
+        # Use hierarchical chunking if available
+        if self.hierarchical_chunker:
+            logger.info("📊 Using hierarchical chunking strategy")
+            hierarchy = self.hierarchical_chunker.create_hierarchy(text)
+            
+            documents = []
+            
+            # Store parent chunks with full context
+            for parent in hierarchy.parent_chunks:
+                documents.append(Document(
+                    text=parent.text,
+                    metadata={
+                        **metadata,
+                        "page_id": page_id,
+                        "title": title,
+                        "chunk_id": parent.chunk_id,
+                        "chunk_type": "parent",
+                        "token_count": parent.token_count,
+                        "child_ids": ",".join(parent.child_ids),
+                        "doc_type": "hierarchical_parent"
+                    }
+                ))
+            
+            # Store child chunks for retrieval
+            for child in hierarchy.child_chunks:
+                documents.append(Document(
+                    text=child.text,
+                    metadata={
+                        **metadata,
+                        "page_id": page_id,
+                        "title": title,
+                        "chunk_id": child.chunk_id,
+                        "chunk_type": "child",
+                        "parent_id": child.parent_id,
+                        "token_count": child.token_count,
+                        "doc_type": "hierarchical_child"
+                    }
+                ))
+            
+            logger.info(f"📄 Created {len(hierarchy.parent_chunks)} parents, {len(hierarchy.child_chunks)} children")
+            return documents
+        
+        # Legacy chunking fallback
         tokens = self.tokenizer.encode(text)
         
         if len(tokens) <= self.MAX_CHUNK_TOKENS:
@@ -191,7 +292,7 @@ class DualStoreTranscriptProcessor:
         for doc in chunks:
             doc.metadata["total_chunks"] = total
         
-        logger.info(f"📄 Chunked transcript into {total} parts")
+        logger.info(f"📄 Chunked transcript into {total} parts (legacy)")
         return chunks
     
     def extract_themes(self, text: str) -> List[str]:
@@ -250,7 +351,14 @@ Keep it comprehensive but concise (max 500 words)."""
         created_at: Optional[str] = None
     ) -> Dict:
         """
-        Process transcript with dual storage strategy
+        Process transcript with dual storage strategy + GraphRAG extraction.
+        
+        Pipeline:
+        1. Extract themes via LLM
+        2. Hierarchically chunk full text → 'full_text' namespace
+        3. Generate synthesis → 'summaries' namespace
+        4. Extract entities/relationships → knowledge graph (optional)
+        5. Find related transcripts via summary similarity
         
         Args:
             transcript_text: Full transcript text
@@ -259,7 +367,7 @@ Keep it comprehensive but concise (max 500 words)."""
             created_at: Creation timestamp
             
         Returns:
-            Dict with processing results
+            Dict with processing results including entities/relationships
         """
         logger.info(f"📝 Processing: {title[:50]}")
         
@@ -281,6 +389,7 @@ Keep it comprehensive but concise (max 500 words)."""
             }
             
             # === STEP 1: Store full transcript in 'full_text' namespace ===
+            # Uses hierarchical chunking if enabled
             chunks = self._chunk_text(transcript_text, page_id, title, base_metadata)
             for chunk in chunks:
                 self.full_text_index.insert(chunk)
@@ -304,7 +413,22 @@ Keep it comprehensive but concise (max 500 words)."""
             self.summary_index.insert(summary_doc)
             logger.info(f"✅ Stored synthesis in 'summaries' namespace")
             
-            # === STEP 3: Find related transcripts (query summaries for high-level similarity) ===
+            # === STEP 3: GraphRAG entity extraction (optional) ===
+            entities = []
+            relationships = []
+            
+            if self.graph_extractor:
+                try:
+                    logger.info("🕸️ Extracting entities and relationships...")
+                    entities = self.graph_extractor.extract_entities(transcript_text)
+                    relationships = self.graph_extractor.extract_relationships(
+                        transcript_text, entities
+                    )
+                    logger.info(f"🕸️ Found {len(entities)} entities, {len(relationships)} relationships")
+                except Exception as e:
+                    logger.warning(f"⚠️ GraphRAG extraction failed: {e}")
+            
+            # === STEP 4: Find related transcripts ===
             query_engine = self.summary_index.as_query_engine(
                 similarity_top_k=5,
                 response_mode="no_text"
@@ -332,7 +456,12 @@ Keep it comprehensive but concise (max 500 words)."""
                 "token_count": token_count,
                 "chunks_stored": len(chunks),
                 "connections": connections[:10],
-                "created": base_metadata["created"]
+                "created": base_metadata["created"],
+                # GraphRAG data
+                "entities": [e.__dict__ for e in entities] if entities else [],
+                "relationships": [r.__dict__ for r in relationships] if relationships else [],
+                "hierarchical_chunking": self.hierarchical_chunker is not None,
+                "graph_rag_enabled": self.graph_extractor is not None,
             }
             
         except Exception as e:
@@ -402,14 +531,73 @@ Keep it comprehensive but concise (max 500 words)."""
         return results
     
     def get_stats(self) -> Dict:
-        """Get statistics for both namespaces"""
+        """Get statistics for both namespaces including feature flags"""
         try:
             stats = self.pinecone_index.describe_index_stats()
             return {
                 "total_vectors": stats.get("total_vector_count", 0),
                 "namespaces": stats.get("namespaces", {}),
-                "dimension": stats.get("dimension", 1536)
+                "dimension": stats.get("dimension", 1536),
+                "features": {
+                    "hierarchical_chunking": self.hierarchical_chunker is not None,
+                    "graph_rag": self.graph_extractor is not None,
+                    "grpc_transport": USING_GRPC,
+                }
             }
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
             return {}
+    
+    def query_with_parent_context(self, query: str, top_k: int = 5) -> List[Dict]:
+        """
+        Query child chunks and automatically fetch parent context.
+        
+        This is the key benefit of hierarchical chunking:
+        - Small child chunks (512 tokens) are used for retrieval
+        - When matched, their larger parent chunks (2000 tokens) provide context
+        
+        Args:
+            query: Search query
+            top_k: Number of results
+            
+        Returns:
+            List of results with both child match and parent context
+        """
+        # First, query normally
+        child_results = self.query_full_text(query, top_k=top_k)
+        
+        if not self.hierarchical_chunker:
+            # No hierarchical chunking - return as-is
+            return child_results
+        
+        # Enhance results with parent context
+        enhanced_results = []
+        parent_cache = {}  # Cache parent lookups
+        
+        for result in child_results:
+            parent_id = result.get("parent_id")
+            
+            if parent_id:
+                # Fetch parent chunk if we have hierarchical data
+                if parent_id not in parent_cache:
+                    # Query for the parent by chunk_id
+                    try:
+                        parent_results = self.pinecone_index.query(
+                            vector=[0] * 768,  # Dummy vector for metadata fetch
+                            top_k=1,
+                            filter={"chunk_id": {"$eq": parent_id}},
+                            namespace="full_text",
+                            include_metadata=True
+                        )
+                        if parent_results.matches:
+                            parent_cache[parent_id] = parent_results.matches[0].metadata.get("text", "")
+                        else:
+                            parent_cache[parent_id] = None
+                    except Exception:
+                        parent_cache[parent_id] = None
+                
+                result["parent_context"] = parent_cache.get(parent_id)
+            
+            enhanced_results.append(result)
+        
+        return enhanced_results
