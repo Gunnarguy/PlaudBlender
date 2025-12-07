@@ -79,6 +79,11 @@ class PlaudBlenderApp:
             'refresh_knowledge_graph': self.refresh_knowledge_graph,
             'sync_all': self.sync_all,
             'sync_to_notion': self.sync_to_notion,
+            'notion_push': self.notion_push,
+            'notion_pull': self.notion_pull,
+            'notion_full_sync': self.notion_full_sync,
+            'notion_check_status': self.notion_check_status,
+            'notion_configure': self.notion_configure,
             'refresh_dashboard': self.refresh_dashboard,
             'generate_mindmap': self.generate_mindmap,
             'refresh_indexes': self.refresh_indexes,
@@ -196,6 +201,8 @@ class PlaudBlenderApp:
                 self.fetch_transcripts()
                 # Auto-load Pinecone indexes so dashboard selectors are ready on launch
                 self.load_pinecone_indexes()
+                # Check Notion status on startup
+                self.notion_check_status()
 
         self._execute_task(init_auth, after_auth)
 
@@ -1703,6 +1710,164 @@ class PlaudBlenderApp:
                 messagebox.showinfo("Notion Sync", msg)
         
         self._execute_task(task, done)
+
+    def notion_push(self):
+        """Push processed recordings to Notion (same as sync_to_notion)."""
+        self.sync_to_notion()
+
+    def notion_pull(self):
+        """Pull edits from Notion back to local database."""
+        self.set_status("📥 Pulling from Notion...", True)
+        
+        def task():
+            from src.notion_sync import NotionSyncService
+            sync = NotionSyncService()
+            stats = sync.pull_notion_edits(since_hours=168)  # Last 7 days
+            return {
+                "pulled": stats.pulled,
+                "errors": stats.errors,
+                "error_messages": stats.error_messages[:5],
+            }
+        
+        def done(result):
+            if result.get("pulled", 0) > 0:
+                messagebox.showinfo("Notion Pull", f"Updated {result['pulled']} recordings from Notion")
+                self.load_transcripts()  # Refresh the transcripts view
+            elif result.get("errors"):
+                messagebox.showwarning("Notion Pull", f"Errors: {result['errors']}\n" + "\n".join(result.get("error_messages", [])[:3]))
+            else:
+                messagebox.showinfo("Notion Pull", "No updates found in Notion")
+        
+        self._execute_task(task, done)
+
+    def notion_full_sync(self):
+        """Full two-way sync with Notion."""
+        self.set_status("🔄 Full Notion sync...", True)
+        
+        def task():
+            from src.notion_sync import NotionSyncService
+            from src.database.engine import SessionLocal, init_db
+            from src.database.models import Recording
+            from sqlalchemy import select
+            
+            init_db()
+            session = SessionLocal()
+            try:
+                # Get recordings to push
+                recordings = session.execute(
+                    select(Recording).where(Recording.status.in_(['processed', 'indexed']))
+                ).scalars().all()
+                
+                sync = NotionSyncService()
+                stats = sync.full_sync(recordings)
+                return {
+                    "pushed": stats.pushed,
+                    "pulled": stats.pulled,
+                    "errors": stats.errors,
+                    "skipped": stats.skipped,
+                }
+            finally:
+                session.close()
+        
+        def done(result):
+            msg = f"📤 Pushed: {result.get('pushed', 0)}\n📥 Pulled: {result.get('pulled', 0)}"
+            if result.get("skipped"):
+                msg += f"\n⏭️ Skipped: {result['skipped']}"
+            if result.get("errors"):
+                msg += f"\n❌ Errors: {result['errors']}"
+            messagebox.showinfo("Full Notion Sync", msg)
+            self.load_transcripts()
+            self.notion_check_status()  # Update status panel
+        
+        self._execute_task(task, done)
+
+    def notion_check_status(self):
+        """Check Notion connection status and update dashboard."""
+        def task():
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+            
+            status = {
+                'connected': False,
+                'database_id': os.getenv('NOTION_DATABASE_ID'),
+                'pages_synced': 0,
+                'last_sync': None,
+                'error': None,
+            }
+            
+            if not os.getenv('NOTION_API_KEY') and not os.getenv('NOTION_TOKEN'):
+                status['error'] = 'No API key'
+                return status
+            
+            if not status['database_id']:
+                status['error'] = 'No database ID'
+                return status
+            
+            try:
+                from src.notion_sync import NotionSyncService
+                sync = NotionSyncService()
+                
+                # Try to query the database to verify connection
+                response = sync.client.databases.query(
+                    database_id=sync.config.database_id,
+                    page_size=1
+                )
+                
+                status['connected'] = True
+                # Count synced pages (rough estimate)
+                status['pages_synced'] = len(response.get('results', []))
+                
+                # Try to get actual count
+                all_pages = sync.client.databases.query(
+                    database_id=sync.config.database_id,
+                    page_size=100
+                )
+                status['pages_synced'] = len(all_pages.get('results', []))
+                
+            except Exception as e:
+                status['error'] = str(e)[:50]
+            
+            return status
+        
+        def done(result):
+            if 'dashboard' in self.views:
+                self.views['dashboard'].update_notion_status(result)
+            if result.get('connected'):
+                self.set_status(f"✅ Notion connected ({result.get('pages_synced', 0)} pages)")
+            elif result.get('error'):
+                self.set_status(f"⚠️ Notion: {result.get('error')}")
+        
+        self._execute_task(task, done)
+
+    def notion_configure(self):
+        """Open dialog to configure Notion integration."""
+        from tkinter import simpledialog
+        import os
+        
+        # Show current config and allow editing
+        current_db = os.getenv('NOTION_DATABASE_ID', '')
+        current_key = os.getenv('NOTION_API_KEY') or os.getenv('NOTION_TOKEN', '')
+        
+        msg = f"Current Database ID: {current_db[:8]}...\n" if current_db else "Database ID: Not set\n"
+        msg += f"API Key: {'✓ Set' if current_key else '✗ Not set'}\n\n"
+        msg += "To configure Notion:\n"
+        msg += "1. Create a Notion integration at notion.so/my-integrations\n"
+        msg += "2. Share your database with the integration\n"
+        msg += "3. Copy the database ID from the URL\n"
+        msg += "4. Add to .env:\n"
+        msg += "   NOTION_API_KEY=secret_xxx\n"
+        msg += "   NOTION_DATABASE_ID=xxx"
+        
+        # Option to go to settings
+        result = messagebox.askyesno(
+            "Notion Configuration",
+            msg + "\n\nOpen Settings to configure?",
+            icon='info'
+        )
+        
+        if result:
+            self.switch_view('settings')
 
     def generate_mindmap(self):
         messagebox.showinfo("Mind Map", "Mind map generator coming soon")

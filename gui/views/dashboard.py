@@ -103,6 +103,38 @@ class DashboardView(BaseView):
         self.pipeline_progress_label = ttk.Label(pipeline, text="Waiting for data", style="Muted.TLabel")
         self.pipeline_progress_label.grid(row=2, column=0, columnspan=3, sticky="w", pady=(2, 0))
 
+        # Notion Integration Panel
+        notion_panel = ttk.LabelFrame(self, text="📓 Notion Integration", padding=8, style="Panel.TLabelframe")
+        notion_panel.pack(fill="x", pady=(4, 4))
+        notion_panel.columnconfigure((0, 1), weight=1)
+        
+        # Status labels
+        self.notion_labels = {
+            'status': ttk.Label(notion_panel, text="Status: Checking...", style="Muted.TLabel"),
+            'database': ttk.Label(notion_panel, text="Database: —", style="Muted.TLabel"),
+            'synced': ttk.Label(notion_panel, text="Pages Synced: —", style="Muted.TLabel"),
+            'last_sync': ttk.Label(notion_panel, text="Last Sync: Never", style="Muted.TLabel"),
+        }
+        self.notion_labels['status'].grid(row=0, column=0, sticky="w", pady=2)
+        self.notion_labels['database'].grid(row=0, column=1, sticky="w", pady=2)
+        self.notion_labels['synced'].grid(row=1, column=0, sticky="w", pady=2)
+        self.notion_labels['last_sync'].grid(row=1, column=1, sticky="w", pady=2)
+        
+        # Action buttons row
+        notion_btns = ttk.Frame(notion_panel, style="Panel.TFrame")
+        notion_btns.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        
+        ttk.Button(notion_btns, text="📤 Push to Notion", 
+                   command=lambda: self.call('notion_push')).pack(side="left", padx=2)
+        ttk.Button(notion_btns, text="📥 Pull from Notion", 
+                   command=lambda: self.call('notion_pull')).pack(side="left", padx=2)
+        ttk.Button(notion_btns, text="🔄 Full Sync", 
+                   command=lambda: self.call('notion_full_sync')).pack(side="left", padx=2)
+        ttk.Button(notion_btns, text="🔍 Check Status", 
+                   command=lambda: self.call('notion_check_status')).pack(side="left", padx=2)
+        ttk.Button(notion_btns, text="⚙️ Configure", 
+                   command=lambda: self.call('notion_configure')).pack(side="left", padx=2)
+
         # Recent recordings
         recent = ttk.LabelFrame(self, text="Recent Recordings", padding=8, style="Panel.TLabelframe")
         recent.pack(fill="both", expand=True, pady=(4, 8))
@@ -294,6 +326,37 @@ class DashboardView(BaseView):
         else:
             self.pipeline_progress.configure(value=0)
             self.pipeline_progress_label.configure(text="Waiting for data")
+
+    def update_notion_status(self, status: dict):
+        """Update Notion integration panel with current status."""
+        if not hasattr(self, 'notion_labels'):
+            return
+        
+        if status.get('connected'):
+            self.notion_labels['status'].configure(
+                text="Status: 🟢 Connected", 
+                foreground="#27ae60"
+            )
+        elif status.get('error'):
+            self.notion_labels['status'].configure(
+                text=f"Status: 🔴 {status.get('error', 'Error')[:30]}", 
+                foreground="#e74c3c"
+            )
+        else:
+            self.notion_labels['status'].configure(
+                text="Status: ⚪ Not configured", 
+                foreground="#7f8c8d"
+            )
+        
+        if status.get('database_id'):
+            db_id = status['database_id']
+            self.notion_labels['database'].configure(text=f"Database: {db_id[:8]}...")
+        
+        if status.get('pages_synced') is not None:
+            self.notion_labels['synced'].configure(text=f"Pages Synced: {status['pages_synced']}")
+        
+        if status.get('last_sync'):
+            self.notion_labels['last_sync'].configure(text=f"Last Sync: {status['last_sync']}")
 
     def update_activity(self, lines):
         if not hasattr(self, 'activity_list'):
