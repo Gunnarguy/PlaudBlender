@@ -168,7 +168,7 @@ class NotionView(BaseView):
         self._notion_results = []
         
         # Load data on view
-        self.root.after(100, self._initial_load)
+        self.after(100, self._initial_load)
     
     def _initial_load(self):
         """Load initial data when view is shown."""
@@ -211,7 +211,7 @@ class NotionView(BaseView):
             result = task()
         except Exception as e:
             result = {"error": str(e)}
-        self.root.after(0, lambda: callback(result))
+        self.after(0, lambda: callback(result))
     
     def _search_notion(self):
         """Search Notion workspace."""
