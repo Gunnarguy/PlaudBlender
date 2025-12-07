@@ -20,7 +20,8 @@ def _client() -> OpenAI:
         raise RuntimeError("OPENAI_API_KEY is required for chat.")
     base_url = os.getenv("OPENAI_BASE_URL")
     return OpenAI(api_key=api_key, base_url=base_url)
-def send_response(messages: List[Dict[str, str]], model: str, temperature: float = 0.7) -> Dict[str, Any]:
+
+
 def send_response(
     messages: List[Dict[str, str]],
     model: str,
