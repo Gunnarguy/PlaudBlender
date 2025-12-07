@@ -29,6 +29,33 @@ _Comprehensive, end-to-end checklist to track UX, functionality, and platform ha
     - openai-whisper, laion-clap, soundfile, librosa, pydub
     - Note: Requires ffmpeg on system
 
+**Progress log (2025-01-07 – Advanced RAG Features: Deep Research Implementation)**
+- Implemented remaining features from gemini-deep-research2.txt and gemini-final-prompt.txt:
+  - ✅ **ColPali Vision-Native Ingestion** (`src/processing/colpali_ingestion.py`):
+    - `PDFToImageConverter`: Convert PDF pages to images (pdf2image or PyMuPDF)
+    - `GeminiVisionAnalyzer`: Use Gemini vision to understand documents (not OCR)
+    - `VisualEmbedder`: Generate visual-aware embeddings for pages
+    - `ColPaliProcessor`: Full pipeline for vision-native document processing
+    - Extracts tables, charts, diagrams with layout understanding
+    - Eliminates OCR errors - "sees" the document like a human
+  - ✅ **Thought Signatures & Context Caching** (`src/processing/thought_signatures.py`):
+    - `ThoughtSignature`: Compressed reasoning state snapshots
+    - `ThoughtSignatureManager`: Persist/restore reasoning across tool calls
+    - `ContextCache`: Cache expensive computations (embeddings, analyses)
+    - `EmbeddingCache`: Specialized cache for embeddings with batch support
+    - `AgenticContextManager`: High-level manager for multi-step agent workflows
+    - Prevents "reasoning drift" in agentic workflows
+  - ✅ **Conflict Detection** (`src/processing/conflict_detection.py`):
+    - `ConflictDetector`: Detect contradictions between data sources
+    - `SourceAwareGenerator`: Generate responses with explicit source citations
+    - `ConflictTestSuite`: Test suite with intentionally conflicting data
+    - Numerical, categorical, temporal, negation conflict types
+    - Instead of hallucinating compromises, explicitly flags discrepancies
+  - ✅ **Gold Set Calibration** (already in `src/processing/rag_evaluation.py`):
+    - `GoldSetExample`: Human-verified examples for calibration
+    - `EvaluatorCalibrator`: Compare LLM-as-Judge to human judgment
+    - Alignment scoring to ensure evaluator matches human experts
+
 **Progress log (2025-12-06 – RAG Accuracy Sprint v2: Deep Research Cross-Reference)**
 - Implemented advanced RAG features from gemini-deep-research2.txt and gemini-final-prompt.txt:
   - ✅ **Query Router** (`src/processing/query_router.py`): Pre-classifies query intent before search

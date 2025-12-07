@@ -39,3 +39,12 @@ pydub>=0.25.1
 # Note: Whisper requires ffmpeg installed on system
 # macOS: brew install ffmpeg
 # Ubuntu: apt install ffmpeg
+
+# ─────────────────────────────────────────────────────────────
+# Document Processing (optional - install for PDF/vision features)
+# ─────────────────────────────────────────────────────────────
+# PDF to image conversion (requires poppler system library)
+pdf2image>=1.16.3
+# Alternative: PyMuPDF (no system dependencies)
+PyMuPDF>=1.23.0
+
