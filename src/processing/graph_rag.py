@@ -857,3 +857,7 @@ def answer_global_query(query: str) -> Dict:
         "communities": [c.to_dict() for c in (top_communities or communities[:3])],
         "total_communities": len(communities),
     }
+
+
+# Backward compatibility alias
+GraphRAGExtractor = EntityExtractor
