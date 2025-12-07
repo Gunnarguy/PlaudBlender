@@ -125,6 +125,11 @@ class TestViewImports:
         """Verify LogsView can be imported."""
         from gui.views.logs import LogsView
         assert LogsView is not None
+    
+    def test_notion_view_import(self):
+        """Verify NotionView can be imported."""
+        from gui.views.notion import NotionView
+        assert NotionView is not None
 
 
 # ===========================================================================

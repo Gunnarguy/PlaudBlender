@@ -18,6 +18,7 @@ from gui.views.settings import SettingsView
 from gui.views.logs import LogsView
 from gui.views.chat import ChatView
 from gui.views.knowledge_graph import KnowledgeGraphView
+from gui.views.notion import NotionView
 from gui.services import transcripts_service, pinecone_service, search_service, settings_service, chat_service
 from gui.services.clients import get_oauth_client, get_pinecone_client
 from gui.services.embedding_service import get_embedding_service, EmbeddingError
@@ -76,6 +77,7 @@ class PlaudBlenderApp:
             'goto_search': lambda: self.switch_view('search'),
             'goto_settings': lambda: self.switch_view('settings'),
             'goto_knowledge_graph': lambda: self.switch_view('knowledge_graph'),
+            'goto_notion': lambda: self.switch_view('notion'),
             'refresh_knowledge_graph': self.refresh_knowledge_graph,
             'sync_all': self.sync_all,
             'sync_to_notion': self.sync_to_notion,
@@ -157,6 +159,10 @@ class PlaudBlenderApp:
         btn_pine.pack(side=tk.LEFT, padx=2)
         ToolTip(btn_pine, "Inspect vectors, namespaces, and run queries")
 
+        btn_notion = ttk.Button(self.topbar, text="📓 Notion", command=lambda: self.switch_view('notion'))
+        btn_notion.pack(side=tk.LEFT, padx=2)
+        ToolTip(btn_notion, "Browse Notion workspace and link recordings")
+
         self.view_container = ttk.Frame(self.content, style="Main.TFrame")
         self.view_container.pack(fill=tk.BOTH, expand=True)
 
@@ -167,6 +173,7 @@ class PlaudBlenderApp:
         self.views['search'] = SearchView(self.view_container, self.actions)
         self.views['knowledge_graph'] = KnowledgeGraphView(self.view_container, self.actions)
         self.views['chat'] = ChatView(self.view_container, self.actions)
+        self.views['notion'] = NotionView(self.view_container, self.actions)
         self.views['settings'] = SettingsView(self.view_container, self.actions)
         self.views['logs'] = LogsView(self.view_container, self.actions)
 
