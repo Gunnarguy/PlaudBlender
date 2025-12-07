@@ -332,59 +332,90 @@ class PlaudClient:
         logger.info(f"📊 Loaded {len(processed)} recordings with transcripts")
         return processed
 
-    def fetch_and_store_recordings(self, limit: int = 50) -> List[str]:
+    def fetch_and_store_recordings(self, limit: int = None, fetch_all: bool = True) -> List[str]:
         """Fetch recordings from Plaud and persist validated rows to SQLite.
 
+        Args:
+            limit: Max recordings to fetch (None = no limit when fetch_all=True)
+            fetch_all: If True, paginate through all recordings
+            
         Returns a list of recording IDs that were stored.
         """
         init_db()
         session = SessionLocal()
         stored: List[str] = []
+        
         try:
-            recordings = self.list_recordings(limit=limit)
-            for rec in recordings:
-                rec_id = rec.get("id")
-                if not rec_id:
-                    continue
+            # Paginate through all recordings
+            page_size = 50
+            offset = 0
+            total_fetched = 0
+            
+            while True:
+                recordings = self.list_recordings(limit=page_size, offset=offset)
+                if not recordings:
+                    break
+                    
+                for rec in recordings:
+                    rec_id = rec.get("id")
+                    if not rec_id:
+                        continue
 
-                try:
-                    transcript_text = self.get_transcript_text(rec_id)
-                    payload = RecordingSchema(
-                        id=rec_id,
-                        title=rec.get("title") or "Untitled Recording",
-                        duration_ms=rec.get("duration") or rec.get("duration_ms") or 0,
-                        created_at=self._parse_datetime(rec.get("created_at") or rec.get("start_at")),
-                        transcript=transcript_text,
-                        language=rec.get("language"),
-                        source="plaud",
+                    try:
+                        transcript_text = self.get_transcript_text(rec_id)
+                        payload = RecordingSchema(
+                            id=rec_id,
+                            title=rec.get("title") or "Untitled Recording",
+                            duration_ms=rec.get("duration") or rec.get("duration_ms") or 0,
+                            created_at=self._parse_datetime(rec.get("created_at") or rec.get("start_at")),
+                            transcript=transcript_text,
+                            language=rec.get("language"),
+                            source="plaud",
+                        )
+                    except Exception as exc:
+                        logger.warning(f"⏭️ Skipping recording {rec_id}: {exc}")
+                        continue
+
+                    # Capture Plaud-provided extras (e.g., summaries/outlines/keywords) for later use
+                    extra_payload = {"recording_type": rec.get("type"), "raw": rec}
+                    plaud_summary = self._extract_summary(rec)
+                    if plaud_summary:
+                        extra_payload["plaud_summary"] = plaud_summary
+                    plaud_outline = rec.get("outline") or rec.get("summary_outline")
+                    if plaud_outline:
+                        extra_payload["plaud_outline"] = plaud_outline
+                    plaud_keywords = rec.get("keywords") or rec.get("tags")
+                    if plaud_keywords:
+                        extra_payload["plaud_keywords"] = plaud_keywords
+
+                    upsert_recording(
+                        session,
+                        payload=payload,
+                        filename=rec.get("filename") or rec.get("name"),
+                        status="raw",
+                        extra=extra_payload,
                     )
-                except Exception as exc:
-                    logger.warning(f"⏭️ Skipping recording {rec_id}: {exc}")
-                    continue
-
-                # Capture Plaud-provided extras (e.g., summaries/outlines/keywords) for later use
-                extra_payload = {"recording_type": rec.get("type"), "raw": rec}
-                plaud_summary = self._extract_summary(rec)
-                if plaud_summary:
-                    extra_payload["plaud_summary"] = plaud_summary
-                plaud_outline = rec.get("outline") or rec.get("summary_outline")
-                if plaud_outline:
-                    extra_payload["plaud_outline"] = plaud_outline
-                plaud_keywords = rec.get("keywords") or rec.get("tags")
-                if plaud_keywords:
-                    extra_payload["plaud_keywords"] = plaud_keywords
-
-                upsert_recording(
-                    session,
-                    payload=payload,
-                    filename=rec.get("filename") or rec.get("name"),
-                    status="raw",
-                    extra=extra_payload,
-                )
-                stored.append(rec_id)
+                    stored.append(rec_id)
+                    total_fetched += 1
+                    
+                    # Check limit
+                    if limit and total_fetched >= limit:
+                        break
+                
+                # Pagination control - move to next page
+                offset += len(recordings)
+                
+                # Stop conditions
+                if limit and total_fetched >= limit:
+                    break
+                if not fetch_all:
+                    break
+                # Last page if we got fewer than page_size
+                if len(recordings) < page_size:
+                    break
 
             session.commit()
-            logger.info(f"💾 Stored {len(stored)} recordings to SQLite")
+            logger.info(f"💾 Stored {len(stored)} recordings to SQLite (fetched {total_fetched} total)")
         finally:
             session.close()
 
