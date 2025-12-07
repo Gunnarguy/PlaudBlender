@@ -1815,22 +1815,24 @@ class PlaudBlenderApp:
                 from src.notion_sync import NotionSyncService
                 sync = NotionSyncService()
                 
-                # Try to query the database to verify connection
-                response = sync.client.databases.query(
-                    database_id=sync.config.database_id,
-                    page_size=1
+                # Simple connection test - just retrieve the database info
+                db_info = sync.client.databases.retrieve(
+                    database_id=sync.config.database_id
                 )
                 
                 status['connected'] = True
-                # Count synced pages (rough estimate)
-                status['pages_synced'] = len(response.get('results', []))
                 
-                # Try to get actual count
-                all_pages = sync.client.databases.query(
-                    database_id=sync.config.database_id,
-                    page_size=100
-                )
-                status['pages_synced'] = len(all_pages.get('results', []))
+                # Count pages using search (more reliable than data_sources.query)
+                try:
+                    # Search for pages, limited to 100 for performance
+                    response = sync.client.search(
+                        filter={'property': 'object', 'value': 'page'},
+                        page_size=100
+                    )
+                    status['pages_synced'] = len(response.get('results', []))
+                except Exception as query_error:
+                    # If search fails, just show 0
+                    status['pages_synced'] = 0
                 
             except Exception as e:
                 status['error'] = str(e)[:50]
