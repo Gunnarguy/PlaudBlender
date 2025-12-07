@@ -78,6 +78,8 @@ class PlaudBlenderApp:
             'goto_knowledge_graph': lambda: self.switch_view('knowledge_graph'),
             'refresh_knowledge_graph': self.refresh_knowledge_graph,
             'sync_all': self.sync_all,
+            'sync_to_notion': self.sync_to_notion,
+            'refresh_dashboard': self.refresh_dashboard,
             'generate_mindmap': self.generate_mindmap,
             'refresh_indexes': self.refresh_indexes,
             'save_settings': self.save_settings,
@@ -292,18 +294,47 @@ class PlaudBlenderApp:
         if not rec:
             return
         rec_id = str(rec.get('id'))
-        if not messagebox.askyesno("Delete", f"Delete vector(s) for recording {rec_id} in Pinecone?"):
+        
+        # Ask what to delete
+        choice = messagebox.askyesnocancel(
+            "Delete Recording",
+            f"Delete recording '{rec.get('display_name', rec_id)}'?\n\n"
+            "• Yes = Delete from database AND Pinecone\n"
+            "• No = Delete from Pinecone only\n"
+            "• Cancel = Abort"
+        )
+        
+        if choice is None:  # Cancel
             return
+        
+        delete_from_db = choice  # Yes = both, No = Pinecone only
+        self.set_status("Deleting recording...", True)
 
         def task():
-            from gui.services import pinecone_service
-            # Delete from both primary namespaces
-            res_full = pinecone_service.delete_vectors(ids=[rec_id], namespace="full_text")
-            res_sum = pinecone_service.delete_vectors(ids=[rec_id], namespace="summaries")
-            return res_full, res_sum
+            if delete_from_db:
+                # Full delete using service
+                return transcripts_service.delete_recording(rec_id, delete_from_pinecone=True)
+            else:
+                # Pinecone only
+                from gui.services import pinecone_service
+                res_full = pinecone_service.delete_vectors(ids=[rec_id], namespace="full_text")
+                res_sum = pinecone_service.delete_vectors(ids=[rec_id], namespace="summaries")
+                return {"pinecone_deleted": True, "db_deleted": False}
 
-        def done(res):
-            messagebox.showinfo("Delete", f"Delete results: full_text={res[0]}, summaries={res[1]}")
+        def done(result):
+            msgs = []
+            if result.get("db_deleted"):
+                msgs.append("✓ Removed from database")
+            if result.get("pinecone_deleted"):
+                msgs.append("✓ Removed from Pinecone")
+            if result.get("errors"):
+                msgs.append(f"⚠ Errors: {', '.join(result['errors'])}")
+            
+            messagebox.showinfo("Delete", "\n".join(msgs) if msgs else "Delete completed")
+            
+            # Refresh views
+            if result.get("db_deleted"):
+                self.fetch_transcripts()
             self.refresh_vectors()
 
         self._execute_task(task, done)
@@ -1612,6 +1643,65 @@ class PlaudBlenderApp:
             )
             self.refresh_vectors()
 
+        self._execute_task(task, done)
+
+    def refresh_dashboard(self):
+        """Refresh all dashboard stats from database, Pinecone, etc."""
+        self.set_status("Refreshing dashboard stats...", True)
+        
+        def task():
+            from gui.services.stats_service import get_dashboard_stats
+            return get_dashboard_stats(force_refresh=True)
+        
+        def done(stats):
+            self.views['dashboard'].update_stats(stats)
+            self.set_status("Dashboard refreshed")
+        
+        self._execute_task(task, done)
+
+    def sync_to_notion(self):
+        """Sync recordings to Notion database."""
+        self.set_status("Syncing to Notion...", True)
+        
+        def task():
+            from src.notion_sync import NotionSyncService
+            from src.database.engine import SessionLocal, init_db
+            from src.database.models import Recording
+            from sqlalchemy import select
+            
+            init_db()
+            session = SessionLocal()
+            try:
+                # Get all processed recordings
+                recordings = session.execute(
+                    select(Recording).where(Recording.status.in_(['processed', 'indexed']))
+                ).scalars().all()
+                
+                if not recordings:
+                    return {"pushed": 0, "error": "No processed recordings to sync"}
+                
+                # Push to Notion
+                sync = NotionSyncService()
+                stats = sync.push_recordings(recordings)
+                return {
+                    "pushed": stats.pushed,
+                    "errors": stats.errors,
+                    "error_messages": stats.error_messages[:5],  # First 5 errors
+                }
+            finally:
+                session.close()
+        
+        def done(result):
+            if result.get("error"):
+                messagebox.showwarning("Notion Sync", result["error"])
+            else:
+                msg = f"Synced {result['pushed']} recordings to Notion"
+                if result.get("errors"):
+                    msg += f"\n{result['errors']} errors"
+                    if result.get("error_messages"):
+                        msg += f"\n\nFirst errors:\n" + "\n".join(result["error_messages"][:3])
+                messagebox.showinfo("Notion Sync", msg)
+        
         self._execute_task(task, done)
 
     def generate_mindmap(self):

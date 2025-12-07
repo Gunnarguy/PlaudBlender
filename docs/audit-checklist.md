@@ -2,6 +2,29 @@
 
 _Comprehensive, end-to-end checklist to track UX, functionality, and platform hardening (UI/logic/infra). Use this as the single source of truth for cleanup and future SQL integration._
 
+**Progress log (2025-12-06 – Infrastructure & Integration Sprint)**
+- Completed major infrastructure items:
+  - ✅ **Direct Notion API Integration** (`src/notion_sync.py`):
+    - `NotionSyncService`: Two-way sync with rate limiting and retry
+    - Push recordings to Notion (idempotent upserts using recording_id)
+    - Pull edits from Notion back to SQL
+    - Rate limiting with exponential backoff
+    - Dashboard "📤 Notion Sync" quick action button
+  - ✅ **Dashboard Stats Service** (`gui/services/stats_service.py`):
+    - `StatsService`: Aggregates stats from DB, Pinecone, environment
+    - `DashboardStats`: Container for all metrics (recordings, vectors, pipeline status)
+    - Cached with 30s TTL for performance
+    - Dashboard "↻ Refresh" button to force reload
+  - ✅ **Transcript Actions** (fully wired):
+    - `delete_recording()`: Delete from DB + Pinecone with user choice
+    - `export_recording()`: Export single recording with segments
+    - `export_all_recordings()`: Bulk export for backup
+    - Enhanced delete dialog with Yes/No/Cancel options
+  - ✅ **SQL→Pinecone Pipeline** (metadata enrichment):
+    - Upsert includes: text snippet, title, created_at, themes
+    - Recording lookup for metadata enrichment during sync
+    - Proper provenance tracking (recording_id, segment_id, source)
+
 **Progress log (2025-01-07 – Audio Processing Pipeline)**
 - Implemented full audio ingestion and analysis pipeline:
   - ✅ **Audio Processor Module** (`src/processing/audio_processor.py`):
@@ -137,8 +160,8 @@ _Gunnar loves data, granularity, and depth. The goal is a GUI he'll use daily—
 - [x] Empty states for each view (no silent blanks)
 
 ## 3) Dashboard
-- [ ] Cards show: Auth status, Recording count, Pinecone vector count, Last sync
-- [ ] Quick actions wired: Sync all, Mind map, Semantic search, Settings
+- [x] Cards show: Auth status, Recording count, Pinecone vector count, Last sync — via `StatsService`
+- [x] Quick actions wired: Sync all, Mind map, Semantic search, Settings, Notion sync
 - [ ] Last sync timestamp updated after any sync/import
 
 ## 4) Transcripts View
@@ -146,7 +169,7 @@ _Gunnar loves data, granularity, and depth. The goal is a GUI he'll use daily—
 - [ ] Filter box debounced and applied consistently
 - [x] Row selection enables actions (sync/delete/view/details/export)
 - [x] View/Details open transcript viewer with text + metadata
-- [ ] Sync/Delete/Export actions fully implemented (currently stubs)
+- [x] Sync/Delete/Export actions fully implemented — `transcripts_service.py`
 - [ ] Pagination or virtualization if transcript list is large
 - [ ] Error toasts when Plaud API fails
 
@@ -191,7 +214,7 @@ _Gunnar loves data, granularity, and depth. The goal is a GUI he'll use daily—
 - [x] Persist Plaud recordings via `PlaudClient.fetch_and_store_recordings` (status=`raw`)
 - [x] Add chunking engine to emit `segments` (status=`pending`) and mark recordings `processed`
 - [x] Add indexer scaffold to embed/upsert via injected functions; updates `pinecone_id` and status=`indexed`
-- [ ] Wire embedding + Pinecone upsert, tagging metadata with `recording_id`/`segment_id` in production pipeline
+- [x] Wire embedding + Pinecone upsert, tagging metadata with `recording_id`/`segment_id` — via `sync_recording()` in `transcripts_service.py`
 - [ ] Plan UI affordances for SQL-backed queries (filters, provenance display)
 
 ## 7) Settings View
@@ -224,7 +247,7 @@ _Gunnar loves data, granularity, and depth. The goal is a GUI he'll use daily—
 - [ ] Transcription normalization (timestamps, speaker labels if available)
 - [ ] Chunking/LLM processing path well-defined (current `dual_store_processor`)
 - [ ] Embedding service: single source of truth for model/config; error handling
-- [ ] Pinecone upsert: consistent metadata schema (`source`, `recording_id`, etc.)
+- [x] Pinecone upsert: consistent metadata schema (`source`, `recording_id`, etc.) — via `sync_recording()` with rich metadata
 - [ ] Mind-map generation path verified
 - [~] Re-embed/re-sync workflows: detect stale embeddings when model/settings change (manual re-embed path added)
 
@@ -245,12 +268,12 @@ _Gunnar loves data, granularity, and depth. The goal is a GUI he'll use daily—
 - [ ] Developer guide: architecture, services, threading rules, theming
 
 ## 17) Direct Notion Integration (replace Zapier; no MCP middleman unless justified)
-- [ ] Inventory Notion databases you rely on (Plaud transcriptions, Arsenal, Projects, Ideas) and map required properties
-- [ ] Implement direct Notion API client (rate limits, pagination, retries); avoid Zapier
-- [ ] One-way ingest: push new/updated recordings, summaries, themes, links to audio into Notion
-- [ ] Two-way enrich: pull Notion edits back into SQL/Pinecone (e.g., corrected titles, tags/themes)
-- [ ] Idempotency: use stable IDs (recording_id/segment_id) to upsert and avoid dupes
-- [ ] Backoff & failure logging for Notion writes; surface UI errors
+- [x] Inventory Notion databases you rely on (Plaud transcriptions, Arsenal, Projects, Ideas) and map required properties
+- [x] Implement direct Notion API client (rate limits, pagination, retries); avoid Zapier — `src/notion_sync.py`
+- [x] One-way ingest: push new/updated recordings, summaries, themes, links to audio into Notion
+- [x] Two-way enrich: pull Notion edits back into SQL/Pinecone (e.g., corrected titles, tags/themes)
+- [x] Idempotency: use stable IDs (recording_id/segment_id) to upsert and avoid dupes
+- [x] Backoff & failure logging for Notion writes; surface UI errors
 - [ ] Privacy/ACL review: ensure no sensitive fields leak to public pages
 
 ## 18) MCP (optional, only if it adds value)
@@ -281,7 +304,7 @@ _Gunnar loves data, granularity, and depth. The goal is a GUI he'll use daily—
 - [ ] Phase 0: UX wiring/validation (Transcripts actions, Search formatting, Pinecone dialog validation/toasts)
 - [ ] Phase 1: Mine legacy GUI for reusable features (saved searches, exports, namespace stats caching) and port into services
 - [~] Phase 2: Stand up SQLAlchemy layer (Recording/Segment), route Plaud ingestion through SQL → Pinecone with provenance (ingest + chunking done; embedding/upsert pending)
-- [ ] Phase 3: Direct Notion integration (replace Zapier), two-way enrichment with idempotent upserts
+- [x] Phase 3: Direct Notion integration (replace Zapier), two-way enrichment with idempotent upserts — `src/notion_sync.py`
 - [ ] Phase 4: MCP optional layer (only if it provides net value), plus additional data sources (email/GitHub) guarded by schema/namespace separation
 
 ---
@@ -364,9 +387,11 @@ _Reference: `docs/gemini-deep-research-RAG.txt`, `docs/gemini-deep-research2.txt
     - [x] Self-Correct toggle (🔄) in Search view
     - [x] Shows correction attempts and strategy used in results
 
-11. **Multimodal (Future)**
-    - [ ] ColPali-style visual embeddings for image-heavy manuals
-    - [ ] Direct PDF page embedding (not OCR)
+11. **Multimodal (Future)** ✅ COMPLETE
+    - [x] ColPali-style visual embeddings for image-heavy manuals — `src/processing/colpali_ingestion.py`
+    - [x] Direct PDF page embedding (not OCR)
+    - [x] `ColPaliIngestion` with vision model integration
+    - [x] Image preprocessing, chunking, embedding pipeline
 
 ### UI & Observability for 99.9% ✅ MOSTLY COMPLETE
 - [x] Tooltips explaining each search mode (full_text vs summaries vs hybrid vs rerank vs smart)

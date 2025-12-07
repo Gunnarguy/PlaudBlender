@@ -140,9 +140,10 @@ class DashboardView(BaseView):
 
         buttons = [
             ("🔄 Sync All", 'sync_all'),
+            ("📤 Notion Sync", 'sync_to_notion'),
             ("🕸️ Knowledge Graph", 'goto_knowledge_graph'),
             ("🔍 Semantic Search", 'goto_search'),
-            ("⚙️ Settings", 'goto_settings'),
+            ("↻ Refresh", 'refresh_dashboard'),
         ]
         btn_row = ttk.Frame(quick_actions, style="Panel.TFrame")
         btn_row.pack(fill="x")

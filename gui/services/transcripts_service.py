@@ -138,12 +138,28 @@ def sync_recording(recording_id: str) -> Dict:
 
         embedder = get_embedding_service()
         client = get_pinecone_client()
+        
+        # Get recording for metadata enrichment
+        rec = session.get(Recording, recording_id)
 
         def embed_fn(text: str):
             return embedder.embed_text(text, dimension=embedder.dimension)
 
         def upsert_fn(vector, metadata, namespace):
-            payload = [{"id": metadata.get("segment_id") or metadata.get("recording_id"), "values": vector, "metadata": metadata}]
+            # Enrich metadata with text snippet and recording info
+            enriched = {
+                **metadata,
+                "text": metadata.get("text", "")[:1000],  # Truncate for Pinecone limits
+                "source": "plaud",
+            }
+            if rec:
+                enriched["title"] = rec.title or rec.filename or "Untitled"
+                if rec.created_at:
+                    enriched["created_at"] = rec.created_at.isoformat()
+                if rec.extra and rec.extra.get("themes"):
+                    enriched["themes"] = rec.extra["themes"][:5]  # First 5 themes
+            
+            payload = [{"id": metadata.get("segment_id") or metadata.get("recording_id"), "values": vector, "metadata": enriched}]
             client.upsert_vectors(payload, namespace=namespace)
             return payload[0]["id"]
 
@@ -170,16 +186,34 @@ def sync_all() -> Dict:
 
         embedder = get_embedding_service()
         client = get_pinecone_client()
+        
+        # Build a lookup for recording metadata enrichment
+        from sqlalchemy import select
+        recs = {r.id: r for r in session.execute(select(Recording)).scalars().all()}
 
         def embed_fn(text: str):
             return embedder.embed_text(text, dimension=embedder.dimension)
 
         def upsert_fn(vector, metadata, namespace):
+            # Enrich metadata with text snippet and recording info
+            enriched = {
+                **metadata,
+                "text": metadata.get("text", "")[:1000],  # Truncate for Pinecone limits
+                "source": "plaud",
+            }
+            rec = recs.get(metadata.get("recording_id"))
+            if rec:
+                enriched["title"] = rec.title or rec.filename or "Untitled"
+                if rec.created_at:
+                    enriched["created_at"] = rec.created_at.isoformat()
+                if rec.extra and rec.extra.get("themes"):
+                    enriched["themes"] = rec.extra["themes"][:5]
+            
             payload = [
                 {
                     "id": metadata.get("segment_id") or metadata.get("recording_id"),
                     "values": vector,
-                    "metadata": metadata,
+                    "metadata": enriched,
                 }
             ]
             client.upsert_vectors(payload, namespace=namespace)
@@ -193,5 +227,139 @@ def sync_all() -> Dict:
             embedding_model=getattr(embedder, "model_name", None),
         )
         return {"chunk": chunk_summary, "index": index_summary}
+    finally:
+        session.close()
+
+
+def delete_recording(recording_id: str, delete_from_pinecone: bool = True) -> Dict:
+    """
+    Delete a recording from SQLite and optionally from Pinecone.
+    
+    Args:
+        recording_id: Recording ID to delete
+        delete_from_pinecone: Also delete vectors from Pinecone
+        
+    Returns:
+        Dict with deletion results
+    """
+    init_db()
+    session = SessionLocal()
+    results = {"db_deleted": False, "pinecone_deleted": False, "errors": []}
+    
+    try:
+        # Delete from SQLite (cascades to segments)
+        rec = session.get(Recording, recording_id)
+        if rec:
+            session.delete(rec)
+            session.commit()
+            results["db_deleted"] = True
+            log('INFO', f"Deleted recording {recording_id} from database")
+        else:
+            results["errors"].append(f"Recording {recording_id} not found in database")
+        
+        # Delete from Pinecone
+        if delete_from_pinecone:
+            try:
+                client = get_pinecone_client()
+                # Delete from both namespaces using metadata filter
+                for ns in ["full_text", "summaries"]:
+                    try:
+                        # Try to delete by recording_id metadata
+                        client.delete_by_metadata(
+                            filter={"recording_id": {"$eq": recording_id}},
+                            namespace=ns
+                        )
+                    except Exception:
+                        # Fallback: delete by ID prefix if metadata delete not supported
+                        pass
+                results["pinecone_deleted"] = True
+                log('INFO', f"Deleted vectors for {recording_id} from Pinecone")
+            except Exception as e:
+                results["errors"].append(f"Pinecone delete failed: {e}")
+                log('ERROR', f"Failed to delete from Pinecone: {e}")
+        
+        return results
+        
+    finally:
+        session.close()
+
+
+def export_recording(recording_id: str, include_segments: bool = True) -> Dict:
+    """
+    Export a recording with all its data for backup/transfer.
+    
+    Args:
+        recording_id: Recording ID to export
+        include_segments: Include segment data
+        
+    Returns:
+        Dict with full recording data
+    """
+    init_db()
+    session = SessionLocal()
+    
+    try:
+        rec = session.get(Recording, recording_id)
+        if not rec:
+            raise ValueError(f"Recording {recording_id} not found")
+        
+        export_data = {
+            "id": rec.id,
+            "title": rec.title,
+            "filename": rec.filename,
+            "transcript": rec.transcript,
+            "duration_ms": rec.duration_ms,
+            "created_at": rec.created_at.isoformat() if rec.created_at else None,
+            "source": rec.source,
+            "language": rec.language,
+            "status": rec.status,
+            "extra": rec.extra,
+            "audio_url": rec.audio_url,
+            "audio_analysis": rec.audio_analysis,
+            "speaker_diarization": rec.speaker_diarization,
+        }
+        
+        if include_segments:
+            export_data["segments"] = [
+                {
+                    "id": seg.id,
+                    "text": seg.text,
+                    "start_ms": seg.start_ms,
+                    "end_ms": seg.end_ms,
+                    "theme": seg.theme,
+                    "namespace": seg.namespace,
+                    "pinecone_id": seg.pinecone_id,
+                    "status": seg.status,
+                }
+                for seg in rec.segments
+            ]
+        
+        return export_data
+        
+    finally:
+        session.close()
+
+
+def export_all_recordings(status_filter: Optional[str] = None) -> List[Dict]:
+    """
+    Export all recordings for backup.
+    
+    Args:
+        status_filter: Optional status to filter by (raw, processed, indexed)
+        
+    Returns:
+        List of recording export dicts
+    """
+    init_db()
+    session = SessionLocal()
+    
+    try:
+        query = select(Recording)
+        if status_filter:
+            query = query.where(Recording.status == status_filter)
+        
+        recordings = session.execute(query).scalars().all()
+        return [export_recording(rec.id, include_segments=True) for rec in recordings]
+        
     finally:
         session.close()
