@@ -40,15 +40,18 @@ class NotionTranscriptClient:
         last_check = (datetime.now() - timedelta(minutes=minutes_ago)).isoformat()
         
         try:
-            response = self.client.databases.query(
-                database_id=self.database_id,
-                filter={
-                    "and": [
-                        {"property": "Status", "select": {"equals": "New"}},
-                        {"property": "Created", "date": {"after": last_check}}
-                    ]
-                },
-                page_size=100  # Increased for batch processing
+            response = self.client.request(
+                path=f"databases/{self.database_id}/query",
+                method="POST",
+                body={
+                    "filter": {
+                        "and": [
+                            {"property": "Status", "select": {"equals": "New"}},
+                            {"property": "Created", "date": {"after": last_check}}
+                        ]
+                    },
+                    "page_size": 100  # Increased for batch processing
+                }
             )
             
             results = response.get("results", [])
@@ -72,16 +75,19 @@ class NotionTranscriptClient:
             start_cursor = None
             
             while has_more:
-                query_params = {
-                    "database_id": self.database_id,
+                body = {
                     "filter": {"property": "Status", "select": {"equals": "Processed"}},
                     "page_size": 100
                 }
                 
                 if start_cursor:
-                    query_params["start_cursor"] = start_cursor
+                    body["start_cursor"] = start_cursor
                 
-                response = self.client.databases.query(**query_params)
+                response = self.client.request(
+                    path=f"databases/{self.database_id}/query",
+                    method="POST",
+                    body=body
+                )
                 all_results.extend(response.get("results", []))
                 
                 has_more = response.get("has_more", False)

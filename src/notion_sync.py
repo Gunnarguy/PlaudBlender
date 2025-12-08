@@ -184,15 +184,19 @@ class NotionSyncService:
             return self._page_cache[recording_id]
         
         try:
+            # Use client.request() to call the database query endpoint
             response = self._retry_with_backoff(
                 "find_page",
-                self.client.databases.query,
-                database_id=self.config.database_id,
-                filter={
-                    "property": self.config.recording_id_property,
-                    "rich_text": {"equals": recording_id}
-                },
-                page_size=1
+                self.client.request,
+                path=f"databases/{self.config.database_id}/query",
+                method="POST",
+                body={
+                    "filter": {
+                        "property": self.config.recording_id_property,
+                        "rich_text": {"equals": recording_id}
+                    },
+                    "page_size": 1
+                }
             )
             
             results = response.get("results", [])
@@ -394,10 +398,20 @@ class NotionSyncService:
                 if start_cursor:
                     query_params["start_cursor"] = start_cursor
                 
+                # Use client.request() to query database
+                body = {
+                    "filter": query_params.get("filter", {}),
+                    "page_size": query_params.get("page_size", 100)
+                }
+                if start_cursor:
+                    body["start_cursor"] = start_cursor
+                    
                 response = self._retry_with_backoff(
                     "pull_edits",
-                    self.client.databases.query,
-                    **query_params
+                    self.client.request,
+                    path=f"databases/{self.config.database_id}/query",
+                    method="POST",
+                    body=body
                 )
                 
                 for page in response.get("results", []):
@@ -557,10 +571,20 @@ class NotionSyncService:
                 if start_cursor:
                     query_params["start_cursor"] = start_cursor
                 
+                # Use client.request() to query database
+                body = {
+                    "filter": query_params.get("filter", {}),
+                    "page_size": query_params.get("page_size", 100)
+                }
+                if start_cursor:
+                    body["start_cursor"] = start_cursor
+                    
                 response = self._retry_with_backoff(
                     "count_pages",
-                    self.client.databases.query,
-                    **query_params
+                    self.client.request,
+                    path=f"databases/{self.config.database_id}/query",
+                    method="POST",
+                    body=body
                 )
                 
                 count += len(response.get("results", []))

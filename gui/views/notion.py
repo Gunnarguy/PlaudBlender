@@ -297,10 +297,12 @@ class NotionView(BaseView):
                 from src.notion_sync import NotionSyncService
                 sync = NotionSyncService()
                 
-                response = sync.client.search(
-                    filter={"property": "object", "value": obj_type},
-                    page_size=50
-                )
+                # Search all objects, then filter client-side (Notion API doesn't support filter on object type)
+                response = sync.client.search(page_size=50)
+                
+                # Filter to requested object type
+                filtered_results = [item for item in response.get("results", []) if item.get("object") == obj_type]
+                response["results"] = filtered_results
                 
                 results = []
                 for item in response.get("results", []):
