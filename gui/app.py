@@ -1822,14 +1822,14 @@ class PlaudBlenderApp:
                 
                 status['connected'] = True
                 
-                # Count pages using search (more reliable than data_sources.query)
+                # Count pages using search (simpler - just search all, don't filter)
                 try:
-                    # Search for pages, limited to 100 for performance
-                    response = sync.client.search(
-                        filter={'property': 'object', 'value': 'page'},
-                        page_size=100
-                    )
-                    status['pages_synced'] = len(response.get('results', []))
+                    # Search workspace, limited to 100 for performance
+                    # Don't use filter - it's more reliable to just search all objects
+                    response = sync.client.search(page_size=100)
+                    # Count only pages (not databases)
+                    pages = [r for r in response.get('results', []) if r.get('object') == 'page']
+                    status['pages_synced'] = len(pages)
                 except Exception as query_error:
                     # If search fails, just show 0
                     status['pages_synced'] = 0
