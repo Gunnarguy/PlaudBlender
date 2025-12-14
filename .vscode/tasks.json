@@ -1,0 +1,36 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run: GUI (gui.py)",
+      "type": "shell",
+      "command": "python",
+      "args": ["gui.py"],
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "Test: pytest (quick)",
+      "type": "shell",
+      "command": "python",
+      "args": ["-m", "pytest", "tests", "-q"],
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "Test: pytest (verbose)",
+      "type": "shell",
+      "command": "python",
+      "args": ["-m", "pytest", "tests", "-v", "--tb=short"],
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "Run: MCP server",
+      "type": "shell",
+      "command": "python",
+      "args": ["-m", "scripts.mcp_server"],
+      "problemMatcher": []
+    }
+  ]
+}
