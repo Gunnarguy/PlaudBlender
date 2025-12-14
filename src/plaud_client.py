@@ -82,7 +82,7 @@ class PlaudClient:
         
         response = requests.request(method, url, headers=headers, **kwargs)
 
-        # Handle token refresh / invalid token
+        # Handle token refresh / invalid token (401, 422)
         if response.status_code in (401, 422):
             logger.info("Token rejected (%s), refreshing...", response.status_code)
             try:
@@ -92,6 +92,11 @@ class PlaudClient:
                 raise
             headers = self._get_headers()
             response = requests.request(method, url, headers=headers, **kwargs)
+        
+        # Handle server errors with retry
+        if response.status_code >= 500:
+            logger.warning(f"Plaud API server error {response.status_code}: {response.text[:100]}")
+            # Don't raise immediately - let caller handle it
         
         response.raise_for_status()
         return response.json()

@@ -1,46 +1,76 @@
-# PlaudBlender AI Instructions
+# PlaudBlender — AI Agent Instructions
 
-## Project Overview
+> **This file is auto-loaded into every Copilot conversation.** It tells you how to navigate and work in this project.
 
-PlaudBlender transforms Plaud voice recordings into a searchable, visual knowledge graph. It integrates Plaud's API, Google's Gemini models (via LlamaIndex), Notion, and Pinecone to process, store, and visualize transcript data.
+## Quick Orientation
+
+| What | Where |
+|------|-------|
+| **Full docs** | `docs/PROJECT_GUIDE.md` — read this first for architecture, structure, and roadmap |
+| **Task tracker** | `docs/audit-checklist.md` — live checklist of what's done and what's next |
+| **Pinecone rules** | `docs/pinecone-integration-playbook.md` — metadata schema, namespaces, action items |
+| **Entry point** | `python gui.py` — launches the Tkinter GUI |
+| **Tests** | `python -m pytest tests/` — 57 tests, run before committing |
+
+## What This Project Does
+
+PlaudBlender transforms **Plaud voice recordings** into a **searchable knowledge base**:
+- Fetches transcripts from Plaud API (OAuth)
+- Stores in SQLite (source of truth) and Pinecone (vector search)
+- Provides a GUI for search, visualization, and management
+- Optional: Notion sync, OpenAI chat, MCP server
+
+## Project Structure (Simplified)
+
+```
+gui.py                  → Entry point (delegates to gui/app.py)
+plaud_setup.py          → Setup wizard + OAuth
+scripts/                → CLI tools (sync_to_pinecone.py, process_pending.py, etc.)
+gui/                    → Modular GUI (views/, services/, components/)
+src/                    → Core logic (plaud_client, pinecone_client, database/, processing/)
+tests/                  → Pytest suite
+docs/                   → PROJECT_GUIDE.md, audit-checklist.md, playbooks
+archive/                → Retired code (don't import from here)
+```
 
 ## User Philosophy
 
-_Gunnar loves data, granularity, and depth—the ability to drill down and see what's happening under the hood. The ultimate goal is a GUI he'll use daily: one that surfaces contextual tooltips, shows retrieval scores and system status, and meshes Plaud recordings, Pinecone vectors, Notion pages, and future data streams into a unified knowledge hub. The MCP+Notion integration is a key enabler for linking scattered platforms (notes, projects, ideas) into one coherent web. Treat every UI addition as an opportunity to expose useful information, not hide it._
+> _"Gunnar loves data, granularity, and depth—the ability to drill down and see what's happening under the hood."_
 
-## Architecture & Data Flow
+- **Expose metrics** (latency, read units, scores) in the UI
+- **Add tooltips** explaining what every control does
+- **Show provenance** — link vectors back to source recordings
+- **Never hide information** that could help debug or understand behavior
 
-1.  **Ingestion:** `src/plaud_client.py` fetches recordings/transcripts from Plaud API using OAuth (`src/plaud_oauth.py`).
-2.  **Processing:** `src/dual_store_processor.py` uses Gemini to extract themes and summaries.
-3.  **Storage (Dual Store):**
-    - **Pinecone:** Stores vectors in two namespaces: `full_text` (chunked transcripts) and `summaries` (AI syntheses).
-    - **Notion:** `src/notion_client.py` syncs metadata and content to Notion pages.
-4.  **Visualization:** `gui.py` provides a Tkinter interface for management and visualization (using `vis.js` in webviews).
+## Coding Rules
 
-## Critical Workflows
+1. **Environment:** All secrets from `.env` via `python-dotenv`. Never hardcode.
+2. **Threading:** GUI stays responsive — all I/O in background threads via `gui/utils/async_tasks.py`
+3. **Imports:** Use `from src.X import Y` pattern. All `src/` subdirs have `__init__.py`.
+4. **Schemas:** Validate data with Pydantic (`src/models/schemas.py`)
+5. **Metadata:** Use `src/models/vector_metadata.py::build_metadata()` when upserting to Pinecone
+6. **Tests:** Run `pytest tests/` before any commit. Currently 57 tests.
 
-- **Setup:** Run `python plaud_setup.py` to handle OAuth authentication and `.env` generation.
-- **GUI:** The main entry point is `python gui.py`. It uses `threading` to keep the UI responsive during API calls.
-- **Sync:** `scripts/sync_to_pinecone.py` handles the batch synchronization pipeline.
-- **Testing:** Use `python test_components.py` for integration tests. This script uses `rich` for formatted console output.
+## Before You Code
 
-## Coding Conventions
+1. **Read `docs/PROJECT_GUIDE.md`** if you need full context
+2. **Check `docs/audit-checklist.md`** to see current priorities
+3. **Read `docs/pinecone-integration-playbook.md`** before touching Pinecone/search code
+4. **Run tests** after any change: `python -m pytest tests/ -q`
 
-- **Environment Variables:** All secrets (API keys, Client IDs) must be loaded from `.env` using `python-dotenv`. Never hardcode credentials.
-- **Logging:** Use the standard `logging` library. Initialize with `logging.basicConfig(level=logging.INFO)` in scripts.
-- **UI Development:** `gui.py` uses `tkinter`. Heavy operations must run in separate threads to avoid freezing the main loop.
-- **LLM Integration:** Use `llama_index` abstractions for Gemini interactions. Respect token limits when chunking (`MAX_CHUNK_TOKENS = 8000`).
-- **Tooltips & Transparency:** When adding UI elements, include tooltips explaining what each control does and expose relevant metrics (scores, latency, counts) where practical.
+## Key Services (gui/services/)
 
-## Key Files
+| Service | Purpose |
+|---------|---------|
+| `transcripts_service` | Fetch/process Plaud recordings via SQL |
+| `pinecone_service` | Index/namespace management, vector ops |
+| `search_service` | Semantic search with reranking |
+| `embedding_service` | Configurable embeddings (Gemini, OpenAI, Pinecone) |
+| `chat_service` | OpenAI Responses API integration |
 
-- `gui.py`: Main application logic and UI event handling.
-- `src/dual_store_processor.py`: Core logic for AI processing and Pinecone interaction.
-- `src/plaud_client.py`: Wrapper for Plaud API endpoints.
-- `test_components.py`: Integration tests for individual components (Notion, Gemini, Plaud).
+## Don't
 
-## Process & Checklist
-
-- **Live audit checklist:** `docs/audit-checklist.md` is the single source of truth for UX/feature/infra tasks. Update it as items are completed so contributors and Copilot have current status and next actions.
-- **Pinecone playbook (authoritative):** Always read `docs/pinecone-integration-playbook.md` before touching Pinecone/search code. It defines required metadata, namespaces, and the exact action items for agents. Keep it updated as changes land.
-- **RAG accuracy roadmap:** `docs/gemini-deep-research-RAG.txt` is the reference for achieving 99.9% retrieval accuracy (hybrid search, reranking, hierarchical chunking, GraphRAG). Section 23 of the audit checklist tracks progress.
+- Don't import from `archive/` — that's retired code
+- Don't use `src/dual_store_processor.py` — it's archived
+- Don't scatter `load_dotenv()` — use `src/config.py`
+- Don't make UI calls from background threads — use `root.after()`

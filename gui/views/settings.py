@@ -528,9 +528,21 @@ class SettingsView(BaseView):
 
         def done(result):
             if isinstance(result, Exception):
-                self.plaud_status.config(text=f"Plaud: {result}", foreground="#e74c3c")
+                error_msg = str(result)
+                # Distinguish between server errors and auth errors
+                if "500" in error_msg or "Internal Server Error" in error_msg:
+                    status_msg = "Plaud: server error (try again later)"
+                    user_msg = f"Plaud API server error (500). This is a temporary issue on Plaud's side.\n\nDetails: {error_msg}"
+                elif "401" in error_msg or "403" in error_msg or "Unauthorized" in error_msg:
+                    status_msg = "Plaud: auth failed (re-run setup)"
+                    user_msg = f"Authentication failed. Run plaud_setup.py to re-authenticate.\n\nDetails: {error_msg}"
+                else:
+                    status_msg = f"Plaud: error"
+                    user_msg = f"Token check failed: {error_msg}"
+                
+                self.plaud_status.config(text=status_msg, foreground="#e74c3c")
                 try:
-                    messagebox.showerror("Plaud", f"Token check failed: {result}")
+                    messagebox.showerror("Plaud", user_msg)
                 except Exception:
                     pass
                 return

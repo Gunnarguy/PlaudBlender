@@ -1,4 +1,9 @@
 import os
+import sys
+if os.getenv("PB_DEBUG_IMPORTS") == "1":
+    # Useful when diagnosing import/packaging issues; keep normal runs clean.
+    print("[DEBUG] gui/app.py loaded", file=sys.stderr)
+    sys.stderr.flush()
 from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
@@ -210,6 +215,8 @@ class PlaudBlenderApp:
                 self.load_pinecone_indexes()
                 # Check Notion status on startup
                 self.notion_check_status()
+                # Auto-extract knowledge graph in background after transcripts load
+                self.root.after(2000, self._auto_extract_knowledge_graph)
 
         self._execute_task(init_auth, after_auth)
 
@@ -1880,6 +1887,120 @@ class PlaudBlenderApp:
 
     def generate_mindmap(self):
         messagebox.showinfo("Mind Map", "Mind map generator coming soon")
+    
+    def _auto_extract_knowledge_graph(self):
+        """Silently extract knowledge graph in background after transcript load."""
+        import sys
+        print(f'🕸️ [ENTRY] _auto_extract_knowledge_graph called, state.transcripts: {len(state.transcripts) if state.transcripts else 0}', file=sys.stderr)
+        sys.stderr.flush()
+        
+        if not state.transcripts or len(state.transcripts) == 0:
+            log('INFO', '🕸️ Knowledge graph: 0 entities, 0 relationships (no transcripts)')
+            return
+        
+        log('INFO', f'🕸️ Auto-extracting knowledge graph from {len(state.transcripts)} transcripts...')
+        
+        def task():
+            import sys
+            print(f'🕸️ [TASK START] state.transcripts len: {len(state.transcripts) if state.transcripts else 0}', file=sys.stderr)
+            sys.stderr.flush()
+            
+            from src.processing.graph_rag import EntityExtractor
+            
+            # CRITICAL: Capture transcripts at task execution time
+            transcripts_to_process = state.transcripts[:50] if state.transcripts else []
+            print(f'🕸️ [DIRECT PRINT] Task starting: {len(transcripts_to_process)} transcripts', file=sys.stderr)
+            sys.stderr.flush()
+            log('INFO', f'🕸️ Task starting: {len(transcripts_to_process)} transcripts to process')
+            
+            if not transcripts_to_process:
+                print('🕸️ [DIRECT PRINT] No transcripts available!', file=sys.stderr)
+                log('WARNING', '🕸️ No transcripts available in task context!')
+                return {'entities': [], 'relationships': [], 'transcript_connections': {}}
+            
+            # Log what keys are available in the first transcript
+            if transcripts_to_process:
+                first = transcripts_to_process[0]
+                print(f'🕸️ [DIRECT PRINT] First transcript keys: {list(first.keys())}', file=sys.stderr)
+                log('INFO', f'🕸️ First transcript keys: {list(first.keys())}')
+            
+            extractor = EntityExtractor()
+            all_entities = []
+            all_relationships = []
+            transcript_connections = {}
+            processed_count = 0
+            skipped_count = 0
+            error_count = 0
+            
+            # Process each transcript (limit for performance)
+            for i, transcript in enumerate(transcripts_to_process):
+                text = transcript.get('full_text') or transcript.get('transcript') or transcript.get('text', '')
+                transcript_id = str(transcript.get('id', ''))
+                
+                # Debug: log what we're getting
+                if i < 3:  # Log first 3 for debugging
+                    text_preview = text[:100] if text else "(empty)"
+                    log('INFO', f'🕸️ Transcript {i}: id={transcript_id[:12]}..., text_len={len(text)}, preview={text_preview}...')
+                
+                if not text or len(text) < 100:
+                    skipped_count += 1
+                    if i < 5:  # Log first few skips
+                        log('INFO', f'🕸️ Skipping transcript {transcript_id[:12]}... (text_len={len(text)})')
+                    continue
+                    
+                try:
+                    # Extract entities and relationships (returns tuple)
+                    entities, relationships = extractor.extract_entities(text, doc_id=transcript_id)
+                    processed_count += 1
+                    
+                    log('INFO', f'🕸️ Extracted {len(entities)} entities, {len(relationships)} relationships from {transcript_id[:12]}...')
+                    
+                    # Track which transcripts mention which entities
+                    for entity in entities:
+                        entity_name = entity.name
+                        if entity_name not in transcript_connections:
+                            transcript_connections[entity_name] = []
+                        transcript_connections[entity_name].append(transcript_id)
+                        
+                        # Convert to dict and add if not duplicate
+                        entity_dict = entity.to_dict()
+                        if not any(e['name'] == entity_name for e in all_entities):
+                            all_entities.append(entity_dict)
+                    
+                    # Add relationships
+                    for rel in relationships:
+                        rel_dict = rel.to_dict()
+                        all_relationships.append(rel_dict)
+                        
+                except Exception as e:
+                    error_count += 1
+                    log('ERROR', f'🕸️ Entity extraction failed for {transcript_id[:12]}...: {type(e).__name__}: {e}')
+                    continue
+            
+            log('INFO', f'🕸️ Extraction complete: processed={processed_count}, skipped={skipped_count}, errors={error_count}')
+            
+            return {
+                'entities': all_entities,
+                'relationships': all_relationships,
+                'transcript_connections': transcript_connections
+            }
+        
+        def done(result):
+            if 'knowledge_graph' in self.views:
+                self.views['knowledge_graph'].set_graph_data(
+                    entities=result['entities'],
+                    relationships=result['relationships'],
+                    transcript_connections=result['transcript_connections']
+                )
+            
+            entity_count = len(result['entities'])
+            rel_count = len(result['relationships'])
+            log('INFO', f"🕸️ Knowledge graph: {entity_count} entities, {rel_count} relationships")
+            
+            # Update dashboard with graph stats
+            self._update_dashboard_graph_stats(entity_count, rel_count)
+        
+        self._execute_task(task, done)
 
     def refresh_knowledge_graph(self):
         """
@@ -1889,25 +2010,25 @@ class PlaudBlenderApp:
         self.set_status("🕸️ Extracting knowledge graph...", True)
         
         def task():
-            from src.processing.graph_rag import GraphRAGExtractor
+            from src.processing.graph_rag import EntityExtractor
             
-            extractor = GraphRAGExtractor()
+            extractor = EntityExtractor()
             all_entities = []
             all_relationships = []
             transcript_connections = {}
             
             # Process each transcript
             for transcript in state.transcripts[:50]:  # Limit for performance
-                text = transcript.get('full_text') or transcript.get('text', '')
+                text = transcript.get('full_text') or transcript.get('transcript') or transcript.get('text', '')
                 if not text or len(text) < 100:
                     continue
                     
                 try:
-                    # Extract entities
-                    entities = extractor.extract_entities(text)
+                    # Extract entities and relationships (returns tuple)
+                    transcript_id = str(transcript.get('id', ''))
+                    entities, relationships = extractor.extract_entities(text, doc_id=transcript_id)
                     
                     # Track which transcripts mention which entities
-                    transcript_id = str(transcript.get('id', ''))
                     for entity in entities:
                         entity_name = entity.name
                         if entity_name not in transcript_connections:
@@ -1915,14 +2036,13 @@ class PlaudBlenderApp:
                         transcript_connections[entity_name].append(transcript_id)
                         
                         # Convert to dict and add if not duplicate
-                        entity_dict = entity.__dict__
+                        entity_dict = entity.to_dict()
                         if not any(e['name'] == entity_name for e in all_entities):
                             all_entities.append(entity_dict)
                     
-                    # Extract relationships
-                    relationships = extractor.extract_relationships(text, entities)
+                    # Add relationships
                     for rel in relationships:
-                        rel_dict = rel.__dict__
+                        rel_dict = rel.to_dict()
                         all_relationships.append(rel_dict)
                         
                 except Exception as e:

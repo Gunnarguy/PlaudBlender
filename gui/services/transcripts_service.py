@@ -22,13 +22,27 @@ def fetch_transcripts(limit: int = 100, ingest: bool = True) -> List[Dict]:
     try:
         init_db()
         if ingest:
-            client = get_plaud_client()
-            stored = client.fetch_and_store_recordings(limit=limit)
-            log('INFO', f"Stored {len(stored)} recordings to SQLite")
+            try:
+                client = get_plaud_client()
+                stored = client.fetch_and_store_recordings(limit=limit)
+                log('INFO', f"Stored {len(stored)} recordings to SQLite")
+            except Exception as e:
+                error_msg = str(e)
+                if "500" in error_msg or "Internal Server Error" in error_msg:
+                    log('WARNING', f"Plaud API server error (500) - loading cached data from SQLite")
+                else:
+                    log('ERROR', f"Failed to fetch from Plaud: {e} - loading cached data")
+                # Continue to load from SQLite even if API fails
+        
         enhanced = load_db_recordings()
         state.transcripts = enhanced
         state.filtered_transcripts = enhanced
-        log('INFO', f"Loaded {len(enhanced)} recordings from SQLite")
+        
+        if enhanced:
+            log('INFO', f"Loaded {len(enhanced)} recordings from SQLite")
+        else:
+            log('WARNING', "No transcripts in database. Plaud API may be down.")
+        
         return enhanced
     except Exception as e:
         log('ERROR', f"Failed to load transcripts: {e}")
@@ -60,6 +74,10 @@ def get_transcript_text(recording_id: str) -> str:
     try:
         return client.get_transcript_text(recording_id)
     except Exception as e:
+        error_msg = str(e)
+        if "500" in error_msg or "Internal Server Error" in error_msg:
+            log('WARNING', f"Plaud API server error (500) - transcript not available for {recording_id}")
+            return "[Transcript unavailable - Plaud API server error. Try again later.]"
         log('ERROR', f"Failed to fetch transcript text for {recording_id}: {e}")
         raise
 
@@ -125,6 +143,9 @@ def _normalize_db_recording(rec: Recording) -> Dict:
         "status": rec.status,
         "source": rec.source,
         "namespace": "full_text",
+        # Include transcript text for knowledge graph extraction
+        "transcript": rec.transcript or "",
+        "full_text": rec.transcript or "",
     }
 
 

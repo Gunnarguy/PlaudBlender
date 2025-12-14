@@ -131,6 +131,13 @@ class TranscriptsView(BaseView):
         self.recordings = recordings or []
         self._apply_filters()
         self._update_status_chips()
+        
+        # Update empty state message based on whether we have any data
+        if len(self.recordings) == 0:
+            self.empty_label.config(text="No transcripts loaded.\nCheck Plaud API status or wait for server recovery.")
+        else:
+            self.empty_label.config(text="No transcripts match current filters")
+        
         self._toggle_empty(len(self.recordings) == 0)
         self._on_select()  # refresh detail panel
 

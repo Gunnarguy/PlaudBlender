@@ -17,7 +17,9 @@ Entity Types:
 Reference: gemini-deep-research-RAG.txt Section on GraphRAG
 """
 import os
+import re
 import json
+import time
 import logging
 import hashlib
 from typing import List, Dict, Optional, Set, Tuple, Any
@@ -239,6 +241,11 @@ Return ONLY the JSON object, no other text.'''
         Args:
             llm: LLM instance (defaults to Gemini)
         """
+        # Rate limit guardrails (Gemini free tier is ~10 RPM per model)
+        rpm = float(os.getenv("GEMINI_MAX_RPM", "10"))
+        self.min_interval = max(60.0 / rpm, 0) + 0.5  # small buffer
+        self._last_call_ts: float = 0.0
+
         if llm is None:
             try:
                 from llama_index.llms.gemini import Gemini
@@ -278,26 +285,31 @@ Return ONLY the JSON object, no other text.'''
         if not self.llm:
             logger.warning("No LLM available for entity extraction")
             return [], []
-        
+
+        # Respect rate limits before issuing the call
+        self._respect_rate_limit()
+
         # Truncate text if needed
         truncated_text = text[:max_text_chars]
-        
+
         try:
-            prompt = self.EXTRACTION_PROMPT.format(text=truncated_text)
+            # Avoid str.format eating JSON braces; simply replace the placeholder
+            prompt = self.EXTRACTION_PROMPT.replace('{text}', truncated_text)
             response = self.llm.complete(prompt).text.strip()
-            
+            self._last_call_ts = time.monotonic()
+
             # Parse JSON from response
             # Handle markdown code blocks
             if response.startswith("```"):
-                response = response.split("```")[1]
+                response = response.split("```", 2)[1]
                 if response.startswith("json"):
                     response = response[4:]
                 response = response.strip()
-            
+
             data = json.loads(response)
-            
-            entities = []
-            relationships = []
+
+            entities, relationships = self._parse_entities_from_response(data, doc_id, len(truncated_text))
+            return entities, relationships
             
             # Process people
             for person in data.get("people", []):
@@ -401,8 +413,152 @@ Return ONLY the JSON object, no other text.'''
             logger.warning(f"Failed to parse entity extraction response: {e}")
             return [], []
         except Exception as e:
+            err_text = str(e)
+
+            if "429" in err_text or "quota" in err_text.lower():
+                retry_delay = self._parse_retry_delay(err_text, default=self.min_interval)
+                logger.warning(f"Entity extraction hit rate limit; sleeping {retry_delay:.1f}s then retrying once")
+                time.sleep(retry_delay)
+                try:
+                    self._respect_rate_limit()
+                    response = self.llm.complete(prompt).text.strip()
+                    self._last_call_ts = time.monotonic()
+                    if response.startswith("```"):
+                        response = response.split("```", 2)[1]
+                        if response.startswith("json"):
+                            response = response[4:]
+                        response = response.strip()
+                    data = json.loads(response)
+                    return self._parse_entities_from_response(data, doc_id, len(truncated_text))
+                except Exception as e2:
+                    logger.error(f"Entity extraction retry failed: {e2}. Snippet: {str(e2)[:400]}")
+                    return [], []
+
             logger.error(f"Entity extraction failed: {e}")
             return [], []
+
+    def _respect_rate_limit(self) -> None:
+        """Sleep if the previous call was too recent."""
+        if self._last_call_ts <= 0:
+            return
+        elapsed = time.monotonic() - self._last_call_ts
+        if elapsed < self.min_interval:
+            time.sleep(self.min_interval - elapsed)
+
+    def _parse_retry_delay(self, err_text: str, default: float) -> float:
+        """Extract retry delay seconds from Gemini error if present."""
+        match = re.search(r"retry_delay\s*\{\s*seconds:\s*(\d+)", err_text)
+        if match:
+            try:
+                return float(match.group(1))
+            except ValueError:
+                return default
+        return default
+
+    def _parse_entities_from_response(self, data: Dict[str, Any], doc_id: str, text_len: int) -> Tuple[List[Entity], List[Relationship]]:
+        """Parse entities/relationships from a JSON response payload."""
+        entities: List[Entity] = []
+        relationships: List[Relationship] = []
+
+        # Process people
+        for person in data.get("people", []):
+            name = person.get("name") if isinstance(person, dict) else person
+            if name:
+                entity = Entity(
+                    id=Entity.generate_id(name, EntityType.PERSON),
+                    name=name,
+                    entity_type=EntityType.PERSON,
+                    metadata={"role": person.get("role")} if isinstance(person, dict) else {},
+                )
+                entities.append(entity)
+                relationships.append(Relationship(
+                    source_id=doc_id,
+                    target_id=entity.id,
+                    relation_type=RelationType.MENTIONS,
+                ))
+
+        # Process projects
+        for project in data.get("projects", []):
+            name = project.get("name") if isinstance(project, dict) else project
+            if name:
+                entity = Entity(
+                    id=Entity.generate_id(name, EntityType.PROJECT),
+                    name=name,
+                    entity_type=EntityType.PROJECT,
+                    metadata={"status": project.get("status")} if isinstance(project, dict) else {},
+                )
+                entities.append(entity)
+                relationships.append(Relationship(
+                    source_id=doc_id,
+                    target_id=entity.id,
+                    relation_type=RelationType.MENTIONS,
+                ))
+
+        # Process topics
+        for topic in data.get("topics", []):
+            if topic:
+                entity = Entity(
+                    id=Entity.generate_id(topic, EntityType.TOPIC),
+                    name=topic,
+                    entity_type=EntityType.TOPIC,
+                )
+                entities.append(entity)
+                relationships.append(Relationship(
+                    source_id=doc_id,
+                    target_id=entity.id,
+                    relation_type=RelationType.DISCUSSED_IN,
+                ))
+
+        # Process actions
+        for action in data.get("actions", []):
+            task = action.get("task") if isinstance(action, dict) else action
+            if task:
+                entity = Entity(
+                    id=Entity.generate_id(task[:50], EntityType.ACTION),
+                    name=task,
+                    entity_type=EntityType.ACTION,
+                    metadata={
+                        "assignee": action.get("assignee"),
+                        "deadline": action.get("deadline"),
+                    } if isinstance(action, dict) else {},
+                )
+                entities.append(entity)
+
+                # Link action to document
+                relationships.append(Relationship(
+                    source_id=doc_id,
+                    target_id=entity.id,
+                    relation_type=RelationType.MENTIONS,
+                ))
+
+                # Link action to assignee if present
+                if isinstance(action, dict) and action.get("assignee"):
+                    assignee_id = Entity.generate_id(action["assignee"], EntityType.PERSON)
+                    relationships.append(Relationship(
+                        source_id=entity.id,
+                        target_id=assignee_id,
+                        relation_type=RelationType.ASSIGNED_TO,
+                    ))
+
+        # Process organizations
+        for org in data.get("organizations", []):
+            if org:
+                entity = Entity(
+                    id=Entity.generate_id(org, EntityType.ORGANIZATION),
+                    name=org,
+                    entity_type=EntityType.ORGANIZATION,
+                )
+                entities.append(entity)
+                relationships.append(Relationship(
+                    source_id=doc_id,
+                    target_id=entity.id,
+                    relation_type=RelationType.MENTIONS,
+                ))
+
+        logger.info(f"   📊 Extracted {len(entities)} entities, {len(relationships)} relationships")
+        if len(entities) == 0:
+            logger.warning(f"[GraphRAG] No entities extracted for doc {doc_id}. Text len={text_len}")
+        return entities, relationships
 
 
 # Global knowledge graph instance

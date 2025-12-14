@@ -1,0 +1,18 @@
+[project]
+name = "plaudblender"
+version = "0.1.0"
+description = "Transform Plaud voice recordings into a searchable, visual knowledge graph"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+include = ["src", "gui", "scripts", "tests"]
+exclude = ["**/__pycache__", "lib", "data"]

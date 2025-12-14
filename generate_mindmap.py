@@ -50,7 +50,7 @@ def create_mind_map(output_file="output/knowledge_graph.html"):
         
         if not processed_pages:
             print("\n❌ No processed transcripts found!")
-            print("💡 Tip: Run lambda_function.py first to process some transcripts.\n")
+            print("💡 Tip: First get transcripts into Notion (via the GUI Notion sync, or your ingestion pipeline), then re-run this script.\n")
             return None
         
         print(f"\n📊 Found {len(processed_pages)} processed transcripts")

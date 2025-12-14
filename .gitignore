@@ -24,12 +24,16 @@ output/*.json
 deployment.zip
 package/
 
+# Archive (historical reference, not needed in repo)
+archive/
+docs/archive/
+
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
 *~
+# Note: .vscode/ is NOT ignored - shared project config
 
 # OS
 .DS_Store

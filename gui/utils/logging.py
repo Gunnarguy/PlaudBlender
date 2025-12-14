@@ -8,7 +8,7 @@ if not logger.handlers:
     formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", "%H:%M:%S")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)  # Enable DEBUG level to see knowledge graph extraction details
 logger.propagate = False
 
 

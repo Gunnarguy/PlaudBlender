@@ -83,15 +83,20 @@ PLAUD_CLIENT_ID=your_client_id_here
 PLAUD_CLIENT_SECRET=your_client_secret_here
 PLAUD_REDIRECT_URI=http://localhost:8080/callback
 
-# === AI PROCESSING (Optional - for knowledge graph features) ===
-# Google Gemini - https://makersuite.google.com/app/apikey
+# === AI / SEARCH (Optional, enables most 'knowledge graph' features) ===
+# Google Gemini - https://ai.google.dev/
 GEMINI_API_KEY=your_gemini_key_here
 
 # Pinecone Vector Database - https://www.pinecone.io/
 PINECONE_API_KEY=your_pinecone_key_here
 PINECONE_INDEX_NAME=transcripts
 
-# === LEGACY (Can remove if not using Notion) ===
+# OpenAI Responses (optional; enables in-app Chat + MCP server)
+OPENAI_API_KEY=your_openai_key_here
+OPENAI_DEFAULT_MODEL=gpt-4.1
+# OPENAI_BASE_URL=https://api.openai.com/v1
+
+# Notion (optional; enables direct Notion sync features)
 # NOTION_TOKEN=
 # NOTION_DATABASE_ID=
 """
@@ -182,9 +187,10 @@ def main():
         print("🎉 Setup complete! You're ready to use PlaudBlender.")
         print("="*60)
         print("\nNext steps:")
-        print("  • Run: python scripts/fetch_from_plaud.py  - Fetch all transcripts")
-        print("  • Run: python scripts/process_transcripts.py - Process with AI")
-        print("  • Run: python scripts/query_and_visualize.py - Query & visualize")
+        print("  • Run: python gui.py  - Launch the GUI")
+        print("  • Run: python scripts/sync_to_pinecone.py - Batch sync Plaud → Pinecone")
+        print("  • Run: python scripts/process_pending.py - Process pending SQL recordings into segments")
+        print("  • Run: python verify_integration.py - Developer feature wiring smoke test")
         print("\nFor help: python plaud_setup.py --help")
 
 if __name__ == "__main__":

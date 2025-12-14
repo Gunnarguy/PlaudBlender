@@ -65,8 +65,8 @@ class NotionView(BaseView):
         filter_frame = ttk.Frame(left_panel, style="Panel.TFrame")
         filter_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
         
-        ttk.Button(filter_frame, text="📚 Databases", command=lambda: self._filter_type("database")).pack(side="left", padx=2)
-        ttk.Button(filter_frame, text="📄 Pages", command=lambda: self._filter_type("page")).pack(side="left", padx=2)
+        ttk.Button(filter_frame, text="📊 View Databases", command=lambda: self._filter_type("database")).pack(side="left", padx=2)
+        ttk.Button(filter_frame, text="📄 View Pages", command=lambda: self._filter_type("page")).pack(side="left", padx=2)
         ttk.Button(filter_frame, text="📅 Recent", command=self._show_recent).pack(side="left", padx=2)
         ttk.Button(filter_frame, text="🔗 Linked", command=self._show_linked).pack(side="left", padx=2)
         
@@ -174,6 +174,12 @@ class NotionView(BaseView):
         """Load initial data when view is shown."""
         self._check_connection()
         self._load_recordings()
+        # Auto-load databases after connection check
+        self.after(800, self._auto_load_databases)
+    
+    def _auto_load_databases(self):
+        """Auto-load databases on startup for intuitive first view."""
+        self._filter_type("database")
     
     def _check_connection(self):
         """Check Notion API connection."""
@@ -279,14 +285,8 @@ class NotionView(BaseView):
         threading.Thread(target=lambda: self._run_task(task, done), daemon=True).start()
     
     def _filter_type(self, filter_type: str):
-        """Filter results by type."""
-        if not self._notion_results:
-            # If no results yet, do a search for that type
-            self._search_by_type(filter_type)
-        else:
-            # Filter existing results
-            filtered = [r for r in self._notion_results if r["type"] == filter_type]
-            self._populate_notion_tree(filtered)
+        """Filter results by type - always do fresh search for best UX."""
+        self._search_by_type(filter_type)
     
     def _search_by_type(self, obj_type: str):
         """Search specifically for databases or pages."""
@@ -305,6 +305,7 @@ class NotionView(BaseView):
                 response["results"] = filtered_results
                 
                 results = []
+                
                 for item in response.get("results", []):
                     title = "Untitled"
                     if obj_type == "page":
@@ -338,9 +339,17 @@ class NotionView(BaseView):
                 return
             
             results = result.get("results", [])
-            self._notion_results = results
-            self._populate_notion_tree(results)
-            self.connection_label.configure(text=f"✅ Found {len(results)} {obj_type}s")
+            # Filter out header rows
+            actual_results = [r for r in results if r.get('type') != 'header']
+            self._notion_results = actual_results
+            self._populate_notion_tree(actual_results)
+            
+            # Clear status message
+            count = len(actual_results)
+            type_name = "Database" if obj_type == "database" else "Page"
+            plural = "s" if count != 1 else ""
+            icon = "📊" if obj_type == "database" else "📄"
+            self.connection_label.configure(text=f"{icon} {count} {type_name}{plural} found", foreground="#27ae60")
         
         threading.Thread(target=lambda: self._run_task(task, done), daemon=True).start()
     
