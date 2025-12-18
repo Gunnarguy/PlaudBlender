@@ -1,5 +1,6 @@
 import os
 import sys
+
 if os.getenv("PB_DEBUG_IMPORTS") == "1":
     # Useful when diagnosing import/packaging issues; keep normal runs clean.
     print("[DEBUG] gui/app.py loaded", file=sys.stderr)
@@ -19,12 +20,20 @@ from gui.views.dashboard import DashboardView
 from gui.views.transcripts import TranscriptsView
 from gui.views.pinecone import PineconeView
 from gui.views.search import SearchView
+from gui.views.timeline import TimelineView
 from gui.views.settings import SettingsView
 from gui.views.logs import LogsView
 from gui.views.chat import ChatView
 from gui.views.knowledge_graph import KnowledgeGraphView
 from gui.views.notion import NotionView
-from gui.services import transcripts_service, pinecone_service, search_service, settings_service, chat_service
+from gui.services import (
+    transcripts_service,
+    pinecone_service,
+    search_service,
+    settings_service,
+    chat_service,
+    timeline_service,
+)
 from gui.services.clients import get_oauth_client, get_pinecone_client
 from gui.services.embedding_service import get_embedding_service, EmbeddingError
 
@@ -37,68 +46,70 @@ class PlaudBlenderApp:
         ModernTheme.apply(self.root)
 
         self.actions = {
-            'fetch_transcripts': self.fetch_transcripts,
-            'sync_selected': self.sync_selected,
-            'delete_selected': self.delete_selected,
-            'view_transcript': self.view_transcript,
-            'view_details': self.view_details,
-            'export_selected': self.export_transcripts,
-            'copy_metadata': self.copy_metadata,
-            'filter_transcripts': self.filter_transcripts,
+            "fetch_transcripts": self.fetch_transcripts,
+            "sync_selected": self.sync_selected,
+            "delete_selected": self.delete_selected,
+            "view_transcript": self.view_transcript,
+            "view_details": self.view_details,
+            "export_selected": self.export_transcripts,
+            "copy_metadata": self.copy_metadata,
+            "filter_transcripts": self.filter_transcripts,
             # Pinecone - Core
-            'load_pinecone_indexes': self.load_pinecone_indexes,
-            'refresh_vectors': self.refresh_vectors,
-            'change_index': self.change_index,
-            'select_namespace': self.select_namespace,
+            "load_pinecone_indexes": self.load_pinecone_indexes,
+            "refresh_vectors": self.refresh_vectors,
+            "change_index": self.change_index,
+            "select_namespace": self.select_namespace,
             # Pinecone - Query/Search (full SDK)
-            'similarity_search': self.similarity_search,
-            'fetch_by_metadata': self.fetch_by_metadata,
-            'query_all_namespaces': self.query_all_namespaces,
-            'fetch_by_ids': self.fetch_by_ids,
+            "similarity_search": self.similarity_search,
+            "fetch_by_metadata": self.fetch_by_metadata,
+            "query_all_namespaces": self.query_all_namespaces,
+            "fetch_by_ids": self.fetch_by_ids,
             # Pinecone - Mutations (full SDK)
-            'upsert_vector': self.upsert_vector,
-            'update_metadata': self.update_metadata,
-            'delete_vectors': self.delete_vectors,
+            "upsert_vector": self.upsert_vector,
+            "update_metadata": self.update_metadata,
+            "delete_vectors": self.delete_vectors,
             # Pinecone - Namespace management
-            'create_namespace': self.create_namespace,
-            'delete_namespace': self.delete_namespace,
-            'list_namespaces_detail': self.list_namespaces_detail,
+            "create_namespace": self.create_namespace,
+            "delete_namespace": self.delete_namespace,
+            "list_namespaces_detail": self.list_namespaces_detail,
             # Pinecone - Bulk
-            'bulk_import': self.bulk_import,
-            'auto_fix_dim': self.auto_fix_dim,
+            "bulk_import": self.bulk_import,
+            "auto_fix_dim": self.auto_fix_dim,
             # Search / settings
-            'perform_search': self.perform_search,
-            'perform_cross_namespace_search': self.perform_cross_namespace_search,
-            'perform_rerank_search': self.perform_rerank_search,
-            'perform_hybrid_search': self.perform_hybrid_search,
-            'perform_self_correcting_search': self.perform_self_correcting_search,
-            'perform_smart_search': self.perform_smart_search,
-            'perform_audio_similarity_search': self.perform_audio_similarity_search,
-            'perform_audio_analysis': self.perform_audio_analysis,
-            'search_full_text': self.search_full_text,
-            'search_summaries': self.search_summaries,
-            'save_search': self.save_search,
-            'load_saved_search': self.load_saved_search,
-            'goto_search': lambda: self.switch_view('search'),
-            'goto_settings': lambda: self.switch_view('settings'),
-            'goto_knowledge_graph': lambda: self.switch_view('knowledge_graph'),
-            'goto_notion': lambda: self.switch_view('notion'),
-            'refresh_knowledge_graph': self.refresh_knowledge_graph,
-            'sync_all': self.sync_all,
-            'sync_to_notion': self.sync_to_notion,
-            'notion_push': self.notion_push,
-            'notion_pull': self.notion_pull,
-            'notion_full_sync': self.notion_full_sync,
-            'notion_check_status': self.notion_check_status,
-            'notion_configure': self.notion_configure,
-            'refresh_dashboard': self.refresh_dashboard,
-            'generate_mindmap': self.generate_mindmap,
-            'refresh_indexes': self.refresh_indexes,
-            'save_settings': self.save_settings,
-            'reembed_all': self.reembed_all,
-            'show_db_browser': self.show_db_browser,
-            'chat_send': self.chat_send,
-            'goto_chat': lambda: self.switch_view('chat'),
+            "perform_search": self.perform_search,
+            "perform_cross_namespace_search": self.perform_cross_namespace_search,
+            "perform_rerank_search": self.perform_rerank_search,
+            "perform_hybrid_search": self.perform_hybrid_search,
+            "perform_self_correcting_search": self.perform_self_correcting_search,
+            "perform_smart_search": self.perform_smart_search,
+            "perform_audio_similarity_search": self.perform_audio_similarity_search,
+            "perform_audio_analysis": self.perform_audio_analysis,
+            "search_full_text": self.search_full_text,
+            "search_summaries": self.search_summaries,
+            "save_search": self.save_search,
+            "load_saved_search": self.load_saved_search,
+            "goto_search": lambda: self.switch_view("search"),
+            "goto_settings": lambda: self.switch_view("settings"),
+            "goto_knowledge_graph": lambda: self.switch_view("knowledge_graph"),
+            "goto_notion": lambda: self.switch_view("notion"),
+            "refresh_knowledge_graph": self.refresh_knowledge_graph,
+            "sync_all": self.sync_all,
+            "sync_to_notion": self.sync_to_notion,
+            "notion_push": self.notion_push,
+            "notion_pull": self.notion_pull,
+            "notion_full_sync": self.notion_full_sync,
+            "notion_check_status": self.notion_check_status,
+            "notion_configure": self.notion_configure,
+            "refresh_dashboard": self.refresh_dashboard,
+            "generate_mindmap": self.generate_mindmap,
+            "refresh_indexes": self.refresh_indexes,
+            "save_settings": self.save_settings,
+            "reembed_all": self.reembed_all,
+            "show_db_browser": self.show_db_browser,
+            "chat_send": self.chat_send,
+            "goto_chat": lambda: self.switch_view("chat"),
+            "timeline_build_report": self.timeline_build_report,
+            "timeline_generate_storyboard": self.timeline_generate_storyboard,
         }
 
         self._build_layout()
@@ -107,7 +118,7 @@ class PlaudBlenderApp:
 
         self.views = {}
         self._create_views()
-        self.switch_view('dashboard')
+        self.switch_view("dashboard")
 
         self.root.after(200, self.bootstrap)
 
@@ -116,24 +127,48 @@ class PlaudBlenderApp:
         container = ttk.Frame(self.root, style="Main.TFrame")
         container.pack(fill=tk.BOTH, expand=True)
 
+        # Vector DB label (keep internal view key as 'pinecone' for compatibility)
+        try:
+            from src.vector_store import is_qdrant
+
+            _is_qdrant = bool(is_qdrant())
+            vector_db_label = "🔷 Qdrant" if _is_qdrant else "🌲 Pinecone"
+        except Exception:
+            _is_qdrant = False
+            vector_db_label = "🌲 Pinecone"
+
+        # Store provider-aware terms for use across the app.
+        self.vector_db_label = vector_db_label
+        self.vector_db_name = "Qdrant" if _is_qdrant else "Pinecone"
+        # Keep Pinecone naming in code (actions/view key), but use correct nouns in UI.
+        self.vector_index_term = "collection" if _is_qdrant else "index"
+
         self.sidebar = ttk.Frame(container, style="Sidebar.TFrame", width=160)
         self.sidebar.pack(side=tk.LEFT, fill=tk.Y)
         self.sidebar.pack_propagate(False)
 
-        ttk.Label(self.sidebar, text="PlaudBlender", style="Header.TLabel").pack(pady=(12, 8), padx=10, anchor='w')
+        ttk.Label(self.sidebar, text="PlaudBlender", style="Header.TLabel").pack(
+            pady=(12, 8), padx=10, anchor="w"
+        )
 
         self.nav_buttons = {}
         for name, icon in [
-            ('dashboard', '📊 Dashboard'),
-            ('transcripts', '📝 Transcripts'),
-            ('pinecone', '🌲 Pinecone'),
-            ('search', '🔍 Search'),
-            ('knowledge_graph', '🕸️ Graph'),
-            ('chat', '💬 Chat'),
-            ('settings', '⚙️ Settings'),
-            ('logs', '📋 Logs'),
+            ("dashboard", "📊 Dashboard"),
+            ("transcripts", "📝 Transcripts"),
+            ("pinecone", vector_db_label),
+            ("search", "🔍 Search"),
+            ("timeline", "🗓 Timeline"),
+            ("knowledge_graph", "🕸️ Graph"),
+            ("chat", "💬 Chat"),
+            ("settings", "⚙️ Settings"),
+            ("logs", "📋 Logs"),
         ]:
-            btn = ttk.Button(self.sidebar, text=icon, style="Nav.TButton", command=lambda n=name: self.switch_view(n))
+            btn = ttk.Button(
+                self.sidebar,
+                text=icon,
+                style="Nav.TButton",
+                command=lambda n=name: self.switch_view(n),
+            )
             btn.pack(fill=tk.X)
             self.nav_buttons[name] = btn
 
@@ -143,28 +178,50 @@ class PlaudBlenderApp:
         # Global command bar for the most common actions
         self.topbar = ttk.Frame(self.content, style="Panel.TFrame", padding=8)
         self.topbar.pack(fill=tk.X)
-        ttk.Label(self.topbar, text="Quick actions", style="Muted.TLabel").pack(side=tk.LEFT, padx=(0, 8))
-        btn_fetch = ttk.Button(self.topbar, text="↻ Fetch", command=self.fetch_transcripts)
+        ttk.Label(self.topbar, text="Quick actions", style="Muted.TLabel").pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
+        btn_fetch = ttk.Button(
+            self.topbar, text="↻ Fetch", command=self.fetch_transcripts
+        )
         btn_fetch.pack(side=tk.LEFT, padx=2)
         ToolTip(btn_fetch, "Pull recordings from Plaud into the local database")
 
-        btn_sync_all = ttk.Button(self.topbar, text="🔄 Sync all", style="Accent.TButton", command=self.sync_all)
+        btn_sync_all = ttk.Button(
+            self.topbar,
+            text="🔄 Sync all",
+            style="Accent.TButton",
+            command=self.sync_all,
+        )
         btn_sync_all.pack(side=tk.LEFT, padx=2)
         ToolTip(btn_sync_all, "Chunk, embed, and upsert all pending recordings")
 
-        btn_search = ttk.Button(self.topbar, text="🔍 Search", command=lambda: self.switch_view('search'))
+        btn_search = ttk.Button(
+            self.topbar, text="🔍 Search", command=lambda: self.switch_view("search")
+        )
         btn_search.pack(side=tk.LEFT, padx=2)
         ToolTip(btn_search, "Open Semantic Search")
 
-        btn_chat = ttk.Button(self.topbar, text="💬 Chat", command=lambda: self.switch_view('chat'))
+        btn_chat = ttk.Button(
+            self.topbar, text="💬 Chat", command=lambda: self.switch_view("chat")
+        )
         btn_chat.pack(side=tk.LEFT, padx=2)
         ToolTip(btn_chat, "Open Chat (OpenAI Responses)")
 
-        btn_pine = ttk.Button(self.topbar, text="🌲 Pinecone", command=lambda: (self.switch_view('pinecone'), self.load_pinecone_indexes()))
+        btn_pine = ttk.Button(
+            self.topbar,
+            text=vector_db_label,
+            command=lambda: (
+                self.switch_view("pinecone"),
+                self.load_pinecone_indexes(),
+            ),
+        )
         btn_pine.pack(side=tk.LEFT, padx=2)
-        ToolTip(btn_pine, "Inspect vectors, namespaces, and run queries")
+        ToolTip(btn_pine, "Inspect vectors/collections, namespaces, and run queries")
 
-        btn_notion = ttk.Button(self.topbar, text="📓 Notion", command=lambda: self.switch_view('notion'))
+        btn_notion = ttk.Button(
+            self.topbar, text="📓 Notion", command=lambda: self.switch_view("notion")
+        )
         btn_notion.pack(side=tk.LEFT, padx=2)
         ToolTip(btn_notion, "Browse Notion workspace and link recordings")
 
@@ -172,24 +229,61 @@ class PlaudBlenderApp:
         self.view_container.pack(fill=tk.BOTH, expand=True)
 
     def _create_views(self):
-        self.views['dashboard'] = DashboardView(self.view_container, self.actions)
-        self.views['transcripts'] = TranscriptsView(self.view_container, self.actions)
-        self.views['pinecone'] = PineconeView(self.view_container, self.actions)
-        self.views['search'] = SearchView(self.view_container, self.actions)
-        self.views['knowledge_graph'] = KnowledgeGraphView(self.view_container, self.actions)
-        self.views['chat'] = ChatView(self.view_container, self.actions)
-        self.views['notion'] = NotionView(self.view_container, self.actions)
-        self.views['settings'] = SettingsView(self.view_container, self.actions)
-        self.views['logs'] = LogsView(self.view_container, self.actions)
+        # Many views are UI-heavy and/or trigger background I/O shortly after
+        # construction (e.g., Notion connection checks, index inspection).
+        # Creating all views up-front makes the app *feel* hung at startup.
+        #
+        # Strategy:
+        # - Create only the core views needed for immediate interaction.
+        # - Lazy-create the rest when the user navigates to them.
+        self._view_factories = {
+            "dashboard": lambda: DashboardView(self.view_container, self.actions),
+            "transcripts": lambda: TranscriptsView(self.view_container, self.actions),
+            "pinecone": lambda: PineconeView(self.view_container, self.actions),
+            "search": lambda: SearchView(self.view_container, self.actions),
+            "timeline": lambda: TimelineView(self.view_container, self.actions),
+            "knowledge_graph": lambda: KnowledgeGraphView(
+                self.view_container, self.actions
+            ),
+            "chat": lambda: ChatView(self.view_container, self.actions),
+            "notion": lambda: NotionView(self.view_container, self.actions),
+            "settings": lambda: SettingsView(self.view_container, self.actions),
+            "logs": lambda: LogsView(self.view_container, self.actions),
+        }
+
+        # Eager: keep startup snappy.
+        for name in ("dashboard", "transcripts", "search", "logs"):
+            self.views[name] = self._view_factories[name]()
+
+    def _ensure_view(self, name: str):
+        """Create a view on first access (startup performance)."""
+        if name in self.views:
+            return self.views[name]
+        factory = getattr(self, "_view_factories", {}).get(name)
+        if not factory:
+            raise KeyError(f"Unknown view: {name}")
+        self.views[name] = factory()
+        return self.views[name]
 
     def switch_view(self, name):
         for view in self.views.values():
             view.pack_forget()
-        view = self.views[name]
+        view = self._ensure_view(name)
         view.pack(fill=tk.BOTH, expand=True)
-        state.set_status(f"Viewing {name.title()}")
+        # Keep status text user-facing and provider-aware.
+        if name == "pinecone":
+            try:
+                from src.vector_store import is_qdrant
+
+                state.set_status(
+                    "Viewing Qdrant" if is_qdrant() else "Viewing Pinecone"
+                )
+            except Exception:
+                state.set_status("Viewing Pinecone")
+        else:
+            state.set_status(f"Viewing {name.title()}")
         self.status_bar.update_status()
-        if hasattr(view, 'on_show'):
+        if hasattr(view, "on_show"):
             view.on_show()
         for nav_name, btn in self.nav_buttons.items():
             style = "Accent.TButton" if nav_name == name else "Nav.TButton"
@@ -208,15 +302,16 @@ class PlaudBlenderApp:
 
         def after_auth(result):
             state.is_authenticated = bool(result)
-            self.views['dashboard'].update_stats({'auth': state.is_authenticated})
+            self.views["dashboard"].update_stats({"auth": state.is_authenticated})
             if state.is_authenticated:
                 self.fetch_transcripts()
-                # Auto-load Pinecone indexes so dashboard selectors are ready on launch
-                self.load_pinecone_indexes()
-                # Check Notion status on startup
-                self.notion_check_status()
-                # Auto-extract knowledge graph in background after transcripts load
-                self.root.after(2000, self._auto_extract_knowledge_graph)
+                # Keep startup responsive: defer vector/Notion/graph I/O until the
+                # user opens those views (or explicitly clicks refresh).
+                #
+                # This avoids:
+                # - loading 1000+ vectors into the UI on boot
+                # - Notion API calls before the user asks for them
+                # - any graph extraction work before transcripts are visible
 
         self._execute_task(init_auth, after_auth)
 
@@ -227,17 +322,32 @@ class PlaudBlenderApp:
             "PLAUD_CLIENT_SECRET": os.getenv("PLAUD_CLIENT_SECRET"),
         }
         redirect = os.getenv("PLAUD_REDIRECT_URI")
-        pinecone_key = os.getenv("PINECONE_API_KEY")
+
+        # Only warn about Pinecone API key when Pinecone is the active provider.
+        try:
+            from src.vector_store import is_pinecone
+
+            needs_pinecone_key = is_pinecone()
+        except Exception:
+            needs_pinecone_key = True
+
+        pinecone_key = (
+            os.getenv("PINECONE_API_KEY") if needs_pinecone_key else "__IGNORED__"
+        )
 
         missing = [k for k, v in required.items() if not v]
         warnings = []
         if not redirect:
-            warnings.append("PLAUD_REDIRECT_URI (using default http://localhost:8080/callback)")
+            warnings.append(
+                "PLAUD_REDIRECT_URI (using default http://localhost:8080/callback)"
+            )
         if not pinecone_key:
             warnings.append("PINECONE_API_KEY (Pinecone features disabled)")
 
         if missing:
-            msg = f"Missing required env: {', '.join(missing)}. Update .env and restart."
+            msg = (
+                f"Missing required env: {', '.join(missing)}. Update .env and restart."
+            )
             self.set_status(msg)
             try:
                 messagebox.showwarning("Configuration", msg)
@@ -255,13 +365,14 @@ class PlaudBlenderApp:
         state.set_status(message, busy)
         # Record lightweight activity for the dashboard feed
         from datetime import datetime
+
         timestamp = datetime.now().strftime("%H:%M:%S")
         state.logs.append(f"[{timestamp}] STATUS: {message}")
         self.status_bar.update_status()
         # Surface to dashboard activity feed for transparency
-        if 'dashboard' in self.views:
+        if "dashboard" in self.views:
             lines = state.logs[-10:]
-            self.views['dashboard'].update_activity(lines)
+            self.views["dashboard"].update_activity(lines)
 
     # ------------------- Transcript actions ---------------------------
     def fetch_transcripts(self):
@@ -272,27 +383,33 @@ class PlaudBlenderApp:
             return transcripts_service.fetch_transcripts()
 
         def done(result):
-            self.views['transcripts'].populate(result)
-            status_counts = {'raw': 0, 'processed': 0, 'indexed': 0}
+            self.views["transcripts"].populate(result)
+            status_counts = {"raw": 0, "processed": 0, "indexed": 0}
             for rec in result:
-                status_counts[rec.get('status', 'raw')] = status_counts.get(rec.get('status', 'raw'), 0) + 1
-            self.views['dashboard'].update_stats({
-                'recordings': len(result),
-                'last_sync': datetime.now().strftime('%Y-%m-%d %H:%M'),
-                'status_raw': status_counts.get('raw', 0),
-                'status_processed': status_counts.get('processed', 0),
-                'status_indexed': status_counts.get('indexed', 0),
-            })
-            self.views['dashboard'].update_recent_transcripts(result)
+                status_counts[rec.get("status", "raw")] = (
+                    status_counts.get(rec.get("status", "raw"), 0) + 1
+                )
+            self.views["dashboard"].update_stats(
+                {
+                    "recordings": len(result),
+                    "last_sync": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "status_raw": status_counts.get("raw", 0),
+                    "status_processed": status_counts.get("processed", 0),
+                    "status_indexed": status_counts.get("indexed", 0),
+                }
+            )
+            self.views["dashboard"].update_recent_transcripts(result)
             if not result:
-                messagebox.showwarning("Transcripts", "No transcripts loaded. Check Plaud auth or network.")
+                messagebox.showwarning(
+                    "Transcripts", "No transcripts loaded. Check Plaud auth or network."
+                )
             self.set_status("Ready")
 
         self._execute_task(task, done)
 
     def filter_transcripts(self, query):
         filtered = transcripts_service.filter_transcripts(query)
-        self.views['transcripts'].populate(filtered)
+        self.views["transcripts"].populate(filtered)
 
     def sync_selected(self):
         rec = self._get_selected_transcript()
@@ -301,11 +418,14 @@ class PlaudBlenderApp:
         self.set_status("Syncing transcript", True)
 
         def task():
-            rec_id = str(rec.get('id'))
+            rec_id = str(rec.get("id"))
             return transcripts_service.sync_recording(rec_id)
 
         def done(_):
-            messagebox.showinfo("Sync", "Transcript processed, embedded, and upserted to Pinecone")
+            messagebox.showinfo(
+                "Sync",
+                f"Transcript processed, embedded, and upserted to {self.vector_db_name}",
+            )
             self.refresh_vectors()
 
         self._execute_task(task, done)
@@ -314,32 +434,39 @@ class PlaudBlenderApp:
         rec = self._get_selected_transcript()
         if not rec:
             return
-        rec_id = str(rec.get('id'))
-        
+        rec_id = str(rec.get("id"))
+
         # Ask what to delete
         choice = messagebox.askyesnocancel(
             "Delete Recording",
             f"Delete recording '{rec.get('display_name', rec_id)}'?\n\n"
-            "• Yes = Delete from database AND Pinecone\n"
-            "• No = Delete from Pinecone only\n"
-            "• Cancel = Abort"
+            f"• Yes = Delete from database AND {self.vector_db_name}\n"
+            f"• No = Delete from {self.vector_db_name} only\n"
+            "• Cancel = Abort",
         )
-        
+
         if choice is None:  # Cancel
             return
-        
+
         delete_from_db = choice  # Yes = both, No = Pinecone only
         self.set_status("Deleting recording...", True)
 
         def task():
             if delete_from_db:
                 # Full delete using service
-                return transcripts_service.delete_recording(rec_id, delete_from_pinecone=True)
+                return transcripts_service.delete_recording(
+                    rec_id, delete_from_pinecone=True
+                )
             else:
-                # Pinecone only
+                # Vector DB only (service name kept for compatibility)
                 from gui.services import pinecone_service
-                res_full = pinecone_service.delete_vectors(ids=[rec_id], namespace="full_text")
-                res_sum = pinecone_service.delete_vectors(ids=[rec_id], namespace="summaries")
+
+                res_full = pinecone_service.delete_vectors(
+                    ids=[rec_id], namespace="full_text"
+                )
+                res_sum = pinecone_service.delete_vectors(
+                    ids=[rec_id], namespace="summaries"
+                )
                 return {"pinecone_deleted": True, "db_deleted": False}
 
         def done(result):
@@ -347,12 +474,14 @@ class PlaudBlenderApp:
             if result.get("db_deleted"):
                 msgs.append("✓ Removed from database")
             if result.get("pinecone_deleted"):
-                msgs.append("✓ Removed from Pinecone")
+                msgs.append(f"✓ Removed from {self.vector_db_name}")
             if result.get("errors"):
                 msgs.append(f"⚠ Errors: {', '.join(result['errors'])}")
-            
-            messagebox.showinfo("Delete", "\n".join(msgs) if msgs else "Delete completed")
-            
+
+            messagebox.showinfo(
+                "Delete", "\n".join(msgs) if msgs else "Delete completed"
+            )
+
             # Refresh views
             if result.get("db_deleted"):
                 self.fetch_transcripts()
@@ -374,7 +503,7 @@ class PlaudBlenderApp:
         self.set_status("Loading transcript", True)
 
         def task():
-            return transcripts_service.get_transcript_text(str(rec.get('id')))
+            return transcripts_service.get_transcript_text(str(rec.get("id")))
 
         def done(text):
             self._show_transcript_dialog(rec, text)
@@ -388,7 +517,7 @@ class PlaudBlenderApp:
         import json
         from tkinter import filedialog
 
-        rec_id = str(rec.get('id'))
+        rec_id = str(rec.get("id"))
         self.set_status("Exporting transcript", True)
 
         def task():
@@ -396,7 +525,9 @@ class PlaudBlenderApp:
             return {"id": rec_id, "metadata": rec, "text": text}
 
         def done(payload):
-            path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON", "*.json")])
+            path = filedialog.asksaveasfilename(
+                defaultextension=".json", filetypes=[("JSON", "*.json")]
+            )
             if path:
                 with open(path, "w") as f:
                     json.dump(payload, f, indent=2, default=str)
@@ -407,13 +538,18 @@ class PlaudBlenderApp:
 
     def copy_metadata(self):
         # Delegate to the view helper to copy metadata and Plaud extras
-        if 'transcripts' in self.views:
-            self.views['transcripts'].copy_metadata()
+        if "transcripts" in self.views:
+            self.views["transcripts"].copy_metadata()
 
     # ------------------- Pinecone ------------------------------------
-    def load_pinecone_indexes(self):
-        """Fetch available indexes/namespaces and populate dropdowns, then load vectors."""
-        self.set_status("Loading Pinecone indexes", True)
+    def load_pinecone_indexes(self, load_vectors: bool = True):
+        """Fetch available indexes/namespaces and populate dropdowns.
+
+        Args:
+            load_vectors: If True, also load the current namespace's vectors
+                into the Vector Workspace table.
+        """
+        self.set_status(f"Loading {self.vector_index_term}s", True)
 
         def task():
             return pinecone_service.get_indexes_and_namespaces()
@@ -422,59 +558,85 @@ class PlaudBlenderApp:
             indexes, namespaces, current, stats = result
 
             # If dimension mismatch, try to create/switch to a matching index
-            if stats.get('dim_mismatch'):
-                target_dim = stats.get('target_dim') or stats.get('dimension')
-                base = current or os.getenv('PINECONE_INDEX_NAME', 'transcripts')
-                candidate = pinecone_service.find_matching_index(target_dim) or f"{base}-{target_dim}"
-                log('WARNING', f"Dimension mismatch: index dim={stats.get('dimension')} vs target={target_dim}; "
-                               f"auto-switch/create -> {candidate}")
+            if stats.get("dim_mismatch"):
+                target_dim = stats.get("target_dim") or stats.get("dimension")
+                base = current or os.getenv("PINECONE_INDEX_NAME", "transcripts")
+                candidate = (
+                    pinecone_service.find_matching_index(target_dim)
+                    or f"{base}-{target_dim}"
+                )
+                log(
+                    "WARNING",
+                    f"Dimension mismatch: index dim={stats.get('dimension')} vs target={target_dim}; "
+                    f"auto-switch/create -> {candidate}",
+                )
                 try:
                     pinecone_service.ensure_matching_index(candidate, target_dim)
-                    indexes, namespaces, current, stats = pinecone_service.get_indexes_and_namespaces()
+                    indexes, namespaces, current, stats = (
+                        pinecone_service.get_indexes_and_namespaces()
+                    )
                     messagebox.showinfo(
-                        "Pinecone",
+                        self.vector_db_name,
                         f"Auto-switched to '{candidate}' at {target_dim}d to match provider",
                     )
                 except Exception as e:
                     messagebox.showwarning(
-                        "Pinecone",
+                        self.vector_db_name,
                         "Dimension mismatch: index dim does not match your embedding provider/model.\n\n"
                         f"Tried to auto-create/switch to '{candidate}' ({target_dim}d) and failed: {e}\n\n"
-                        "How to fix: either switch to an index with the same dimension as your provider, "
+                        f"How to fix: either switch to a {self.vector_index_term} with the same dimension as your provider, "
                         "or pick a provider/model that outputs the index dimension, then re-embed your data.",
                     )
 
-            view = self.views['pinecone']
+            view = self._ensure_view("pinecone")
             view.set_indexes(indexes, current)
             view.set_namespaces(namespaces)
             view.set_stats(stats)
             # Keep dashboard selectors in sync
-            self.views['dashboard'].set_indexes(indexes, current)
-            self.views['dashboard'].set_namespaces(namespaces, namespaces[0] if namespaces else None)
-            self.views['dashboard'].update_stats({
-                'pinecone': stats.get('vectors', 0),
-                'pinecone_namespaces': stats.get('namespaces', 0),
-                'pinecone_dim': stats.get('dimension', '—'),
-                'pinecone_metric': stats.get('metric', '—'),
-                'pinecone_dim_mismatch': stats.get('dim_mismatch', False),
-                'pinecone_index': stats.get('index_name', current),
-                'pinecone_provider': stats.get('provider', 'google'),
-                'pinecone_namespace': view.namespace_var.get() if hasattr(view, 'namespace_var') else None,
-            })
-            self.refresh_vectors()
+            self.views["dashboard"].set_indexes(indexes, current)
+            self.views["dashboard"].set_namespaces(
+                namespaces, namespaces[0] if namespaces else None
+            )
+            self.views["dashboard"].update_stats(
+                {
+                    "pinecone": stats.get("vectors", 0),
+                    "pinecone_namespaces": stats.get("namespaces", 0),
+                    "pinecone_dim": stats.get("dimension", "—"),
+                    "pinecone_metric": stats.get("metric", "—"),
+                    "pinecone_dim_mismatch": stats.get("dim_mismatch", False),
+                    "pinecone_index": stats.get("index_name", current),
+                    "pinecone_provider": stats.get("provider", "google"),
+                    "pinecone_namespace": (
+                        view.namespace_var.get()
+                        if hasattr(view, "namespace_var")
+                        else None
+                    ),
+                }
+            )
+            if load_vectors:
+                self.refresh_vectors()
+            else:
+                self.set_status("Ready")
 
         self._execute_task(task, done)
 
     def refresh_vectors(self):
-        self.set_status("Loading Pinecone vectors", True)
-        namespace = self.views['pinecone'].namespace_var.get()
+        noun = "points" if self.vector_db_name.lower() == "qdrant" else "vectors"
+        self.set_status(f"Loading {self.vector_db_name} {noun}", True)
+        view = self._ensure_view("pinecone")
+        namespace = view.namespace_var.get()
 
         def task():
             return pinecone_service.refresh_vectors(namespace)
 
         def done(result):
-            self.views['pinecone'].populate(result)
-            self.views['dashboard'].update_stats({'pinecone': len(result), 'last_pinecone': datetime.now().strftime('%Y-%m-%d %H:%M')})
+            view.populate(result)
+            self.views["dashboard"].update_stats(
+                {
+                    "pinecone": len(result),
+                    "last_pinecone": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                }
+            )
 
         self._execute_task(task, done)
 
@@ -484,17 +646,31 @@ class PlaudBlenderApp:
 
         def task():
             # Get fresh stats
-            indexes, namespaces, current, stats = pinecone_service.get_indexes_and_namespaces()
-            if not stats.get('dim_mismatch'):
-                return {"status": "ok", "message": "No mismatch", "stats": stats, "current": current, "indexes": indexes, "namespaces": namespaces}
+            indexes, namespaces, current, stats = (
+                pinecone_service.get_indexes_and_namespaces()
+            )
+            if not stats.get("dim_mismatch"):
+                return {
+                    "status": "ok",
+                    "message": "No mismatch",
+                    "stats": stats,
+                    "current": current,
+                    "indexes": indexes,
+                    "namespaces": namespaces,
+                }
 
-            target_dim = stats.get('target_dim') or stats.get('dimension')
-            base = current or os.getenv('PINECONE_INDEX_NAME', 'transcripts')
-            candidate = pinecone_service.find_matching_index(target_dim) or f"{base}-{target_dim}"
+            target_dim = stats.get("target_dim") or stats.get("dimension")
+            base = current or os.getenv("PINECONE_INDEX_NAME", "transcripts")
+            candidate = (
+                pinecone_service.find_matching_index(target_dim)
+                or f"{base}-{target_dim}"
+            )
 
             pinecone_service.ensure_matching_index(candidate, target_dim)
             # Refresh after switch
-            indexes2, namespaces2, current2, stats2 = pinecone_service.get_indexes_and_namespaces()
+            indexes2, namespaces2, current2, stats2 = (
+                pinecone_service.get_indexes_and_namespaces()
+            )
             return {
                 "status": "switched",
                 "candidate": candidate,
@@ -508,7 +684,9 @@ class PlaudBlenderApp:
         def done(res):
             self.set_status("Ready")
             if res.get("status") == "ok":
-                messagebox.showinfo("Pinecone", "No dimension mismatch detected.")
+                messagebox.showinfo(
+                    self.vector_db_name, "No dimension mismatch detected."
+                )
                 return
 
             candidate = res.get("candidate")
@@ -519,31 +697,33 @@ class PlaudBlenderApp:
             stats = res.get("stats")
 
             # Update view with new index/namespace/stats
-            view = self.views['pinecone']
+            view = self.views["pinecone"]
             view.set_indexes(indexes, current)
             view.set_namespaces(namespaces)
             view.set_stats(stats)
-            self.views['dashboard'].update_stats({
-                'pinecone': stats.get('vectors', 0),
-                'pinecone_namespaces': stats.get('namespaces', 0),
-                'pinecone_dim': stats.get('dimension', '—'),
-                'pinecone_metric': stats.get('metric', '—'),
-                'pinecone_dim_mismatch': stats.get('dim_mismatch', False),
-                'pinecone_index': stats.get('index_name', current),
-                'pinecone_provider': stats.get('provider', 'google'),
-            })
+            self.views["dashboard"].update_stats(
+                {
+                    "pinecone": stats.get("vectors", 0),
+                    "pinecone_namespaces": stats.get("namespaces", 0),
+                    "pinecone_dim": stats.get("dimension", "—"),
+                    "pinecone_metric": stats.get("metric", "—"),
+                    "pinecone_dim_mismatch": stats.get("dim_mismatch", False),
+                    "pinecone_index": stats.get("index_name", current),
+                    "pinecone_provider": stats.get("provider", "google"),
+                }
+            )
 
             # Ask to re-embed
             if messagebox.askyesno(
-                "Pinecone",
+                self.vector_db_name,
                 f"Switched to '{candidate}' at {target_dim}d to match your embedding provider/model.\n\n"
-                "Re-embed all recordings into this index now?",
+                f"Re-embed all recordings into this {self.vector_index_term} now?",
             ):
                 self.reembed_all()
             else:
                 messagebox.showinfo(
-                    "Pinecone",
-                    f"Using '{candidate}' ({target_dim}d). Re-embed later via Pinecone > Re-embed all.",
+                    self.vector_db_name,
+                    f"Using '{candidate}' ({target_dim}d). Re-embed later via {self.vector_db_name} > Re-embed all.",
                 )
 
         self._execute_task(task, done)
@@ -556,35 +736,45 @@ class PlaudBlenderApp:
 
         def done(result):
             namespaces, stats = result
-            view = self.views['pinecone']
+            view = self.views["pinecone"]
             view.set_namespaces(namespaces)
             view.set_stats(stats)
             view.index_var.set(index_name)
             # Sync dashboard selectors
-            self.views['dashboard'].set_indexes(view.index_dropdown['values'], index_name)
-            self.views['dashboard'].set_namespaces(namespaces, namespaces[0] if namespaces else None)
-            self.views['dashboard'].update_stats({
-                'pinecone': stats.get('vectors', 0),
-                'pinecone_namespaces': stats.get('namespaces', 0),
-                'pinecone_dim': stats.get('dimension', '—'),
-                'pinecone_metric': stats.get('metric', '—'),
-                'pinecone_dim_mismatch': stats.get('dim_mismatch', False),
-                'pinecone_index': stats.get('index_name', index_name),
-                'pinecone_provider': stats.get('provider', 'google'),
-                'pinecone_namespace': namespaces[0] if namespaces else None,
-            })
+            self.views["dashboard"].set_indexes(
+                view.index_dropdown["values"], index_name
+            )
+            self.views["dashboard"].set_namespaces(
+                namespaces, namespaces[0] if namespaces else None
+            )
+            self.views["dashboard"].update_stats(
+                {
+                    "pinecone": stats.get("vectors", 0),
+                    "pinecone_namespaces": stats.get("namespaces", 0),
+                    "pinecone_dim": stats.get("dimension", "—"),
+                    "pinecone_metric": stats.get("metric", "—"),
+                    "pinecone_dim_mismatch": stats.get("dim_mismatch", False),
+                    "pinecone_index": stats.get("index_name", index_name),
+                    "pinecone_provider": stats.get("provider", "google"),
+                    "pinecone_namespace": namespaces[0] if namespaces else None,
+                }
+            )
             self.refresh_vectors()
 
         self._execute_task(task, done)
 
     def reembed_all(self):
-        target_index = self.views['pinecone'].index_var.get() or get_pinecone_client().index_name
-        target_namespace = self.views['pinecone'].namespace_var.get() or "full_text"
+        target_index = (
+            self.views["pinecone"].index_var.get() or get_pinecone_client().index_name
+        )
+        target_namespace = self.views["pinecone"].namespace_var.get() or "full_text"
         embedder = get_embedding_service()
         self.set_status("Re-embedding all recordings", True)
 
         def task():
-            return pinecone_service.reembed_all_into_index(target_index, target_namespace)
+            return pinecone_service.reembed_all_into_index(
+                target_index, target_namespace
+            )
 
         def done(result):
             if isinstance(result, dict):
@@ -603,22 +793,22 @@ class PlaudBlenderApp:
     def refresh_indexes(self):
         client = get_pinecone_client()
         info = client.get_index_info()
-        log('INFO', f"Index info: {info}")
+        log("INFO", f"Index info: {info}")
 
     def select_namespace(self, namespace):
         # Keep both views aligned
-        if 'pinecone' in self.views:
+        if "pinecone" in self.views:
             try:
-                self.views['pinecone'].namespace_var.set(namespace)
+                self.views["pinecone"].namespace_var.set(namespace)
             except Exception:
                 pass
-        if 'dashboard' in self.views:
+        if "dashboard" in self.views:
             try:
-                self.views['dashboard'].namespace_var.set(namespace)
+                self.views["dashboard"].namespace_var.set(namespace)
             except Exception:
                 pass
             # Update snapshot label immediately
-            self.views['dashboard'].update_pinecone_snapshot({'namespace': namespace})
+            self.views["dashboard"].update_pinecone_snapshot({"namespace": namespace})
         self.refresh_vectors()
 
     # ─────────────────────────────────────────────────────────────────
@@ -628,7 +818,7 @@ class PlaudBlenderApp:
     def similarity_search(self, params: dict):
         """
         Full similarity search using SDK query() with all options.
-        
+
         Uses centralized EmbeddingService for consistent embeddings.
         """
         self.set_status("Searching", True)
@@ -656,27 +846,45 @@ class PlaudBlenderApp:
                 # Use centralized embedding service
                 embedding_service = get_embedding_service()
                 query_params["vector"] = embedding_service.embed_query(query_input)
-                log('INFO', f"Generated {len(query_params['vector'])}-dim query embedding")
+                log(
+                    "INFO",
+                    f"Generated {len(query_params['vector'])}-dim query embedding",
+                )
             elif method == "id":
                 query_params["id"] = query_input
             else:  # raw vector
-                query_params["vector"] = [float(x.strip()) for x in query_input.split(",") if x.strip()]
+                query_params["vector"] = [
+                    float(x.strip()) for x in query_input.split(",") if x.strip()
+                ]
 
             results = client.index.query(**query_params)
-            return [{"id": m.id, "metadata": getattr(m, 'metadata', {}), "score": getattr(m, 'score', 0)} for m in results.matches]
+            return [
+                {
+                    "id": m.id,
+                    "metadata": getattr(m, "metadata", {}),
+                    "score": getattr(m, "score", 0),
+                }
+                for m in results.matches
+            ]
 
         def done(matches):
             from gui.services.pinecone_service import _format_vector
-            formatted = [_format_vector(type('V', (), {"id": m["id"], "metadata": m["metadata"]})()) for m in matches]
-            self.views['pinecone'].populate(formatted)
-            log('INFO', f"Found {len(matches)} matches")
+
+            formatted = [
+                _format_vector(
+                    type("V", (), {"id": m["id"], "metadata": m["metadata"]})()
+                )
+                for m in matches
+            ]
+            self.views["pinecone"].populate(formatted)
+            log("INFO", f"Found {len(matches)} matches")
 
         self._execute_task(task, done)
 
     def fetch_by_metadata(self, params: dict):
         """Use SDK fetch_by_metadata() - no embedding required."""
         self.set_status("Filtering by metadata", True)
-        namespace = self.views['pinecone'].namespace_var.get() or None
+        namespace = self.views["pinecone"].namespace_var.get() or None
 
         def task():
             client = get_pinecone_client()
@@ -688,15 +896,23 @@ class PlaudBlenderApp:
 
             # Paginate through results
             for _ in range(20):  # safety limit
-                fetch_params = {"filter": flt, "namespace": namespace, "limit": min(limit, 100)}
+                fetch_params = {
+                    "filter": flt,
+                    "namespace": namespace,
+                    "limit": min(limit, 100),
+                }
                 if pagination_token:
                     fetch_params["pagination_token"] = pagination_token
 
                 try:
                     result = client.index.fetch_by_metadata(**fetch_params)
-                    if hasattr(result, 'vectors') and result.vectors:
+                    if hasattr(result, "vectors") and result.vectors:
                         all_vectors.extend(result.vectors.values())
-                    if hasattr(result, 'pagination') and result.pagination and hasattr(result.pagination, 'next'):
+                    if (
+                        hasattr(result, "pagination")
+                        and result.pagination
+                        and hasattr(result.pagination, "next")
+                    ):
                         pagination_token = result.pagination.next
                     else:
                         break
@@ -706,23 +922,29 @@ class PlaudBlenderApp:
                     # Fallback for older SDK - use zero vector query
                     stats = client.index.describe_index_stats()
                     dim = stats.dimension
-                    results = client.index.query(vector=[0.0] * dim, filter=flt, top_k=limit,
-                                                 include_metadata=True, namespace=namespace)
+                    results = client.index.query(
+                        vector=[0.0] * dim,
+                        filter=flt,
+                        top_k=limit,
+                        include_metadata=True,
+                        namespace=namespace,
+                    )
                     return results.matches
             return all_vectors
 
         def done(vectors):
             from gui.services.pinecone_service import _format_vector
+
             formatted = [_format_vector(v) for v in vectors]
-            self.views['pinecone'].populate(formatted)
-            log('INFO', f"Found {len(vectors)} vectors by metadata")
+            self.views["pinecone"].populate(formatted)
+            log("INFO", f"Found {len(vectors)} vectors by metadata")
 
         self._execute_task(task, done)
 
     def query_all_namespaces(self, params: dict):
         """
         Use SDK query_namespaces() - parallel search across all namespaces.
-        
+
         Uses centralized EmbeddingService for consistent embeddings.
         """
         self.set_status("Querying all namespaces", True)
@@ -735,18 +957,25 @@ class PlaudBlenderApp:
 
             # Get all namespaces
             namespaces = list(client.index.list_namespaces())
-            ns_names = [ns.name if hasattr(ns, 'name') else str(ns) for ns in namespaces] or [""]
+            ns_names = [
+                ns.name if hasattr(ns, "name") else str(ns) for ns in namespaces
+            ] or [""]
             if not ns_names or ns_names == [""]:
-                raise RuntimeError("No namespaces available yet. Create or import vectors, then try again.")
+                raise RuntimeError(
+                    "No namespaces available yet. Create or import vectors, then try again."
+                )
 
             # Use centralized embedding service
             embedding_service = get_embedding_service()
             vector = embedding_service.embed_query(query_text)
-            log('INFO', f"Generated {len(vector)}-dim embedding for cross-namespace query")
+            log(
+                "INFO",
+                f"Generated {len(vector)}-dim embedding for cross-namespace query",
+            )
 
             # Get metric from index info
             info = client.pc.describe_index(client.index_name)
-            metric = getattr(info, 'metric', 'cosine')
+            metric = getattr(info, "metric", "cosine")
 
             # Query all namespaces
             results = client.index.query_namespaces(
@@ -755,26 +984,38 @@ class PlaudBlenderApp:
                 metric=metric,
                 top_k=top_k,
                 filter=flt,
-                include_metadata=True
+                include_metadata=True,
             )
             return results
 
         def done(results):
             from gui.services.pinecone_service import _format_vector
+
             all_matches = []
-            if hasattr(results, 'matches'):
+            if hasattr(results, "matches"):
                 for m in results.matches:
-                    all_matches.append({"id": m.id, "metadata": getattr(m, 'metadata', {}), "namespace": getattr(m, 'namespace', '')})
-            formatted = [_format_vector(type('V', (), {"id": m["id"], "metadata": m["metadata"]})()) for m in all_matches]
-            self.views['pinecone'].populate(formatted)
-            log('INFO', f"Found {len(all_matches)} matches across namespaces")
+                    all_matches.append(
+                        {
+                            "id": m.id,
+                            "metadata": getattr(m, "metadata", {}),
+                            "namespace": getattr(m, "namespace", ""),
+                        }
+                    )
+            formatted = [
+                _format_vector(
+                    type("V", (), {"id": m["id"], "metadata": m["metadata"]})()
+                )
+                for m in all_matches
+            ]
+            self.views["pinecone"].populate(formatted)
+            log("INFO", f"Found {len(all_matches)} matches across namespaces")
 
         self._execute_task(task, done)
 
     def fetch_by_ids(self, ids: list):
         """Fetch specific vectors by ID using SDK fetch()."""
         self.set_status("Fetching vectors", True)
-        namespace = self.views['pinecone'].namespace_var.get() or None
+        namespace = self.views["pinecone"].namespace_var.get() or None
 
         def task():
             client = get_pinecone_client()
@@ -783,9 +1024,10 @@ class PlaudBlenderApp:
 
         def done(vectors):
             from gui.services.pinecone_service import _format_vector
+
             formatted = [_format_vector(v) for v in vectors]
-            self.views['pinecone'].populate(formatted)
-            log('INFO', f"Fetched {len(vectors)} vectors")
+            self.views["pinecone"].populate(formatted)
+            log("INFO", f"Fetched {len(vectors)} vectors")
             messagebox.showinfo("Fetch", f"Fetched {len(vectors)} vector(s)")
 
         self._execute_task(task, done)
@@ -804,25 +1046,33 @@ class PlaudBlenderApp:
 
             if embed_mode == "auto":
                 # Get text content from metadata
-                content = metadata.get("text", metadata.get("content", metadata.get("title", "")))
+                content = metadata.get(
+                    "text", metadata.get("content", metadata.get("title", ""))
+                )
                 if not content:
                     raise ValueError("No 'text' field in metadata for auto-embedding")
 
                 # Use centralized embedding service
                 embedding_service = get_embedding_service()
                 values = embedding_service.embed_document(content)
-                log('INFO', f"Generated {len(values)}-dim embedding for upsert")
+                log("INFO", f"Generated {len(values)}-dim embedding for upsert")
             else:
                 if isinstance(manual_embed, list):
                     values = manual_embed
                 else:
-                    values = [float(x.strip()) for x in str(manual_embed).split(",") if x.strip()]
+                    values = [
+                        float(x.strip())
+                        for x in str(manual_embed).split(",")
+                        if x.strip()
+                    ]
 
-            client.index.upsert(vectors=[(vec_id, values, metadata)], namespace=namespace)
+            client.index.upsert(
+                vectors=[(vec_id, values, metadata)], namespace=namespace
+            )
             return vec_id
 
         def done(vec_id):
-            log('INFO', f"Upserted vector: {vec_id}")
+            log("INFO", f"Upserted vector: {vec_id}")
             messagebox.showinfo("Success", f"Vector upserted: {vec_id}")
             self.refresh_vectors()
 
@@ -831,19 +1081,22 @@ class PlaudBlenderApp:
     def update_metadata(self, params: dict):
         """Update vector metadata using SDK update()."""
         self.set_status("Updating metadata", True)
-        namespace = self.views['pinecone'].namespace_var.get() or None
+        namespace = self.views["pinecone"].namespace_var.get() or None
 
         def task():
             from gui.services import pinecone_service
+
             vec_id = params.get("id")
             new_meta = params.get("metadata", {})
-            ok = pinecone_service.update_vector_metadata(vec_id, new_meta, namespace=namespace or "")
+            ok = pinecone_service.update_vector_metadata(
+                vec_id, new_meta, namespace=namespace or ""
+            )
             if not ok:
                 raise RuntimeError("Failed to update metadata")
             return vec_id
 
         def done(vec_id):
-            log('INFO', f"Updated metadata for: {vec_id}")
+            log("INFO", f"Updated metadata for: {vec_id}")
             messagebox.showinfo("Success", f"Metadata updated: {vec_id}")
             self.refresh_vectors()
 
@@ -852,10 +1105,11 @@ class PlaudBlenderApp:
     def delete_vectors(self, params: dict):
         """Delete vectors using SDK delete() with multiple modes."""
         self.set_status("Deleting vectors", True)
-        namespace = self.views['pinecone'].namespace_var.get() or None
+        namespace = self.views["pinecone"].namespace_var.get() or None
 
         def task():
             from gui.services import pinecone_service
+
             return pinecone_service.delete_vectors(
                 ids=params.get("ids"),
                 flt=params.get("filter"),
@@ -864,7 +1118,7 @@ class PlaudBlenderApp:
             )
 
         def done(result):
-            log('INFO', f"Deleted vectors: {result}")
+            log("INFO", f"Deleted vectors: {result}")
             messagebox.showinfo("Delete", f"Deleted: {result}")
             self.refresh_vectors()
 
@@ -886,13 +1140,19 @@ class PlaudBlenderApp:
             placeholder_vector = [1e-7] * dim  # tiny non-zero values
             placeholder_vector[0] = 0.001  # ensure at least one meaningful value
             client.index.upsert(
-                vectors=[(placeholder_id, placeholder_vector, {"_placeholder": True, "_namespace": name})],
-                namespace=name
+                vectors=[
+                    (
+                        placeholder_id,
+                        placeholder_vector,
+                        {"_placeholder": True, "_namespace": name},
+                    )
+                ],
+                namespace=name,
             )
             return name
 
         def done(ns):
-            log('INFO', f"Created namespace: {ns}")
+            log("INFO", f"Created namespace: {ns}")
             messagebox.showinfo("Success", f"Namespace '{ns}' created")
             self.load_pinecone_indexes()
 
@@ -909,7 +1169,7 @@ class PlaudBlenderApp:
             return name
 
         def done(ns):
-            log('INFO', f"Deleted namespace: {ns}")
+            log("INFO", f"Deleted namespace: {ns}")
             messagebox.showinfo("Namespace", f"Namespace '{ns}' deleted")
             self.load_pinecone_indexes()
 
@@ -923,9 +1183,9 @@ class PlaudBlenderApp:
             client = get_pinecone_client()
             stats = client.index.describe_index_stats()
             namespaces = []
-            if hasattr(stats, 'namespaces') and stats.namespaces:
+            if hasattr(stats, "namespaces") and stats.namespaces:
                 for ns_name, ns_stats in stats.namespaces.items():
-                    count = getattr(ns_stats, 'vector_count', 0)
+                    count = getattr(ns_stats, "vector_count", 0)
                     namespaces.append((ns_name or "(default)", count))
             return namespaces
 
@@ -950,7 +1210,7 @@ class PlaudBlenderApp:
     def bulk_import(self, params):
         """
         Import vectors from JSON/CSV with optional auto-embedding.
-        
+
         Uses centralized EmbeddingService for consistent embeddings.
         """
         import json as json_mod
@@ -959,24 +1219,34 @@ class PlaudBlenderApp:
 
         # Handle both old-style (path string) and new-style (dict) params
         if isinstance(params, str):
-            params = {"path": params, "mode": "existing", "text_field": "text", "id_field": "id", "namespace": None}
+            params = {
+                "path": params,
+                "mode": "existing",
+                "text_field": "text",
+                "id_field": "id",
+                "namespace": None,
+            }
 
         path = params["path"]
         mode = params.get("mode", "existing")
         text_field = params.get("text_field", "text")
         id_field = params.get("id_field", "id")
-        namespace = params.get("namespace") or self.views['pinecone'].namespace_var.get() or None
+        namespace = (
+            params.get("namespace")
+            or self.views["pinecone"].namespace_var.get()
+            or None
+        )
 
         self.set_status("Importing vectors", True)
 
         def task():
             # Read file
             if path.endswith(".csv"):
-                with open(path, 'r') as f:
+                with open(path, "r") as f:
                     reader = csv.DictReader(f)
                     data = list(reader)
             else:
-                with open(path, 'r') as f:
+                with open(path, "r") as f:
                     data = json_mod.load(f)
                 if not isinstance(data, list):
                     data = [data]
@@ -988,11 +1258,11 @@ class PlaudBlenderApp:
             if mode == "auto":
                 # Use centralized embedding service for batch embedding
                 embedding_service = get_embedding_service()
-                
+
                 # Collect all texts first
                 texts_to_embed = []
                 items_to_process = []
-                
+
                 for item in data:
                     if not isinstance(item, dict):
                         skipped += 1
@@ -1000,25 +1270,42 @@ class PlaudBlenderApp:
                     text = item.get(text_field, "")
                     if not text:
                         # Try common fallbacks
-                        text = item.get("content", item.get("transcript", item.get("title", "")))
+                        text = item.get(
+                            "content", item.get("transcript", item.get("title", ""))
+                        )
                     if not text:
                         skipped += 1
                         continue
                     texts_to_embed.append(str(text))
                     items_to_process.append(item)
-                
+
                 if texts_to_embed:
                     # Batch embed using centralized service
-                    log('INFO', f"Generating embeddings for {len(texts_to_embed)} items...")
+                    log(
+                        "INFO",
+                        f"Generating embeddings for {len(texts_to_embed)} items...",
+                    )
                     embeddings = embedding_service.embed_batch(texts_to_embed)
-                    log('INFO', f"Generated {len(embeddings)} embeddings (dim={len(embeddings[0]) if embeddings else 0})")
-                    
+                    log(
+                        "INFO",
+                        f"Generated {len(embeddings)} embeddings (dim={len(embeddings[0]) if embeddings else 0})",
+                    )
+
                     for item, embedding in zip(items_to_process, embeddings):
                         vec_id = item.get(id_field) or str(uuid.uuid4())
                         # Build metadata (exclude the text field if large, keep everything else)
-                        metadata = {k: v for k, v in item.items() if k not in ["values", "embedding"]}
-                        if text_field in metadata and len(str(metadata[text_field])) > 1000:
-                            metadata[text_field] = str(metadata[text_field])[:1000] + "..."
+                        metadata = {
+                            k: v
+                            for k, v in item.items()
+                            if k not in ["values", "embedding"]
+                        }
+                        if (
+                            text_field in metadata
+                            and len(str(metadata[text_field])) > 1000
+                        ):
+                            metadata[text_field] = (
+                                str(metadata[text_field])[:1000] + "..."
+                            )
                         vectors.append((str(vec_id), embedding, metadata))
             else:
                 # Use existing embeddings
@@ -1031,15 +1318,19 @@ class PlaudBlenderApp:
                     if not vec_id or not values:
                         skipped += 1
                         continue
-                    metadata = {k: v for k, v in item.items() if k not in ["values", "embedding", "id"]}
+                    metadata = {
+                        k: v
+                        for k, v in item.items()
+                        if k not in ["values", "embedding", "id"]
+                    }
                     vectors.append((str(vec_id), values, metadata))
 
             if vectors:
                 # Upsert in batches
                 for i in range(0, len(vectors), 100):
-                    batch = vectors[i:i + 100]
+                    batch = vectors[i : i + 100]
                     client.index.upsert(vectors=batch, namespace=namespace)
-            
+
             return len(vectors), skipped
 
         def done(result):
@@ -1047,7 +1338,7 @@ class PlaudBlenderApp:
             msg = f"Imported {count} vectors"
             if skipped:
                 msg += f" ({skipped} skipped)"
-            log('INFO', msg)
+            log("INFO", msg)
             messagebox.showinfo("Import Complete", msg)
             self.refresh_vectors()
 
@@ -1057,28 +1348,30 @@ class PlaudBlenderApp:
     # ─────────────────────────────────────────────────────────────────
     # SEARCH ACTIONS - Ultra Granular
     # ─────────────────────────────────────────────────────────────────
-    
+
     def perform_search(self, query, limit: int = 5):
         """
         🎯 SINGLE NAMESPACE SEARCH
-        
+
         Searches the default namespace only.
         For specific namespace search, use the dedicated methods below.
         """
         self.set_status("🔍 Searching default namespace...", True)
 
         def task():
-            return search_service.search_single_namespace(query, namespace="", limit=limit)
+            return search_service.search_single_namespace(
+                query, namespace="", limit=limit
+            )
 
         def done(text):
-            self.views['search'].show_results(text)
+            self.views["search"].show_results(text)
 
         self._execute_task(task, done)
-    
+
     def perform_cross_namespace_search(self, query, limit: int = 5):
         """
         🌐 CROSS-NAMESPACE SEARCH (PARALLEL)
-        
+
         Searches BOTH full_text AND summaries namespaces in parallel.
         Results are merged and ranked by relevance.
         """
@@ -1088,14 +1381,14 @@ class PlaudBlenderApp:
             return search_service.search_all_namespaces(query, limit=limit)
 
         def done(text):
-            self.views['search'].show_results(text)
+            self.views["search"].show_results(text)
 
         self._execute_task(task, done)
-    
+
     def search_full_text(self, query, limit: int = 5):
         """
         📄 SEARCH FULL TEXT NAMESPACE ONLY
-        
+
         Searches only the 'full_text' namespace containing complete transcripts.
         Use this when looking for specific passages or detailed content.
         """
@@ -1105,14 +1398,14 @@ class PlaudBlenderApp:
             return search_service.search_full_text(query, limit=limit)
 
         def done(text):
-            self.views['search'].show_results(text)
+            self.views["search"].show_results(text)
 
         self._execute_task(task, done)
-    
+
     def search_summaries(self, query, limit: int = 5):
         """
         📝 SEARCH SUMMARIES NAMESPACE ONLY
-        
+
         Searches only the 'summaries' namespace containing AI syntheses.
         Use this for high-level topic matching or thematic search.
         """
@@ -1122,17 +1415,19 @@ class PlaudBlenderApp:
             return search_service.search_summaries(query, limit=limit)
 
         def done(text):
-            self.views['search'].show_results(text)
+            self.views["search"].show_results(text)
 
         self._execute_task(task, done)
 
-    def perform_rerank_search(self, query, limit: int = 5, model: str = "bge-reranker-v2-m3", namespaces=None):
+    def perform_rerank_search(
+        self, query, limit: int = 5, model: str = "bge-reranker-v2-m3", namespaces=None
+    ):
         """
         🏆 SEARCH + RERANK (highest quality)
-        
+
         Two-stage search: dense vector retrieval → neural reranking.
         Uses Pinecone inference API for best relevance ordering.
-        
+
         Args:
             query: Search query
             limit: Max results after reranking
@@ -1150,17 +1445,23 @@ class PlaudBlenderApp:
             )
 
         def done(text):
-            self.views['search'].show_results(text)
+            self.views["search"].show_results(text)
 
         self._execute_task(task, done)
 
-    def perform_hybrid_search(self, query: str, alpha: float = 0.7, limit: int = 20):
+    def perform_hybrid_search(
+        self,
+        query: str,
+        limit: int = 20,
+        alpha: float = 0.7,
+        use_rerank: bool = True,
+    ):
         """
         Execute hybrid search combining dense + sparse vectors.
-        
+
         Hybrid search merges semantic understanding (dense) with exact keyword
         matching (sparse) for improved recall and precision.
-        
+
         Args:
             query: Search query text
             alpha: Balance between dense (1.0) and sparse (0.0). Default 0.7 favors semantic.
@@ -1170,23 +1471,29 @@ class PlaudBlenderApp:
 
         def task():
             from gui.services.hybrid_search_service import HybridSearchService
+
             hybrid_svc = HybridSearchService()
-            return hybrid_svc.hybrid_search(query=query, alpha=alpha, limit=limit)
+            return hybrid_svc.hybrid_search(
+                query=query,
+                alpha=alpha,
+                limit=limit,
+                rerank=bool(use_rerank),
+            )
 
         def done(text):
-            self.views['search'].show_results(text)
+            self.views["search"].show_results(text)
 
         self._execute_task(task, done)
 
     def perform_self_correcting_search(self, query: str, limit: int = 10):
         """
         Execute search with automatic self-correction on low confidence.
-        
+
         When initial retrieval has low confidence, automatically:
         1. Reformulates the query
         2. Tries alternative strategies (hybrid, sparse)
         3. Reports correction attempts in results
-        
+
         Args:
             query: Search query text
             limit: Maximum results to return
@@ -1201,20 +1508,20 @@ class PlaudBlenderApp:
             )
 
         def done(text):
-            self.views['search'].show_results(text)
+            self.views["search"].show_results(text)
 
         self._execute_task(task, done)
 
     def perform_smart_search(self, query: str, limit: int = 10):
         """
         Execute AI-powered search using Query Router + RRF Fusion.
-        
+
         This is the most intelligent search mode:
         1. Query Router classifies intent (keyword/semantic/aggregation)
         2. Auto-selects optimal alpha and filters
         3. RRF fusion combines results mathematically
         4. GraphRAG answers aggregation queries
-        
+
         Args:
             query: Search query text
             limit: Maximum results to return
@@ -1222,7 +1529,11 @@ class PlaudBlenderApp:
         self.set_status("🧠 Smart Search (Router + RRF)...", True)
 
         def task():
-            from gui.services.hybrid_search_service import smart_search, format_smart_results
+            from gui.services.hybrid_search_service import (
+                smart_search,
+                format_smart_results,
+            )
+
             result = smart_search(
                 query=query,
                 limit=limit,
@@ -1232,19 +1543,19 @@ class PlaudBlenderApp:
             return format_smart_results(result)
 
         def done(text):
-            self.views['search'].show_results(text)
+            self.views["search"].show_results(text)
 
         self._execute_task(task, done)
 
     def perform_audio_similarity_search(self, query: str, limit: int = 5):
         """
         Execute audio similarity search using CLAP embeddings.
-        
+
         Finds recordings with similar audio characteristics:
         - Tone and speaking style
         - Background ambiance
         - Speaker patterns
-        
+
         Args:
             query: Recording ID or title to find similar audio
             limit: Maximum results to return
@@ -1255,19 +1566,23 @@ class PlaudBlenderApp:
             from src.database.repository import get_session
             from src.database.models import Recording
             import numpy as np
-            
+
             session = get_session()
             lines = []
-            
+
             try:
                 # Find the source recording by ID or title
-                source_rec = session.query(Recording).filter(
-                    (Recording.id == query) | (Recording.title.ilike(f"%{query}%"))
-                ).first()
-                
+                source_rec = (
+                    session.query(Recording)
+                    .filter(
+                        (Recording.id == query) | (Recording.title.ilike(f"%{query}%"))
+                    )
+                    .first()
+                )
+
                 if not source_rec:
                     return f"❌ Recording not found: {query}"
-                
+
                 if not source_rec.audio_embedding:
                     return (
                         f"❌ Recording '{source_rec.title}' has no audio embedding.\n\n"
@@ -1275,22 +1590,26 @@ class PlaudBlenderApp:
                         "• Go to Transcripts view\n"
                         "• Select recording and click 'Process Audio'"
                     )
-                
+
                 source_embedding = np.array(source_rec.audio_embedding)
                 lines.append(f"🎵 Audio Similarity Search")
                 lines.append(f"Source: {source_rec.title}")
                 lines.append("=" * 50)
                 lines.append("")
-                
+
                 # Find all recordings with embeddings
-                candidates = session.query(Recording).filter(
-                    Recording.audio_embedding.isnot(None),
-                    Recording.id != source_rec.id
-                ).all()
-                
+                candidates = (
+                    session.query(Recording)
+                    .filter(
+                        Recording.audio_embedding.isnot(None),
+                        Recording.id != source_rec.id,
+                    )
+                    .all()
+                )
+
                 if not candidates:
                     return "No other recordings have audio embeddings yet."
-                
+
                 # Calculate cosine similarity
                 similarities = []
                 for rec in candidates:
@@ -1302,40 +1621,40 @@ class PlaudBlenderApp:
                         norm_b = np.linalg.norm(cand_embedding)
                         similarity = dot / (norm_a * norm_b) if norm_a and norm_b else 0
                         similarities.append((rec, similarity))
-                
+
                 # Sort by similarity descending
                 similarities.sort(key=lambda x: x[1], reverse=True)
-                
+
                 for i, (rec, sim) in enumerate(similarities[:limit], 1):
                     lines.append(f"#{i} [{sim:.3f}] {rec.title}")
                     if rec.audio_analysis:
                         analysis = rec.audio_analysis
-                        if 'tone' in analysis:
+                        if "tone" in analysis:
                             lines.append(f"    Tone: {analysis['tone']}")
-                        if 'sentiment' in analysis:
+                        if "sentiment" in analysis:
                             lines.append(f"    Sentiment: {analysis['sentiment']}")
                     lines.append("")
-                
+
                 return "\n".join(lines)
-                
+
             finally:
                 session.close()
 
         def done(text):
-            self.views['search'].show_results(text)
+            self.views["search"].show_results(text)
 
         self._execute_task(task, done)
 
     def perform_audio_analysis(self, recording_id: str):
         """
         Execute deep audio analysis on a recording using Gemini.
-        
+
         Provides:
         - Speaker diarization (who spoke when)
         - Tone and sentiment analysis
         - Background noise detection
         - Meeting type classification
-        
+
         Args:
             recording_id: Recording ID to analyze
         """
@@ -1344,67 +1663,74 @@ class PlaudBlenderApp:
         def task():
             from src.database.repository import get_session
             from src.database.models import Recording
-            
+
             session = get_session()
             lines = []
-            
+
             try:
                 # Find the recording
-                rec = session.query(Recording).filter(
-                    (Recording.id == recording_id) | (Recording.title.ilike(f"%{recording_id}%"))
-                ).first()
-                
+                rec = (
+                    session.query(Recording)
+                    .filter(
+                        (Recording.id == recording_id)
+                        | (Recording.title.ilike(f"%{recording_id}%"))
+                    )
+                    .first()
+                )
+
                 if not rec:
                     return f"❌ Recording not found: {recording_id}"
-                
+
                 lines.append(f"🔊 Audio Analysis: {rec.title}")
                 lines.append("=" * 50)
                 lines.append("")
-                
+
                 # Check if we have cached analysis
                 if rec.audio_analysis:
                     analysis = rec.audio_analysis
                     lines.append("📊 Cached Analysis (from previous processing)")
                     lines.append("")
-                    
-                    if 'tone' in analysis:
+
+                    if "tone" in analysis:
                         lines.append(f"🎭 Tone: {analysis['tone']}")
-                    if 'sentiment' in analysis:
+                    if "sentiment" in analysis:
                         lines.append(f"💭 Sentiment: {analysis['sentiment']}")
-                    if 'speakers' in analysis:
+                    if "speakers" in analysis:
                         lines.append(f"👥 Speakers: {analysis['speakers']}")
-                    if 'meeting_type' in analysis:
+                    if "meeting_type" in analysis:
                         lines.append(f"📋 Type: {analysis['meeting_type']}")
-                    if 'topics' in analysis:
+                    if "topics" in analysis:
                         lines.append(f"📌 Topics: {', '.join(analysis['topics'])}")
-                    if 'background_noise' in analysis:
+                    if "background_noise" in analysis:
                         lines.append(f"🔈 Background: {analysis['background_noise']}")
-                    
+
                     lines.append("")
                     lines.append("─" * 50)
                     lines.append("")
-                
+
                 # Show diarization if available
                 if rec.speaker_diarization:
                     lines.append("🎤 Speaker Diarization")
                     lines.append("")
                     diarization = rec.speaker_diarization
-                    
+
                     if isinstance(diarization, list):
                         for segment in diarization[:10]:  # Show first 10 segments
-                            start = segment.get('start', 0)
-                            end = segment.get('end', 0)
-                            speaker = segment.get('speaker', 'Unknown')
-                            text = segment.get('text', '')[:100]
+                            start = segment.get("start", 0)
+                            end = segment.get("end", 0)
+                            speaker = segment.get("speaker", "Unknown")
+                            text = segment.get("text", "")[:100]
                             lines.append(f"  [{start:.1f}s - {end:.1f}s] {speaker}")
-                            lines.append(f"    \"{text}...\"")
+                            lines.append(f'    "{text}..."')
                             lines.append("")
-                        
+
                         if len(diarization) > 10:
-                            lines.append(f"  ... and {len(diarization) - 10} more segments")
-                    
+                            lines.append(
+                                f"  ... and {len(diarization) - 10} more segments"
+                            )
+
                     lines.append("")
-                
+
                 # If no analysis exists, provide instructions
                 if not rec.audio_analysis and not rec.speaker_diarization:
                     lines.append("⚠️ No audio analysis available yet.")
@@ -1419,14 +1745,129 @@ class PlaudBlenderApp:
                     lines.append("• Whisper diarization (speaker identification)")
                     lines.append("• CLAP embedding (audio similarity)")
                     lines.append("• Gemini analysis (tone, sentiment, topics)")
-                
+
                 return "\n".join(lines)
-                
+
             finally:
                 session.close()
 
         def done(text):
-            self.views['search'].show_results(text)
+            self.views["search"].show_results(text)
+
+        self._execute_task(task, done)
+
+    # ------------------- Timeline / Storyboard ---------------------
+    def timeline_build_report(
+        self,
+        year: int,
+        weekday: int,
+        tz_name: Optional[str] = None,
+        include_snippets: bool = True,
+        on_text: Optional[Callable[[str], None]] = None,
+    ):
+        """Build a deterministic weekday-in-year timeline report.
+
+        Runs in a background thread and returns rendered text via *on_text*.
+        """
+
+        self.set_status("🗓 Building timeline...", True)
+
+        def task():
+            return timeline_service.render_weekday_report(
+                year=year,
+                weekday=weekday,
+                tz_name=tz_name,
+                include_snippets=bool(include_snippets),
+            )
+
+        def done(text: str):
+            if on_text:
+                on_text(text)
+
+        self._execute_task(task, done)
+
+    def timeline_generate_storyboard(
+        self,
+        year: int,
+        weekday: int,
+        tz_name: Optional[str] = None,
+        on_text: Optional[Callable[[str], None]] = None,
+    ):
+        """Generate a chronological storyboard for a weekday in a year.
+
+        Strategy:
+        - SQLite-first retrieval and grouping (deterministic)
+        - Optional OpenAI Responses synthesis for narrative/storyboard
+
+        If OpenAI isn't configured, we return the deterministic report plus a
+        helpful note instead of raising.
+        """
+
+        self.set_status("🎬 Building storyboard...", True)
+
+        def task():
+            # Always compute a deterministic baseline report.
+            report = timeline_service.render_weekday_report(
+                year=year,
+                weekday=weekday,
+                tz_name=tz_name,
+                include_snippets=True,
+            )
+
+            items = timeline_service.query_weekday_in_year(
+                year=year,
+                weekday=weekday,
+                tz_name=tz_name,
+            )
+            if not items:
+                return report
+
+            weekday_name = timeline_service.WEEKDAYS[weekday]
+            prompt = timeline_service.build_storyboard_prompt(
+                items=items,
+                weekday_name=weekday_name,
+                year=year,
+            )
+
+            model = os.getenv("OPENAI_DEFAULT_MODEL", "gpt-4.1")
+            instructions = (
+                "You are PlaudBlender's assistant. Ground everything strictly in the EVIDENCE. "
+                "Do not invent details. If something is unclear, say so."
+            )
+
+            try:
+                result = chat_service.send_response(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=model,
+                    temperature=0.4,
+                    instructions=instructions,
+                    overrides={"max_output_tokens": 1800},
+                )
+                storyboard = (result.get("text") or "").strip()
+                if not storyboard:
+                    storyboard = "(No text returned from OpenAI.)"
+
+                lines = [
+                    report,
+                    "",
+                    "═" * 66,
+                    f"🎬 STORYBOARD (LLM) — {weekday_name}s in {year}",
+                    "═" * 66,
+                    storyboard,
+                ]
+                return "\n".join(lines)
+            except Exception as e:  # pylint: disable=broad-except
+                lines = [
+                    report,
+                    "",
+                    "(Storyboard generation unavailable. Configure OPENAI_API_KEY to enable Chat.)",
+                    f"Details: {e}",
+                ]
+                return "\n".join(lines)
+
+        def done(text: str):
+            if on_text:
+                on_text(text)
 
         self._execute_task(task, done)
 
@@ -1446,23 +1887,27 @@ class PlaudBlenderApp:
 
     def save_search(self, name: str, query: str):
         from gui.services import saved_searches_service as ss
+
         if not name or not query:
             messagebox.showwarning("Save Search", "Provide both name and query")
             return
         ss.save_search(name, query)
         messagebox.showinfo("Save Search", f"Saved '{name}'")
         # Refresh saved list
-        self.views['search'].update_saved(ss.list_saved_names())
+        self.views["search"].update_saved(ss.list_saved_names())
 
     def load_saved_search(self, name: str):
         from gui.services import saved_searches_service as ss
+
         data = ss.load_saved_searches()
         if name not in data:
             messagebox.showwarning("Saved Searches", "Not found")
             return
         query = data[name]
-        self.views['search'].set_query(query)
-        self.perform_cross_namespace_search(query, limit=int(self.views['search'].limit_var.get()))
+        self.views["search"].set_query(query)
+        self.perform_cross_namespace_search(
+            query, limit=int(self.views["search"].limit_var.get())
+        )
 
     # ------------------- Settings ------------------------------------
     def save_settings(self, values):
@@ -1491,7 +1936,11 @@ class PlaudBlenderApp:
                 pass
 
             # Pre-compute segment counts per recording for display
-            seg_by_rec = dict(session.query(Segment.recording_id, func.count(Segment.id)).group_by(Segment.recording_id).all())
+            seg_by_rec = dict(
+                session.query(Segment.recording_id, func.count(Segment.id))
+                .group_by(Segment.recording_id)
+                .all()
+            )
 
             recordings = (
                 session.query(Recording)
@@ -1521,8 +1970,14 @@ class PlaudBlenderApp:
 
         header = ttk.Frame(win, padding=10)
         header.pack(fill=tk.X)
-        ttk.Label(header, text=f"Database: {DB_PATH}", style="Muted.TLabel").pack(anchor="w")
-        ttk.Label(header, text=f"Size: {fmt_bytes(size_bytes)} • Recordings: {rec_count:,} • Segments: {seg_count:,}", style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(header, text=f"Database: {DB_PATH}", style="Muted.TLabel").pack(
+            anchor="w"
+        )
+        ttk.Label(
+            header,
+            text=f"Size: {fmt_bytes(size_bytes)} • Recordings: {rec_count:,} • Segments: {seg_count:,}",
+            style="Muted.TLabel",
+        ).pack(anchor="w")
 
         # Export / utility row
         util = ttk.Frame(win, padding=(10, 4))
@@ -1540,11 +1995,39 @@ class PlaudBlenderApp:
             session = SessionLocal()
             try:
                 if table == "recordings":
-                    rows = session.query(Recording).order_by(Recording.created_at.desc()).all()
-                    cols = ["id", "title", "duration_ms", "created_at", "status", "language", "source", "filename", "extra"]
+                    rows = (
+                        session.query(Recording)
+                        .order_by(Recording.created_at.desc())
+                        .all()
+                    )
+                    cols = [
+                        "id",
+                        "title",
+                        "duration_ms",
+                        "created_at",
+                        "status",
+                        "language",
+                        "source",
+                        "filename",
+                        "extra",
+                    ]
                 else:
-                    rows = session.query(Segment).order_by(Segment.created_at.desc()).all()
-                    cols = ["id", "recording_id", "namespace", "status", "start_ms", "end_ms", "pinecone_id", "embedding_model", "extra", "created_at", "text"]
+                    rows = (
+                        session.query(Segment).order_by(Segment.created_at.desc()).all()
+                    )
+                    cols = [
+                        "id",
+                        "recording_id",
+                        "namespace",
+                        "status",
+                        "start_ms",
+                        "end_ms",
+                        "pinecone_id",
+                        "embedding_model",
+                        "extra",
+                        "created_at",
+                        "text",
+                    ]
                 with open(path, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
                     writer.writerow(cols)
@@ -1556,14 +2039,20 @@ class PlaudBlenderApp:
                                 val = json.dumps(val, ensure_ascii=False)
                             vals.append(val)
                         writer.writerow(vals)
-                messagebox.showinfo("Export", f"Exported {len(rows)} {table} rows to {path}")
+                messagebox.showinfo(
+                    "Export", f"Exported {len(rows)} {table} rows to {path}"
+                )
             except Exception as e:
                 messagebox.showerror("Export", str(e))
             finally:
                 session.close()
 
-        ttk.Button(util, text="Export recordings CSV", command=lambda: _export("recordings")).pack(side=tk.LEFT, padx=(0, 6))
-        ttk.Button(util, text="Export segments CSV", command=lambda: _export("segments")).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(
+            util, text="Export recordings CSV", command=lambda: _export("recordings")
+        ).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(
+            util, text="Export segments CSV", command=lambda: _export("segments")
+        ).pack(side=tk.LEFT, padx=(0, 6))
 
         def _copy_path():
             try:
@@ -1573,13 +2062,27 @@ class PlaudBlenderApp:
             except Exception:
                 pass
 
-        ttk.Button(util, text="Copy DB path", command=_copy_path).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(util, text="Copy DB path", command=_copy_path).pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
 
         # Recordings table
-        rec_frame = ttk.LabelFrame(win, text="Recordings (latest 50)", padding=6, style="Panel.TLabelframe")
+        rec_frame = ttk.LabelFrame(
+            win, text="Recordings (latest 50)", padding=6, style="Panel.TLabelframe"
+        )
         rec_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 6))
-        rec_cols = ("id", "title", "status", "created", "dur", "segments", "plaud_summary")
-        rec_tree = ttk.Treeview(rec_frame, columns=rec_cols, show="headings", height=10, style="Treeview")
+        rec_cols = (
+            "id",
+            "title",
+            "status",
+            "created",
+            "dur",
+            "segments",
+            "plaud_summary",
+        )
+        rec_tree = ttk.Treeview(
+            rec_frame, columns=rec_cols, show="headings", height=10, style="Treeview"
+        )
         for col, txt, w in [
             ("id", "ID", 140),
             ("title", "Title", 240),
@@ -1595,34 +2098,50 @@ class PlaudBlenderApp:
             minutes = (rec.duration_ms or 0) // 60000
             seconds = ((rec.duration_ms or 0) % 60000) // 1000
             duration_str = f"{minutes}:{seconds:02d}" if rec.duration_ms else "—"
-            created = rec.created_at.strftime("%Y-%m-%d %H:%M") if rec.created_at else "—"
+            created = (
+                rec.created_at.strftime("%Y-%m-%d %H:%M") if rec.created_at else "—"
+            )
             summary_snippet = ""
             try:
                 summary_snippet = (rec.extra or {}).get("plaud_summary", "")
                 if summary_snippet:
-                    summary_snippet = (summary_snippet[:120] + "…") if len(summary_snippet) > 120 else summary_snippet
+                    summary_snippet = (
+                        (summary_snippet[:120] + "…")
+                        if len(summary_snippet) > 120
+                        else summary_snippet
+                    )
             except Exception:
                 summary_snippet = ""
 
-            rec_tree.insert("", tk.END, values=(
-                rec.id,
-                rec.title or "Untitled",
-                rec.status or "raw",
-                created,
-                duration_str,
-                seg_by_rec.get(rec.id, 0),
-                summary_snippet or "",
-            ))
+            rec_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    rec.id,
+                    rec.title or "Untitled",
+                    rec.status or "raw",
+                    created,
+                    duration_str,
+                    seg_by_rec.get(rec.id, 0),
+                    summary_snippet or "",
+                ),
+            )
         rec_tree.pack(fill=tk.BOTH, expand=True)
-        rec_scroll = ttk.Scrollbar(rec_frame, orient=tk.VERTICAL, command=rec_tree.yview)
+        rec_scroll = ttk.Scrollbar(
+            rec_frame, orient=tk.VERTICAL, command=rec_tree.yview
+        )
         rec_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         rec_tree.configure(yscrollcommand=rec_scroll.set)
 
         # Segments table
-        seg_frame = ttk.LabelFrame(win, text="Segments (latest 50)", padding=6, style="Panel.TLabelframe")
+        seg_frame = ttk.LabelFrame(
+            win, text="Segments (latest 50)", padding=6, style="Panel.TLabelframe"
+        )
         seg_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
         seg_cols = ("id", "rec", "ns", "status", "created")
-        seg_tree = ttk.Treeview(seg_frame, columns=seg_cols, show="headings", height=10, style="Treeview")
+        seg_tree = ttk.Treeview(
+            seg_frame, columns=seg_cols, show="headings", height=10, style="Treeview"
+        )
         for col, txt, w in [
             ("id", "Segment ID", 180),
             ("rec", "Recording", 140),
@@ -1633,14 +2152,32 @@ class PlaudBlenderApp:
             seg_tree.heading(col, text=txt)
             seg_tree.column(col, width=w, anchor="w")
         for seg in segments:
-            created = seg.created_at.strftime("%Y-%m-%d %H:%M") if seg.created_at else "—"
-            seg_tree.insert("", tk.END, values=(seg.id, seg.recording_id, seg.namespace or "full_text", seg.status or "pending", created))
+            created = (
+                seg.created_at.strftime("%Y-%m-%d %H:%M") if seg.created_at else "—"
+            )
+            seg_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    seg.id,
+                    seg.recording_id,
+                    seg.namespace or "full_text",
+                    seg.status or "pending",
+                    created,
+                ),
+            )
         seg_tree.pack(fill=tk.BOTH, expand=True)
-        seg_scroll = ttk.Scrollbar(seg_frame, orient=tk.VERTICAL, command=seg_tree.yview)
+        seg_scroll = ttk.Scrollbar(
+            seg_frame, orient=tk.VERTICAL, command=seg_tree.yview
+        )
         seg_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         seg_tree.configure(yscrollcommand=seg_scroll.set)
 
-        ttk.Label(win, text="Read-only view • shows latest 50 rows of each table", style="Muted.TLabel").pack(anchor="w", padx=10, pady=(0, 10))
+        ttk.Label(
+            win,
+            text="Read-only view • shows latest 50 rows of each table",
+            style="Muted.TLabel",
+        ).pack(anchor="w", padx=10, pady=(0, 10))
 
     # ------------------- Misc ----------------------------------------
     def sync_all(self):
@@ -1652,8 +2189,8 @@ class PlaudBlenderApp:
         def done(summary):
             # Refresh local view from DB (no re-ingest)
             refreshed = transcripts_service.fetch_transcripts(ingest=False)
-            self.views['transcripts'].populate(refreshed)
-            self.views['dashboard'].update_recent_transcripts(refreshed)
+            self.views["transcripts"].populate(refreshed)
+            self.views["dashboard"].update_recent_transcripts(refreshed)
             chunk = summary.get("chunk", {}) if isinstance(summary, dict) else {}
             index = summary.get("index", {}) if isinstance(summary, dict) else {}
             messagebox.showinfo(
@@ -1669,38 +2206,45 @@ class PlaudBlenderApp:
     def refresh_dashboard(self):
         """Refresh all dashboard stats from database, Pinecone, etc."""
         self.set_status("Refreshing dashboard stats...", True)
-        
+
         def task():
             from gui.services.stats_service import get_dashboard_stats
+
             return get_dashboard_stats(force_refresh=True)
-        
+
         def done(stats):
-            self.views['dashboard'].update_stats(stats)
+            self.views["dashboard"].update_stats(stats)
             self.set_status("Dashboard refreshed")
-        
+
         self._execute_task(task, done)
 
     def sync_to_notion(self):
         """Sync recordings to Notion database."""
         self.set_status("Syncing to Notion...", True)
-        
+
         def task():
             from src.notion_sync import NotionSyncService
             from src.database.engine import SessionLocal, init_db
             from src.database.models import Recording
             from sqlalchemy import select
-            
+
             init_db()
             session = SessionLocal()
             try:
                 # Get all processed recordings
-                recordings = session.execute(
-                    select(Recording).where(Recording.status.in_(['processed', 'indexed']))
-                ).scalars().all()
-                
+                recordings = (
+                    session.execute(
+                        select(Recording).where(
+                            Recording.status.in_(["processed", "indexed"])
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
                 if not recordings:
                     return {"pushed": 0, "error": "No processed recordings to sync"}
-                
+
                 # Push to Notion
                 sync = NotionSyncService()
                 stats = sync.push_recordings(recordings)
@@ -1711,7 +2255,7 @@ class PlaudBlenderApp:
                 }
             finally:
                 session.close()
-        
+
         def done(result):
             if result.get("error"):
                 messagebox.showwarning("Notion Sync", result["error"])
@@ -1720,9 +2264,11 @@ class PlaudBlenderApp:
                 if result.get("errors"):
                     msg += f"\n{result['errors']} errors"
                     if result.get("error_messages"):
-                        msg += f"\n\nFirst errors:\n" + "\n".join(result["error_messages"][:3])
+                        msg += f"\n\nFirst errors:\n" + "\n".join(
+                            result["error_messages"][:3]
+                        )
                 messagebox.showinfo("Notion Sync", msg)
-        
+
         self._execute_task(task, done)
 
     def notion_push(self):
@@ -1732,9 +2278,10 @@ class PlaudBlenderApp:
     def notion_pull(self):
         """Pull edits from Notion back to local database."""
         self.set_status("📥 Pulling from Notion...", True)
-        
+
         def task():
             from src.notion_sync import NotionSyncService
+
             sync = NotionSyncService()
             stats = sync.pull_notion_edits(since_hours=168)  # Last 7 days
             return {
@@ -1742,36 +2289,48 @@ class PlaudBlenderApp:
                 "errors": stats.errors,
                 "error_messages": stats.error_messages[:5],
             }
-        
+
         def done(result):
             if result.get("pulled", 0) > 0:
-                messagebox.showinfo("Notion Pull", f"Updated {result['pulled']} recordings from Notion")
+                messagebox.showinfo(
+                    "Notion Pull", f"Updated {result['pulled']} recordings from Notion"
+                )
                 self.load_transcripts()  # Refresh the transcripts view
             elif result.get("errors"):
-                messagebox.showwarning("Notion Pull", f"Errors: {result['errors']}\n" + "\n".join(result.get("error_messages", [])[:3]))
+                messagebox.showwarning(
+                    "Notion Pull",
+                    f"Errors: {result['errors']}\n"
+                    + "\n".join(result.get("error_messages", [])[:3]),
+                )
             else:
                 messagebox.showinfo("Notion Pull", "No updates found in Notion")
-        
+
         self._execute_task(task, done)
 
     def notion_full_sync(self):
         """Full two-way sync with Notion."""
         self.set_status("🔄 Full Notion sync...", True)
-        
+
         def task():
             from src.notion_sync import NotionSyncService
             from src.database.engine import SessionLocal, init_db
             from src.database.models import Recording
             from sqlalchemy import select
-            
+
             init_db()
             session = SessionLocal()
             try:
                 # Get recordings to push
-                recordings = session.execute(
-                    select(Recording).where(Recording.status.in_(['processed', 'indexed']))
-                ).scalars().all()
-                
+                recordings = (
+                    session.execute(
+                        select(Recording).where(
+                            Recording.status.in_(["processed", "indexed"])
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
                 sync = NotionSyncService()
                 stats = sync.full_sync(recordings)
                 return {
@@ -1782,7 +2341,7 @@ class PlaudBlenderApp:
                 }
             finally:
                 session.close()
-        
+
         def done(result):
             msg = f"📤 Pushed: {result.get('pushed', 0)}\n📥 Pulled: {result.get('pulled', 0)}"
             if result.get("skipped"):
@@ -1792,80 +2351,93 @@ class PlaudBlenderApp:
             messagebox.showinfo("Full Notion Sync", msg)
             self.load_transcripts()
             self.notion_check_status()  # Update status panel
-        
+
         self._execute_task(task, done)
 
     def notion_check_status(self):
         """Check Notion connection status and update dashboard."""
+
         def task():
             import os
             from dotenv import load_dotenv
+
             load_dotenv()
-            
+
             status = {
-                'connected': False,
-                'database_id': os.getenv('NOTION_DATABASE_ID'),
-                'pages_synced': 0,
-                'last_sync': None,
-                'error': None,
+                "connected": False,
+                "database_id": os.getenv("NOTION_DATABASE_ID"),
+                "pages_synced": 0,
+                "last_sync": None,
+                "error": None,
             }
-            
-            if not os.getenv('NOTION_API_KEY') and not os.getenv('NOTION_TOKEN'):
-                status['error'] = 'No API key'
+
+            if not os.getenv("NOTION_API_KEY") and not os.getenv("NOTION_TOKEN"):
+                status["error"] = "No API key"
                 return status
-            
-            if not status['database_id']:
-                status['error'] = 'No database ID'
+
+            if not status["database_id"]:
+                status["error"] = "No database ID"
                 return status
-            
+
             try:
                 from src.notion_sync import NotionSyncService
+
                 sync = NotionSyncService()
-                
+
                 # Simple connection test - just retrieve the database info
                 db_info = sync.client.databases.retrieve(
                     database_id=sync.config.database_id
                 )
-                
-                status['connected'] = True
-                
+
+                status["connected"] = True
+
                 # Count pages using search (simpler - just search all, don't filter)
                 try:
                     # Search workspace, limited to 100 for performance
                     # Don't use filter - it's more reliable to just search all objects
                     response = sync.client.search(page_size=100)
                     # Count only pages (not databases)
-                    pages = [r for r in response.get('results', []) if r.get('object') == 'page']
-                    status['pages_synced'] = len(pages)
+                    pages = [
+                        r
+                        for r in response.get("results", [])
+                        if r.get("object") == "page"
+                    ]
+                    status["pages_synced"] = len(pages)
                 except Exception as query_error:
                     # If search fails, just show 0
-                    status['pages_synced'] = 0
-                
+                    status["pages_synced"] = 0
+
             except Exception as e:
-                status['error'] = str(e)[:50]
-            
+                status["error"] = str(e)[:50]
+
             return status
-        
+
         def done(result):
-            if 'dashboard' in self.views:
-                self.views['dashboard'].update_notion_status(result)
-            if result.get('connected'):
-                self.set_status(f"✅ Notion connected ({result.get('pages_synced', 0)} pages)")
-            elif result.get('error'):
+            if "dashboard" in self.views:
+                self.views["dashboard"].update_notion_status(result)
+            if result.get("connected"):
+                self.set_status(
+                    f"✅ Notion connected ({result.get('pages_synced', 0)} pages)"
+                )
+            elif result.get("error"):
                 self.set_status(f"⚠️ Notion: {result.get('error')}")
-        
+
         self._execute_task(task, done)
 
     def notion_configure(self):
         """Open dialog to configure Notion integration."""
         from tkinter import simpledialog
         import os
-        
+
         # Show current config and allow editing
-        current_db = os.getenv('NOTION_DATABASE_ID', '')
-        current_key = os.getenv('NOTION_API_KEY') or os.getenv('NOTION_TOKEN', '')
-        
-        msg = f"Current Database ID: {current_db[:8]}...\n" if current_db else "Database ID: Not set\n"
+        current_db = os.getenv("NOTION_DATABASE_ID", "")
+        current_key = os.getenv("NOTION_API_KEY") or os.getenv("NOTION_TOKEN", "")
+
+        msg = (
+            f"Current Database ID: {current_db[:8]}...\n"
+            if current_db
+            else "Database ID: Not set\n"
+        )
         msg += f"API Key: {'✓ Set' if current_key else '✗ Not set'}\n\n"
         msg += "To configure Notion:\n"
         msg += "1. Create a Notion integration at notion.so/my-integrations\n"
@@ -1874,56 +2446,81 @@ class PlaudBlenderApp:
         msg += "4. Add to .env:\n"
         msg += "   NOTION_API_KEY=secret_xxx\n"
         msg += "   NOTION_DATABASE_ID=xxx"
-        
+
         # Option to go to settings
         result = messagebox.askyesno(
-            "Notion Configuration",
-            msg + "\n\nOpen Settings to configure?",
-            icon='info'
+            "Notion Configuration", msg + "\n\nOpen Settings to configure?", icon="info"
         )
-        
+
         if result:
-            self.switch_view('settings')
+            self.switch_view("settings")
 
     def generate_mindmap(self):
         messagebox.showinfo("Mind Map", "Mind map generator coming soon")
-    
+
     def _auto_extract_knowledge_graph(self):
         """Silently extract knowledge graph in background after transcript load."""
         import sys
-        print(f'🕸️ [ENTRY] _auto_extract_knowledge_graph called, state.transcripts: {len(state.transcripts) if state.transcripts else 0}', file=sys.stderr)
+
+        print(
+            f"🕸️ [ENTRY] _auto_extract_knowledge_graph called, state.transcripts: {len(state.transcripts) if state.transcripts else 0}",
+            file=sys.stderr,
+        )
         sys.stderr.flush()
-        
+
         if not state.transcripts or len(state.transcripts) == 0:
-            log('INFO', '🕸️ Knowledge graph: 0 entities, 0 relationships (no transcripts)')
+            log(
+                "INFO",
+                "🕸️ Knowledge graph: 0 entities, 0 relationships (no transcripts)",
+            )
             return
-        
-        log('INFO', f'🕸️ Auto-extracting knowledge graph from {len(state.transcripts)} transcripts...')
-        
+
+        log(
+            "INFO",
+            f"🕸️ Auto-extracting knowledge graph from {len(state.transcripts)} transcripts...",
+        )
+
         def task():
             import sys
-            print(f'🕸️ [TASK START] state.transcripts len: {len(state.transcripts) if state.transcripts else 0}', file=sys.stderr)
+
+            print(
+                f"🕸️ [TASK START] state.transcripts len: {len(state.transcripts) if state.transcripts else 0}",
+                file=sys.stderr,
+            )
             sys.stderr.flush()
-            
+
             from src.processing.graph_rag import EntityExtractor
-            
+
             # CRITICAL: Capture transcripts at task execution time
             transcripts_to_process = state.transcripts[:50] if state.transcripts else []
-            print(f'🕸️ [DIRECT PRINT] Task starting: {len(transcripts_to_process)} transcripts', file=sys.stderr)
+            print(
+                f"🕸️ [DIRECT PRINT] Task starting: {len(transcripts_to_process)} transcripts",
+                file=sys.stderr,
+            )
             sys.stderr.flush()
-            log('INFO', f'🕸️ Task starting: {len(transcripts_to_process)} transcripts to process')
-            
+            log(
+                "INFO",
+                f"🕸️ Task starting: {len(transcripts_to_process)} transcripts to process",
+            )
+
             if not transcripts_to_process:
-                print('🕸️ [DIRECT PRINT] No transcripts available!', file=sys.stderr)
-                log('WARNING', '🕸️ No transcripts available in task context!')
-                return {'entities': [], 'relationships': [], 'transcript_connections': {}}
-            
+                print("🕸️ [DIRECT PRINT] No transcripts available!", file=sys.stderr)
+                log("WARNING", "🕸️ No transcripts available in task context!")
+                return {
+                    "entities": [],
+                    "relationships": [],
+                    "transcript_connections": {},
+                }
+
             # Log what keys are available in the first transcript
             if transcripts_to_process:
                 first = transcripts_to_process[0]
-                print(f'🕸️ [DIRECT PRINT] First transcript keys: {list(first.keys())}', file=sys.stderr)
-                log('INFO', f'🕸️ First transcript keys: {list(first.keys())}')
-            
+                print(
+                    f"🕸️ [DIRECT PRINT] First transcript keys: {list(first.keys())}",
+                    file=sys.stderr,
+                )
+                log("INFO", f"🕸️ First transcript keys: {list(first.keys())}")
+
             extractor = EntityExtractor()
             all_entities = []
             all_relationships = []
@@ -1931,75 +2528,99 @@ class PlaudBlenderApp:
             processed_count = 0
             skipped_count = 0
             error_count = 0
-            
+
             # Process each transcript (limit for performance)
             for i, transcript in enumerate(transcripts_to_process):
-                text = transcript.get('full_text') or transcript.get('transcript') or transcript.get('text', '')
-                transcript_id = str(transcript.get('id', ''))
-                
+                text = (
+                    transcript.get("full_text")
+                    or transcript.get("transcript")
+                    or transcript.get("text", "")
+                )
+                transcript_id = str(transcript.get("id", ""))
+
                 # Debug: log what we're getting
                 if i < 3:  # Log first 3 for debugging
                     text_preview = text[:100] if text else "(empty)"
-                    log('INFO', f'🕸️ Transcript {i}: id={transcript_id[:12]}..., text_len={len(text)}, preview={text_preview}...')
-                
+                    log(
+                        "INFO",
+                        f"🕸️ Transcript {i}: id={transcript_id[:12]}..., text_len={len(text)}, preview={text_preview}...",
+                    )
+
                 if not text or len(text) < 100:
                     skipped_count += 1
                     if i < 5:  # Log first few skips
-                        log('INFO', f'🕸️ Skipping transcript {transcript_id[:12]}... (text_len={len(text)})')
+                        log(
+                            "INFO",
+                            f"🕸️ Skipping transcript {transcript_id[:12]}... (text_len={len(text)})",
+                        )
                     continue
-                    
+
                 try:
                     # Extract entities and relationships (returns tuple)
-                    entities, relationships = extractor.extract_entities(text, doc_id=transcript_id)
+                    entities, relationships = extractor.extract_entities(
+                        text, doc_id=transcript_id
+                    )
                     processed_count += 1
-                    
-                    log('INFO', f'🕸️ Extracted {len(entities)} entities, {len(relationships)} relationships from {transcript_id[:12]}...')
-                    
+
+                    log(
+                        "INFO",
+                        f"🕸️ Extracted {len(entities)} entities, {len(relationships)} relationships from {transcript_id[:12]}...",
+                    )
+
                     # Track which transcripts mention which entities
                     for entity in entities:
                         entity_name = entity.name
                         if entity_name not in transcript_connections:
                             transcript_connections[entity_name] = []
                         transcript_connections[entity_name].append(transcript_id)
-                        
+
                         # Convert to dict and add if not duplicate
                         entity_dict = entity.to_dict()
-                        if not any(e['name'] == entity_name for e in all_entities):
+                        if not any(e["name"] == entity_name for e in all_entities):
                             all_entities.append(entity_dict)
-                    
+
                     # Add relationships
                     for rel in relationships:
                         rel_dict = rel.to_dict()
                         all_relationships.append(rel_dict)
-                        
+
                 except Exception as e:
                     error_count += 1
-                    log('ERROR', f'🕸️ Entity extraction failed for {transcript_id[:12]}...: {type(e).__name__}: {e}')
+                    log(
+                        "ERROR",
+                        f"🕸️ Entity extraction failed for {transcript_id[:12]}...: {type(e).__name__}: {e}",
+                    )
                     continue
-            
-            log('INFO', f'🕸️ Extraction complete: processed={processed_count}, skipped={skipped_count}, errors={error_count}')
-            
+
+            log(
+                "INFO",
+                f"🕸️ Extraction complete: processed={processed_count}, skipped={skipped_count}, errors={error_count}",
+            )
+
             return {
-                'entities': all_entities,
-                'relationships': all_relationships,
-                'transcript_connections': transcript_connections
+                "entities": all_entities,
+                "relationships": all_relationships,
+                "transcript_connections": transcript_connections,
             }
-        
+
         def done(result):
-            if 'knowledge_graph' in self.views:
-                self.views['knowledge_graph'].set_graph_data(
-                    entities=result['entities'],
-                    relationships=result['relationships'],
-                    transcript_connections=result['transcript_connections']
+            if "knowledge_graph" in self.views:
+                self.views["knowledge_graph"].set_graph_data(
+                    entities=result["entities"],
+                    relationships=result["relationships"],
+                    transcript_connections=result["transcript_connections"],
                 )
-            
-            entity_count = len(result['entities'])
-            rel_count = len(result['relationships'])
-            log('INFO', f"🕸️ Knowledge graph: {entity_count} entities, {rel_count} relationships")
-            
+
+            entity_count = len(result["entities"])
+            rel_count = len(result["relationships"])
+            log(
+                "INFO",
+                f"🕸️ Knowledge graph: {entity_count} entities, {rel_count} relationships",
+            )
+
             # Update dashboard with graph stats
             self._update_dashboard_graph_stats(entity_count, rel_count)
-        
+
         self._execute_task(task, done)
 
     def refresh_knowledge_graph(self):
@@ -2008,90 +2629,108 @@ class PlaudBlenderApp:
         and update the Knowledge Graph view.
         """
         self.set_status("🕸️ Extracting knowledge graph...", True)
-        
+
         def task():
             from src.processing.graph_rag import EntityExtractor
-            
+
             extractor = EntityExtractor()
             all_entities = []
             all_relationships = []
             transcript_connections = {}
-            
+
             # Process each transcript
             for transcript in state.transcripts[:50]:  # Limit for performance
-                text = transcript.get('full_text') or transcript.get('transcript') or transcript.get('text', '')
+                text = (
+                    transcript.get("full_text")
+                    or transcript.get("transcript")
+                    or transcript.get("text", "")
+                )
                 if not text or len(text) < 100:
                     continue
-                    
+
                 try:
                     # Extract entities and relationships (returns tuple)
-                    transcript_id = str(transcript.get('id', ''))
-                    entities, relationships = extractor.extract_entities(text, doc_id=transcript_id)
-                    
+                    transcript_id = str(transcript.get("id", ""))
+                    entities, relationships = extractor.extract_entities(
+                        text, doc_id=transcript_id
+                    )
+
                     # Track which transcripts mention which entities
                     for entity in entities:
                         entity_name = entity.name
                         if entity_name not in transcript_connections:
                             transcript_connections[entity_name] = []
                         transcript_connections[entity_name].append(transcript_id)
-                        
+
                         # Convert to dict and add if not duplicate
                         entity_dict = entity.to_dict()
-                        if not any(e['name'] == entity_name for e in all_entities):
+                        if not any(e["name"] == entity_name for e in all_entities):
                             all_entities.append(entity_dict)
-                    
+
                     # Add relationships
                     for rel in relationships:
                         rel_dict = rel.to_dict()
                         all_relationships.append(rel_dict)
-                        
+
                 except Exception as e:
-                    log('WARNING', f"GraphRAG extraction failed for transcript: {e}")
+                    log("WARNING", f"GraphRAG extraction failed for transcript: {e}")
                     continue
-            
+
             return {
-                'entities': all_entities,
-                'relationships': all_relationships,
-                'transcript_connections': transcript_connections
+                "entities": all_entities,
+                "relationships": all_relationships,
+                "transcript_connections": transcript_connections,
             }
-        
+
         def done(result):
-            if 'knowledge_graph' in self.views:
-                self.views['knowledge_graph'].set_graph_data(
-                    entities=result['entities'],
-                    relationships=result['relationships'],
-                    transcript_connections=result['transcript_connections']
+            if "knowledge_graph" in self.views:
+                self.views["knowledge_graph"].set_graph_data(
+                    entities=result["entities"],
+                    relationships=result["relationships"],
+                    transcript_connections=result["transcript_connections"],
                 )
-            
-            entity_count = len(result['entities'])
-            rel_count = len(result['relationships'])
-            log('INFO', f"🕸️ Knowledge graph: {entity_count} entities, {rel_count} relationships")
-            
+
+            entity_count = len(result["entities"])
+            rel_count = len(result["relationships"])
+            log(
+                "INFO",
+                f"🕸️ Knowledge graph: {entity_count} entities, {rel_count} relationships",
+            )
+
             # Update dashboard with graph stats
             self._update_dashboard_graph_stats(entity_count, rel_count)
-        
+
         self._execute_task(task, done)
-    
+
     def _update_dashboard_graph_stats(self, entity_count: int, relationship_count: int):
         """Update dashboard with knowledge graph statistics."""
-        if 'dashboard' in self.views:
-            dashboard = self.views['dashboard']
-            if hasattr(dashboard, 'update_stats'):
-                dashboard.update_stats({
-                    'graph_entities': entity_count,
-                    'graph_relationships': relationship_count,
-                })
+        if "dashboard" in self.views:
+            dashboard = self.views["dashboard"]
+            if hasattr(dashboard, "update_stats"):
+                dashboard.update_stats(
+                    {
+                        "graph_entities": entity_count,
+                        "graph_relationships": relationship_count,
+                    }
+                )
 
     def run(self):
         self.root.mainloop()
 
     # ------------------- Internals -----------------------------------
-    def _execute_task(self, task: Callable, on_success: Optional[Callable] = None, ready_message: str = "Ready", on_finally: Optional[Callable] = None):
+    def _execute_task(
+        self,
+        task: Callable,
+        on_success: Optional[Callable] = None,
+        ready_message: str = "Ready",
+        on_finally: Optional[Callable] = None,
+    ):
         """Run *task* in the background and funnel results through a single UI-safe callback."""
+
         def callback(result):
             try:
                 if isinstance(result, Exception):
-                    log('ERROR', str(result))
+                    log("ERROR", str(result))
                     self.set_status("Error")
                     messagebox.showerror("PlaudBlender", str(result))
                 else:
@@ -2106,12 +2745,15 @@ class PlaudBlenderApp:
 
     # ------------------- Helpers -----------------------------------
     def _get_selected_transcript(self):
-        ids = self.views['transcripts'].get_selected_ids()
+        ids = self.views["transcripts"].get_selected_ids()
         if not ids:
             messagebox.showwarning("Transcripts", "Select a transcript first")
             return None
         rec_id = ids[0]
-        rec = next((r for r in state.filtered_transcripts if str(r.get('id')) == str(rec_id)), None)
+        rec = next(
+            (r for r in state.filtered_transcripts if str(r.get("id")) == str(rec_id)),
+            None,
+        )
         if not rec:
             messagebox.showwarning("Transcripts", "Selected transcript not found")
         return rec
@@ -2127,21 +2769,34 @@ class PlaudBlenderApp:
         wrapper.columnconfigure(0, weight=1)
         wrapper.rowconfigure(3, weight=1)
 
-        ttk.Label(wrapper, text="Recording details", font=("TkDefaultFont", 10, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            wrapper, text="Recording details", font=("TkDefaultFont", 10, "bold")
+        ).grid(row=0, column=0, sticky="w")
 
-        details_box = tk.Text(wrapper, height=6, wrap="word", highlightthickness=0, borderwidth=1, relief=tk.SOLID)
+        details_box = tk.Text(
+            wrapper,
+            height=6,
+            wrap="word",
+            highlightthickness=0,
+            borderwidth=1,
+            relief=tk.SOLID,
+        )
         details_box.insert("1.0", self._format_rec_details(rec))
         details_box.configure(state="disabled")
         details_box.grid(row=1, column=0, sticky="nsew", pady=(4, 12))
 
-        ttk.Label(wrapper, text="Transcript", font=("TkDefaultFont", 10, "bold")).grid(row=2, column=0, sticky="w")
+        ttk.Label(wrapper, text="Transcript", font=("TkDefaultFont", 10, "bold")).grid(
+            row=2, column=0, sticky="w"
+        )
 
         transcript_box = scrolledtext.ScrolledText(wrapper, wrap="word")
         transcript_box.insert("1.0", transcript_text or "No transcript available.")
         transcript_box.configure(state="disabled")
         transcript_box.grid(row=3, column=0, sticky="nsew", pady=(4, 0))
 
-        ttk.Button(wrapper, text="Close", command=window.destroy).grid(row=4, column=0, pady=(12, 0), sticky="e")
+        ttk.Button(wrapper, text="Close", command=window.destroy).grid(
+            row=4, column=0, pady=(12, 0), sticky="e"
+        )
 
     def _show_metadata_dialog(self, rec: dict):
         window = tk.Toplevel(self.root)
@@ -2154,23 +2809,34 @@ class PlaudBlenderApp:
         wrapper.columnconfigure(0, weight=1)
         wrapper.rowconfigure(1, weight=1)
 
-        ttk.Label(wrapper, text="Recording details", font=("TkDefaultFont", 10, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            wrapper, text="Recording details", font=("TkDefaultFont", 10, "bold")
+        ).grid(row=0, column=0, sticky="w")
 
-        details_box = tk.Text(wrapper, height=12, wrap="word", highlightthickness=0, borderwidth=1, relief=tk.SOLID)
+        details_box = tk.Text(
+            wrapper,
+            height=12,
+            wrap="word",
+            highlightthickness=0,
+            borderwidth=1,
+            relief=tk.SOLID,
+        )
         details_box.insert("1.0", self._format_rec_details(rec))
         details_box.configure(state="disabled")
         details_box.grid(row=1, column=0, sticky="nsew", pady=(6, 12))
 
-        ttk.Button(wrapper, text="Close", command=window.destroy).grid(row=2, column=0, sticky="e")
+        ttk.Button(wrapper, text="Close", command=window.destroy).grid(
+            row=2, column=0, sticky="e"
+        )
 
     def _format_rec_details(self, rec: dict) -> str:
         fields = {
-            "Title": rec.get('display_name', '—'),
-            "Date": rec.get('display_date', '—'),
-            "Time": rec.get('display_time', '—'),
-            "Duration": rec.get('display_duration', '—'),
-            "ID": rec.get('id', '—'),
-            "Short ID": rec.get('short_id', '—'),
+            "Title": rec.get("display_name", "—"),
+            "Date": rec.get("display_date", "—"),
+            "Time": rec.get("display_time", "—"),
+            "Duration": rec.get("display_duration", "—"),
+            "ID": rec.get("id", "—"),
+            "Short ID": rec.get("short_id", "—"),
         }
         lines = [f"{k}: {v}" for k, v in fields.items()]
         return "\n".join(lines)

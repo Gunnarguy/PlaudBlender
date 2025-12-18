@@ -9,6 +9,7 @@ Handles all Pinecone index dimension compatibility AUTOMATICALLY:
 
 The user never has to worry about dimension mismatches.
 """
+
 import os
 import logging
 from typing import Optional, Dict, Any, Tuple
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 class IndexAction(Enum):
     """Actions the index manager can take."""
+
     NONE = "none"  # Index is compatible, no action needed
     CREATE = "create"  # Create new index (none exists)
     RECREATE = "recreate"  # Recreate index with new dimension
@@ -32,72 +34,164 @@ class IndexAction(Enum):
 class IndexManager:
     """
     Intelligent index manager that keeps embeddings and Pinecone in sync.
-    
+
     Strategies:
     1. If no index exists → create with configured dimension
     2. If index exists with SAME dimension → use as-is
     3. If index exists with DIFFERENT dimension → AUTO-ADJUST embedding config
-    
+
     The key insight: It's easier to adjust embedding dimension than recreate indexes.
     With Matryoshka embeddings, we can use ANY dimension 128-3072 with minimal quality loss.
     """
-    
+
     def __init__(self):
         """Initialize the index manager."""
         self._pc = None
         self._index = None
-        self._index_name = os.getenv("PINECONE_INDEX_NAME", "transcripts")
+        # Provider-aware index/collection name.
+        # - Pinecone: PINECONE_INDEX_NAME
+        # - Qdrant:   QDRANT_COLLECTION
+        try:
+            from src.vector_store import is_qdrant
+
+            if is_qdrant():
+                self._index_name = os.getenv("QDRANT_COLLECTION", "transcripts")
+            else:
+                self._index_name = os.getenv("PINECONE_INDEX_NAME", "transcripts")
+        except Exception:
+            # Fall back to legacy env var.
+            self._index_name = os.getenv("PINECONE_INDEX_NAME", "transcripts")
         self._cached_dimension: Optional[int] = None
-    
+
+    def _is_pinecone(self) -> bool:
+        try:
+            from src.vector_store import is_pinecone
+
+            return is_pinecone()
+        except Exception:
+            # Legacy assumption.
+            return True
+
     @property
     def pc(self):
         """Lazy-load Pinecone client."""
+        if not self._is_pinecone():
+            raise RuntimeError(
+                "Pinecone client is not available when VECTOR_DB is not 'pinecone'"
+            )
         if self._pc is None:
             from pinecone import Pinecone
+
             api_key = os.getenv("PINECONE_API_KEY")
             if not api_key:
                 raise ValueError("PINECONE_API_KEY not set")
             self._pc = Pinecone(api_key=api_key)
         return self._pc
-    
+
     @property
     def index_name(self) -> str:
         return self._index_name
-    
+
     def get_index_dimension(self) -> Optional[int]:
         """
         Get the dimension of the current Pinecone index.
-        
+
         Returns:
             Dimension (int) if index exists, None otherwise
         """
         if self._cached_dimension:
             return self._cached_dimension
-        
+
+        # Qdrant path: derive dimension from the active collection.
+        if not self._is_pinecone():
+            try:
+                from gui.services.clients import get_vector_db_client
+
+                client = get_vector_db_client(collection_name=self._index_name)
+                existing = set(client.list_collections())
+                if self._index_name not in existing:
+                    logger.info(f"Collection '{self._index_name}' does not exist yet")
+                    return None
+                info = client.get_collection_info() or {}
+                dim = info.get("dimension")
+                if dim is None:
+                    return None
+                self._cached_dimension = int(dim)
+                return self._cached_dimension
+            except Exception as e:
+                logger.error(f"Error getting collection dimension: {e}")
+                return None
+
+        # Pinecone path
         try:
             existing = [idx.name for idx in self.pc.list_indexes()]
-            
+
             if self._index_name not in existing:
                 logger.info(f"Index '{self._index_name}' does not exist yet")
                 return None
-            
+
             # Get index stats to find dimension
             index = self.pc.Index(self._index_name)
             stats = index.describe_index_stats()
             self._cached_dimension = stats.dimension
-            
-            logger.info(f"Index '{self._index_name}' has dimension: {self._cached_dimension}")
+
+            logger.info(
+                f"Index '{self._index_name}' has dimension: {self._cached_dimension}"
+            )
             return self._cached_dimension
-            
+
         except Exception as e:
             logger.error(f"Error getting index dimension: {e}")
             return None
-    
+
     def get_index_info(self) -> Dict[str, Any]:
         """Get comprehensive index information."""
+        # Qdrant path
+        if not self._is_pinecone():
+            try:
+                from gui.services.clients import get_vector_db_client
+
+                client = get_vector_db_client(collection_name=self._index_name)
+                existing = set(client.list_collections())
+                if self._index_name not in existing:
+                    return {
+                        "exists": False,
+                        "name": self._index_name,
+                        "dimension": None,
+                        "vector_count": 0,
+                        "metric": None,
+                        "host": os.getenv("QDRANT_URL", "http://localhost:6333"),
+                        "namespaces": [],
+                    }
+
+                info = client.get_collection_info() or {}
+                namespaces_obj = info.get("namespaces") or {}
+                namespaces = (
+                    list(namespaces_obj.keys())
+                    if isinstance(namespaces_obj, dict)
+                    else list(namespaces_obj)
+                )
+                dim = info.get("dimension")
+                if dim is not None:
+                    self._cached_dimension = int(dim)
+
+                return {
+                    "exists": True,
+                    "name": self._index_name,
+                    "dimension": dim,
+                    "vector_count": info.get("total_vectors", 0),
+                    "metric": info.get("metric"),
+                    "host": os.getenv("QDRANT_URL", "http://localhost:6333"),
+                    "namespaces": namespaces,
+                }
+            except Exception as e:
+                logger.error(f"Error getting collection info: {e}")
+                return {"exists": False, "error": str(e)}
+
+        # Pinecone path
         try:
             existing = [idx.name for idx in self.pc.list_indexes()]
-            
+
             if self._index_name not in existing:
                 return {
                     "exists": False,
@@ -105,11 +199,11 @@ class IndexManager:
                     "dimension": None,
                     "vector_count": 0,
                 }
-            
+
             index = self.pc.Index(self._index_name)
             stats = index.describe_index_stats()
             info = self.pc.describe_index(self._index_name)
-            
+
             return {
                 "exists": True,
                 "name": self._index_name,
@@ -119,17 +213,17 @@ class IndexManager:
                 "host": info.host,
                 "namespaces": list(stats.namespaces.keys()) if stats.namespaces else [],
             }
-            
+
         except Exception as e:
             logger.error(f"Error getting index info: {e}")
             return {"exists": False, "error": str(e)}
-    
+
     def sync_embedding_config(self) -> Tuple[int, str]:
         """
         SMART SYNC: Automatically align embedding config with existing index.
-        
+
         This is the magic function - it ensures you can NEVER have a dimension mismatch.
-        
+
         Returns:
             Tuple of (dimension, action_taken)
         """
@@ -138,51 +232,85 @@ class IndexManager:
             EmbeddingConfig,
             get_embedding_dimension,
         )
-        
+
         # What dimension does the embedding service want to use?
         requested_dim = get_embedding_dimension()
-        
+
         # What dimension does the index actually have?
         index_dim = self.get_index_dimension()
-        
+
         if index_dim is None:
             # No index exists - we'll create one with the requested dimension
             logger.info(f"No index exists. Will create with dimension {requested_dim}")
             return (requested_dim, "will_create_new")
-        
+
         if index_dim == requested_dim:
             # Perfect match - nothing to do
             logger.info(f"Dimension match: {index_dim}d")
             return (index_dim, "already_synced")
-        
+
         # MISMATCH - Auto-adjust embedding config to match existing index
         # This is the smart behavior: don't force user to recreate index,
         # just use the dimension that already exists
-        logger.warning(f"Dimension mismatch: index={index_dim}, requested={requested_dim}")
+        logger.warning(
+            f"Dimension mismatch: index={index_dim}, requested={requested_dim}"
+        )
         logger.info(f"Auto-adjusting embedding to {index_dim}d to match existing index")
-        
+
         # Reconfigure the embedding service
         new_config = EmbeddingConfig(dimension=index_dim)
         get_embedding_service(new_config)
-        
+
         return (index_dim, "auto_adjusted")
-    
+
     def ensure_index_exists(self, dimension: int) -> bool:
         """
         Ensure the index exists with the specified dimension.
         Creates if needed.
-        
+
         Args:
             dimension: Required vector dimension
-            
+
         Returns:
             True if index is ready, False on error
         """
+        # Qdrant path
+        if not self._is_pinecone():
+            try:
+                from gui.services.clients import get_vector_db_client
+
+                client = get_vector_db_client(collection_name=self._index_name)
+                existing = set(client.list_collections())
+                if self._index_name in existing:
+                    current_dim = self.get_index_dimension()
+                    if current_dim and current_dim != dimension:
+                        logger.warning(
+                            "Collection exists with dimension %s, but %s was requested. "
+                            "Using existing dimension.",
+                            current_dim,
+                            dimension,
+                        )
+                    return True
+
+                logger.info(
+                    "Creating collection '%s' with dimension %s",
+                    self._index_name,
+                    dimension,
+                )
+                ok = client.create_collection(self._index_name, dimension, "cosine")
+                if ok:
+                    self._cached_dimension = dimension
+                return bool(ok)
+            except Exception as e:
+                logger.error(f"Error ensuring collection exists: {e}")
+                return False
+
+        # Pinecone path
         from pinecone import ServerlessSpec
-        
+
         try:
             existing = [idx.name for idx in self.pc.list_indexes()]
-            
+
             if self._index_name in existing:
                 # Check dimension compatibility
                 current_dim = self.get_index_dimension()
@@ -192,44 +320,47 @@ class IndexManager:
                         f"but {dimension} was requested. Using existing dimension."
                     )
                 return True
-            
+
             # Create new index
-            logger.info(f"Creating index '{self._index_name}' with dimension {dimension}")
+            logger.info(
+                f"Creating index '{self._index_name}' with dimension {dimension}"
+            )
             self.pc.create_index(
                 name=self._index_name,
                 dimension=dimension,
                 metric="cosine",
-                spec=ServerlessSpec(cloud="aws", region="us-east-1")
+                spec=ServerlessSpec(cloud="aws", region="us-east-1"),
             )
-            
+
             self._cached_dimension = dimension
             logger.info(f"✅ Index '{self._index_name}' created with {dimension}d")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error ensuring index exists: {e}")
             return False
-    
+
     def get_compatible_dimension(self) -> int:
         """
         Get the dimension that should be used for embeddings.
-        
+
         This is the SINGLE SOURCE OF TRUTH for "what dimension should I use?"
         It accounts for existing index state.
-        
+
         Returns:
             The dimension to use (matches existing index if one exists)
         """
         index_dim = self.get_index_dimension()
-        
+
         if index_dim is not None:
             # Always use existing index dimension
             return index_dim
-        
+
         # No index - use embedding service default
         from gui.services.embedding_service import get_embedding_dimension
+
         return get_embedding_dimension()
-    
+
     def clear_cache(self):
         """Clear cached dimension (call after index changes)."""
         self._cached_dimension = None
@@ -240,10 +371,14 @@ class IndexManager:
 
     def enable_deletion_protection(self) -> Dict[str, Any]:
         """Enable deletion protection on the current index."""
+        if not self._is_pinecone():
+            return {"error": "Deletion protection is only supported for Pinecone"}
         return self._configure_index(deletion_protection="enabled")
 
     def disable_deletion_protection(self) -> Dict[str, Any]:
         """Disable deletion protection on the current index."""
+        if not self._is_pinecone():
+            return {"error": "Deletion protection is only supported for Pinecone"}
         return self._configure_index(deletion_protection="disabled")
 
     def set_index_tags(self, tags: Dict[str, str]) -> Dict[str, Any]:
@@ -256,10 +391,14 @@ class IndexManager:
         Returns:
             Updated index info or error dict
         """
+        if not self._is_pinecone():
+            return {"error": "Index tags are only supported for Pinecone"}
         return self._configure_index(tags=tags)
 
     def get_deletion_protection_status(self) -> str:
         """Get current deletion protection status ('enabled' or 'disabled')."""
+        if not self._is_pinecone():
+            return "unsupported"
         try:
             info = self.pc.describe_index(self._index_name)
             return getattr(info, "deletion_protection", "disabled")
@@ -320,9 +459,9 @@ def get_index_manager() -> IndexManager:
 def sync_dimensions() -> Tuple[int, str]:
     """
     Convenience function: Sync embedding and index dimensions.
-    
+
     Call this before any embedding/Pinecone operation to ensure compatibility.
-    
+
     Returns:
         (dimension, action) tuple
     """
@@ -332,7 +471,7 @@ def sync_dimensions() -> Tuple[int, str]:
 def get_compatible_dimension() -> int:
     """
     Convenience function: Get the dimension to use.
-    
+
     Returns:
         The dimension that's compatible with the existing index
     """

@@ -3,8 +3,6 @@
     "ms-python.python",
     "ms-python.vscode-pylance",
 
-    "ms-pyright.pyright",
-
     "astral-sh.ruff",
     "ms-python.black-formatter",
 

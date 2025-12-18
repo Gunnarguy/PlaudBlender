@@ -1,4 +1,10 @@
-from . import transcripts_service, pinecone_service, search_service, settings_service  # noqa: F401
+from . import (
+    transcripts_service,
+    vector_service,
+    search_service,
+    settings_service,
+    timeline_service,
+)  # noqa: F401
 
 # Embedding service exports
 from .embedding_service import (

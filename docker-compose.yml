@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant
+    container_name: qdrant
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - ~/.qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - plaud-network
+
+networks:
+  plaud-network:
+    driver: bridge

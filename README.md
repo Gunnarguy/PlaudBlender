@@ -76,6 +76,12 @@ PINECONE_INDEX_NAME=transcripts
 python plaud_setup.py
 ```
 
+If the Plaud consent page shows a **400 Bad Request** in the browser console, it’s almost always a **redirect URI mismatch**. Double-check that:
+- `PLAUD_REDIRECT_URI` in your `.env` matches the URL registered in the Plaud developer portal **exactly** (scheme/host/port/path).
+- During local dev, prefer: `http://localhost:8080/callback` (and register that exact URL).
+
+You may also see Chrome console warnings like **“preload … not used”** or **“credentials mode does not match / crossorigin”** coming from Plaud’s own page assets (e.g. `resource.plaud.ai`). Those warnings are **harmless** and unrelated to PlaudBlender.
+
 This will:
 - Check your configuration
 - Open browser for Plaud OAuth login

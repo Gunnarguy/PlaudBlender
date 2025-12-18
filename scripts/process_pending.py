@@ -14,15 +14,26 @@ This will:
 Embedding + Pinecone upsert can be layered separately.
 """
 import argparse
+import sys
+from pathlib import Path
+
+# Add parent directory to path so 'src' imports work
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.database.engine import init_db, SessionLocal
 from src.processing.engine import ChunkingConfig, process_pending_recordings
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Process pending recordings into segments")
-    parser.add_argument("--max-words", type=int, default=200, help="Max words per chunk")
-    parser.add_argument("--overlap-words", type=int, default=20, help="Overlap words between chunks")
+    parser = argparse.ArgumentParser(
+        description="Process pending recordings into segments"
+    )
+    parser.add_argument(
+        "--max-words", type=int, default=200, help="Max words per chunk"
+    )
+    parser.add_argument(
+        "--overlap-words", type=int, default=20, help="Overlap words between chunks"
+    )
     parser.add_argument("--dry-run", action="store_true", help="Do not write changes")
     args = parser.parse_args()
 

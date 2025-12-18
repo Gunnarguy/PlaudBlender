@@ -1,10 +1,13 @@
 import os
-from functools import lru_cache
-from typing import Tuple
 
 from src.plaud_oauth import PlaudOAuthClient
 from src.plaud_client import PlaudClient
-from src.pinecone_client import PineconeClient
+from src.vector_store import (
+    get_vector_client as _get_core_vector_client,
+    get_vector_db_provider,
+    VectorDBProvider,
+    is_qdrant,
+)
 from gui.state import state
 
 
@@ -20,15 +23,29 @@ def get_plaud_client() -> PlaudClient:
     return state.plaud_client
 
 
-def get_pinecone_client(index_name: str = None, dimension: int = None) -> PineconeClient:
-    # If a different index is requested than cached, create new instance
-    if state.pinecone_client:
-        if index_name and state.pinecone_client.index_name != index_name:
-            state.pinecone_client = PineconeClient(index_name=index_name, dimension=dimension)
-    if not state.pinecone_client:
-        state.pinecone_client = PineconeClient(index_name=index_name, dimension=dimension)
-    return state.pinecone_client
+def get_vector_db_client(collection_name: str = None):
+    """Return the active vector database client (Qdrant by default)."""
+    client = _get_core_vector_client(collection_name=collection_name)
+    state.vector_client = client
+    state.pinecone_client = client  # legacy alias
+    return client
 
 
-def current_index_name() -> str:
-    return os.getenv('PINECONE_INDEX_NAME', 'transcripts')
+def get_pinecone_client(collection_name: str = None):
+    """Backward-compatible wrapper returning the same vector client."""
+    return get_vector_db_client(collection_name=collection_name)
+
+
+def current_collection_name() -> str:
+    """Get the current collection/index name for the active provider."""
+    if is_qdrant():
+        return os.getenv("QDRANT_COLLECTION", "transcripts")
+    return os.getenv("PINECONE_INDEX_NAME", "transcripts")
+
+
+def get_dashboard_url() -> str:
+    """Get URL to vector DB dashboard (Qdrant only)."""
+    if is_qdrant():
+        url = os.getenv("QDRANT_URL", "http://localhost:6333")
+        return f"{url.rstrip('/')}/dashboard"
+    return None

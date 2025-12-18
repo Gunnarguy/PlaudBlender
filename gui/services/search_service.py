@@ -6,17 +6,19 @@ Provides ultra-granular, clearly-named search actions:
 - search_all_namespaces(): Cross-namespace parallel search
 - search_full_text(): Search only the full_text namespace
 - search_summaries(): Search only the summaries namespace
-- search_with_rerank(): Search + Pinecone rerank for better relevance
+- search_with_rerank(): Search + vector rerank for better relevance
 
 All embedding is delegated to the centralized EmbeddingService.
-Dimensions are automatically synced with Pinecone via IndexManager.
+Dimensions are automatically synced with the active vector index via IndexManager.
 """
+
 import os
 import time
+from functools import lru_cache
 from typing import List, Optional, Dict, Any
 
 from gui.services.embedding_service import get_embedding_service, EmbeddingError
-from gui.services.clients import get_pinecone_client
+from gui.services.clients import get_vector_db_client
 from gui.utils.logging import log
 from gui.state import state
 
@@ -24,13 +26,18 @@ from gui.state import state
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-RERANK_ENABLED = os.getenv("PINECONE_RERANK_ENABLED", "false").lower() == "true"
-RERANK_MODEL = os.getenv("PINECONE_RERANK_MODEL", "bge-reranker-v2-m3")
+RERANK_ENABLED = (
+    os.getenv("VECTOR_RERANK_ENABLED") or os.getenv("PINECONE_RERANK_ENABLED", "false")
+).lower() == "true"
+RERANK_MODEL = os.getenv(
+    "VECTOR_RERANK_MODEL", os.getenv("PINECONE_RERANK_MODEL", "bge-reranker-v2-m3")
+)
 
 
 # ============================================================================
 # AUTO-SYNC HELPER
 # ============================================================================
+
 
 def _ensure_dimension_sync():
     """
@@ -39,11 +46,12 @@ def _ensure_dimension_sync():
     """
     try:
         from gui.services.index_manager import sync_dimensions
+
         dim, action = sync_dimensions()
         if action == "auto_adjusted":
-            log('INFO', f"🔄 Auto-adjusted embedding to {dim}d to match index")
+            log("INFO", f"🔄 Auto-adjusted embedding to {dim}d to match index")
     except Exception as e:
-        log('WARNING', f"Could not sync dimensions: {e}")
+        log("WARNING", f"Could not sync dimensions: {e}")
 
 
 # ============================================================================
@@ -54,9 +62,60 @@ NAMESPACE_SUMMARIES = "summaries"
 ALL_NAMESPACES = [NAMESPACE_FULL_TEXT, NAMESPACE_SUMMARIES]
 
 
+# =========================================================================
+# SQLITE FALLBACKS (for old vectors missing text in metadata)
+# =========================================================================
+
+
+@lru_cache(maxsize=2048)
+def _sqlite_get_segment_text(segment_id: str) -> str:
+    """Fetch segment text from SQLite.
+
+    Why:
+    - Older Qdrant/Pinecone-compatible vectors may not have stored `metadata['text']`.
+    - Search UI/rerank needs text for snippets and reranker documents.
+    """
+    if not segment_id:
+        return ""
+    try:
+        from src.database.engine import SessionLocal, init_db
+        from src.database.models import Segment
+
+        init_db()
+        session = SessionLocal()
+        try:
+            seg = session.get(Segment, segment_id)
+            return getattr(seg, "text", "") if seg is not None else ""
+        finally:
+            session.close()
+    except Exception:
+        return ""
+
+
+@lru_cache(maxsize=512)
+def _sqlite_get_recording_transcript(recording_id: str) -> str:
+    """Fetch full recording transcript from SQLite (used as a last-resort snippet)."""
+    if not recording_id:
+        return ""
+    try:
+        from src.database.engine import SessionLocal, init_db
+        from src.database.models import Recording
+
+        init_db()
+        session = SessionLocal()
+        try:
+            rec = session.get(Recording, recording_id)
+            return getattr(rec, "transcript", "") if rec is not None else ""
+        finally:
+            session.close()
+    except Exception:
+        return ""
+
+
 # ============================================================================
 # GRANULAR SEARCH ACTIONS
 # ============================================================================
+
 
 def search_full_text(
     query: str,
@@ -66,27 +125,27 @@ def search_full_text(
 ) -> str:
     """
     🔍 SEARCH FULL TEXT NAMESPACE
-    
+
     Searches the 'full_text' namespace containing complete transcript chunks.
     Use this when you want to find specific passages or detailed content.
-    
+
     Args:
         query: Natural language search query
         limit: Max results to return (default: 5)
         include_context: Include text snippets in results
         filter_dict: Optional Pinecone metadata filters
-    
+
     Returns:
         Formatted search results as string
     """
-    log('INFO', f"🔍 search_full_text: '{query}' (limit={limit})")
+    log("INFO", f"🔍 search_full_text: '{query}' (limit={limit})")
     return _execute_search(
         query=query,
         namespace=NAMESPACE_FULL_TEXT,
         limit=limit,
         include_context=include_context,
         filter_dict=filter_dict,
-        namespace_label="📄 Full Text"
+        namespace_label="📄 Full Text",
     )
 
 
@@ -98,27 +157,27 @@ def search_summaries(
 ) -> str:
     """
     📝 SEARCH SUMMARIES NAMESPACE
-    
+
     Searches the 'summaries' namespace containing AI-generated syntheses.
     Use this when you want high-level topic matching or thematic search.
-    
+
     Args:
         query: Natural language search query
         limit: Max results to return (default: 5)
         include_context: Include summary text in results
         filter_dict: Optional Pinecone metadata filters
-    
+
     Returns:
         Formatted search results as string
     """
-    log('INFO', f"📝 search_summaries: '{query}' (limit={limit})")
+    log("INFO", f"📝 search_summaries: '{query}' (limit={limit})")
     return _execute_search(
         query=query,
         namespace=NAMESPACE_SUMMARIES,
         limit=limit,
         include_context=include_context,
         filter_dict=filter_dict,
-        namespace_label="📝 Summaries"
+        namespace_label="📝 Summaries",
     )
 
 
@@ -130,60 +189,60 @@ def search_all_namespaces(
 ) -> str:
     """
     🌐 CROSS-NAMESPACE SEARCH (PARALLEL)
-    
+
     Searches BOTH 'full_text' AND 'summaries' namespaces in parallel.
     Results are merged and ranked by relevance score.
-    
+
     This is the most comprehensive search - finds both specific passages
     AND high-level thematic matches.
-    
+
     Args:
         query: Natural language search query
         limit: Max results to return after merging (default: 5)
         include_context: Include text/summary in results
         filter_dict: Optional Pinecone metadata filters
-    
+
     Returns:
         Formatted search results with namespace indicators
     """
-    log('INFO', f"🌐 search_all_namespaces: '{query}' (limit={limit})")
-    
+    log("INFO", f"🌐 search_all_namespaces: '{query}' (limit={limit})")
+
     if not query.strip():
         return "❌ Error: Please provide a search query."
-    
-    # AUTO-SYNC: Ensure embedding dimension matches Pinecone index
+
+    # AUTO-SYNC: Ensure embedding dimension matches the active vector index
     _ensure_dimension_sync()
-    
+
     # Get embedding from centralized service
     try:
         embedding_service = get_embedding_service()
         vector = embedding_service.embed_query(query)
-        log('INFO', f"   ✅ Generated {len(vector)}-dim embedding")
+        log("INFO", f"   ✅ Generated {len(vector)}-dim embedding")
     except EmbeddingError as e:
         return f"❌ Embedding Error: {e}"
-    
-    # Get Pinecone client
-    pinecone_client = get_pinecone_client()
-    
+
+    # Get vector client
+    vector_client = get_vector_db_client()
+
     # Execute cross-namespace query
     try:
-        results = pinecone_client.query_namespaces(
+        results = vector_client.query_namespaces(
             query_embedding=vector,
             namespaces=ALL_NAMESPACES,
             top_k=limit,
             filter_dict=filter_dict,
             include_metadata=True,
         )
-        
+
         return _format_results(
             query=query,
             matches=results.matches,
             include_context=include_context,
             show_namespace=True,
         )
-        
+
     except Exception as e:
-        log('ERROR', f"Cross-namespace search failed: {e}")
+        log("ERROR", f"Cross-namespace search failed: {e}")
         return f"❌ Search Error: {e}"
 
 
@@ -212,7 +271,10 @@ def search_with_rerank(
     Returns:
         Formatted search results, reranked by query relevance
     """
-    log('INFO', f"🏆 search_with_rerank: '{query}' (limit={limit}, model={rerank_model})")
+    log(
+        "INFO",
+        f"🏆 search_with_rerank: '{query}' (limit={limit}, model={rerank_model})",
+    )
 
     if not query.strip():
         return "❌ Error: Please provide a search query."
@@ -222,18 +284,18 @@ def search_with_rerank(
     try:
         embedding_service = get_embedding_service()
         vector = embedding_service.embed_query(query)
-        log('INFO', f"   ✅ Generated {len(vector)}-dim embedding")
+        log("INFO", f"   ✅ Generated {len(vector)}-dim embedding")
     except EmbeddingError as e:
         return f"❌ Embedding Error: {e}"
 
-    pinecone_client = get_pinecone_client()
+    vector_client = get_vector_db_client()
     target_namespaces = namespaces or ALL_NAMESPACES
 
     # Fetch more candidates than needed for reranking
     candidate_limit = max(limit * 3, 15)
 
     try:
-        results = pinecone_client.query_namespaces(
+        results = vector_client.query_namespaces(
             query_embedding=vector,
             namespaces=target_namespaces,
             top_k=candidate_limit,
@@ -249,15 +311,37 @@ def search_with_rerank(
         match_map = {}
         for i, match in enumerate(results.matches):
             meta = match.metadata or {}
-            text = meta.get('synthesis') or meta.get('text') or meta.get('summary') or meta.get('title') or ''
+            text = (
+                meta.get("synthesis")
+                or meta.get("text")
+                or meta.get("summary")
+                or meta.get("title")
+                or ""
+            )
+            # Older vectors may not store text in metadata; fall back to SQLite.
+            if not text:
+                seg_id = meta.get("segment_id") or getattr(match, "id", None)
+                if isinstance(seg_id, str) and seg_id:
+                    text = _sqlite_get_segment_text(seg_id)
+                if not text:
+                    rec_id = meta.get("recording_id")
+                    if isinstance(rec_id, str) and rec_id:
+                        text = _sqlite_get_recording_transcript(rec_id)
             if text:
                 doc_id = f"doc_{i}"
-                docs.append({"id": doc_id, "text": text[:2000]})  # Truncate for reranker
+                docs.append(
+                    {"id": doc_id, "text": text[:2000]}
+                )  # Truncate for reranker
                 match_map[doc_id] = match
 
         if not docs:
-            log('WARNING', "No text found in matches for reranking; returning unranked results")
-            return _format_results(query, results.matches[:limit], include_context, show_namespace=True)
+            log(
+                "WARNING",
+                "No text found in matches for reranking; returning unranked results",
+            )
+            return _format_results(
+                query, results.matches[:limit], include_context, show_namespace=True
+            )
 
         # Call rerank
         rerank_result = pinecone_client.rerank(
@@ -269,8 +353,13 @@ def search_with_rerank(
         )
 
         if "error" in rerank_result:
-            log('WARNING', f"Rerank failed: {rerank_result['error']}; returning unranked results")
-            return _format_results(query, results.matches[:limit], include_context, show_namespace=True)
+            log(
+                "WARNING",
+                f"Rerank failed: {rerank_result['error']}; returning unranked results",
+            )
+            return _format_results(
+                query, results.matches[:limit], include_context, show_namespace=True
+            )
 
         # Rebuild matches in reranked order, stashing original retrieval score
         reranked_matches = []
@@ -281,16 +370,18 @@ def search_with_rerank(
                 # Stash original vector similarity score for transparency
                 if match.metadata is None:
                     match.metadata = {}
-                match.metadata['_retrieval_score'] = match.score
+                match.metadata["_retrieval_score"] = match.score
                 # Update to rerank score
                 match.score = item.get("score", match.score)
                 reranked_matches.append(match)
 
-        log('INFO', f"   🏆 Reranked {len(reranked_matches)} results")
-        return _format_results(query, reranked_matches, include_context, show_namespace=True, reranked=True)
+        log("INFO", f"   🏆 Reranked {len(reranked_matches)} results")
+        return _format_results(
+            query, reranked_matches, include_context, show_namespace=True, reranked=True
+        )
 
     except Exception as e:
-        log('ERROR', f"Search with rerank failed: {e}")
+        log("ERROR", f"Search with rerank failed: {e}")
         return f"❌ Search Error: {e}"
 
 
@@ -303,21 +394,24 @@ def search_single_namespace(
 ) -> str:
     """
     🎯 SEARCH SINGLE NAMESPACE
-    
+
     Searches a specific namespace (or default if empty).
     Use search_full_text() or search_summaries() for clearer intent.
-    
+
     Args:
         query: Natural language search query
         namespace: Namespace to search (empty = default)
         limit: Max results to return
         include_context: Include text snippets
         filter_dict: Optional metadata filters
-    
+
     Returns:
         Formatted search results
     """
-    log('INFO', f"🎯 search_single_namespace: '{query}' in '{namespace or 'default'}' (limit={limit})")
+    log(
+        "INFO",
+        f"🎯 search_single_namespace: '{query}' in '{namespace or 'default'}' (limit={limit})",
+    )
     return _execute_search(
         query=query,
         namespace=namespace,
@@ -331,15 +425,16 @@ def search_single_namespace(
 # LEGACY COMPATIBILITY FUNCTIONS
 # ============================================================================
 
+
 def semantic_search(
-    query: str, 
-    limit: int = 5, 
+    query: str,
+    limit: int = 5,
     include_context: bool = True,
     namespace: Optional[str] = None,
 ) -> str:
     """
     Legacy function - redirects to search_single_namespace.
-    
+
     Kept for backward compatibility with existing code.
     """
     return search_single_namespace(
@@ -358,7 +453,7 @@ def cross_namespace_search(
 ) -> str:
     """
     Legacy function - redirects to search_all_namespaces.
-    
+
     Kept for backward compatibility with existing code.
     """
     return search_all_namespaces(
@@ -372,7 +467,7 @@ def cross_namespace_search(
 def get_embedding(query: str) -> Optional[List[float]]:
     """
     Legacy function - use embedding_service.embed_query() instead.
-    
+
     Kept for backward compatibility.
     """
     try:
@@ -385,6 +480,7 @@ def get_embedding(query: str) -> Optional[List[float]]:
 # INTERNAL HELPERS
 # ============================================================================
 
+
 def _execute_search(
     query: str,
     namespace: str,
@@ -394,32 +490,35 @@ def _execute_search(
     namespace_label: Optional[str] = None,
 ) -> str:
     """Internal: Execute a single-namespace search with timing instrumentation."""
-    
+
     if not query.strip():
         return "❌ Error: Please provide a search query."
-    
-    # AUTO-SYNC: Ensure embedding dimension matches Pinecone index
+
+    # AUTO-SYNC: Ensure embedding dimension matches active vector index
     _ensure_dimension_sync()
-    
+
     # Start timing
     start_time = time.perf_counter()
-    
+
     # Get embedding from centralized service
     try:
         embedding_service = get_embedding_service()
         vector = embedding_service.embed_query(query)
         embed_time = time.perf_counter()
         embed_latency = (embed_time - start_time) * 1000
-        log('INFO', f"   ✅ Generated {len(vector)}-dim embedding ({embed_latency:.1f}ms)")
+        log(
+            "INFO",
+            f"   ✅ Generated {len(vector)}-dim embedding ({embed_latency:.1f}ms)",
+        )
     except EmbeddingError as e:
         return f"❌ Embedding Error: {e}"
-    
-    # Get Pinecone client and query
-    pinecone_client = get_pinecone_client()
-    
+
+    # Get vector client and query
+    vector_client = get_vector_db_client()
+
     try:
         query_start = time.perf_counter()
-        matches = pinecone_client.query_similar(
+        matches = vector_client.query_similar(
             query_embedding=vector,
             top_k=limit,
             filter_dict=filter_dict,
@@ -428,15 +527,15 @@ def _execute_search(
         query_time = time.perf_counter()
         query_latency = (query_time - query_start) * 1000
         total_latency = (query_time - start_time) * 1000
-        
+
         # Update global state with metrics for status bar
         state.set_metrics(
             latency_ms=total_latency,
             read_units=limit,  # Approximate RU = top_k
-            namespace=namespace or "default"
+            namespace=namespace or "default",
         )
-        log('INFO', f"   ⏱ Query: {query_latency:.1f}ms | Total: {total_latency:.1f}ms")
-        
+        log("INFO", f"   ⏱ Query: {query_latency:.1f}ms | Total: {total_latency:.1f}ms")
+
         return _format_results(
             query=query,
             matches=matches,
@@ -444,9 +543,9 @@ def _execute_search(
             namespace_label=namespace_label,
             latency_ms=total_latency,
         )
-        
+
     except Exception as e:
-        log('ERROR', f"Search failed: {e}")
+        log("ERROR", f"Search failed: {e}")
         return f"❌ Search Error: {e}"
 
 
@@ -461,14 +560,14 @@ def _format_results(
 ) -> str:
     """
     Internal: Format search results for display.
-    
+
     Shows retrieval_score (vector similarity) and rerank_score (semantic relevance)
     when reranking is enabled, giving users transparency into ranking quality.
     """
-    
+
     if not matches:
         return f"No matches found for '{query}'."
-    
+
     # Header with search mode indicator and timing
     mode_indicator = "🏆 RERANKED " if reranked else "🔍 "
     latency_str = f" │ ⏱ {latency_ms:.0f}ms" if latency_ms else ""
@@ -482,67 +581,83 @@ def _format_results(
 
     for idx, match in enumerate(matches, 1):
         meta = match.metadata or {}
-        
+
         # ──────────── SCORE DISPLAY (granular) ────────────
         # Primary score: always show as percentage
         score_pct = match.score * 100
-        
+
         # Check if this is reranked (score came from reranker vs vector similarity)
         # Rerank scores are typically 0-1 scale from the cross-encoder
-        retrieval_score = meta.get('_retrieval_score')  # Stashed original if reranked
-        
+        retrieval_score = meta.get("_retrieval_score")  # Stashed original if reranked
+
         # Build score string with transparency
         if reranked and retrieval_score is not None:
             # Show both scores for full transparency
-            score_str = f"rerank: {score_pct:.1f}% │ retrieval: {retrieval_score*100:.1f}%"
+            score_str = (
+                f"rerank: {score_pct:.1f}% │ retrieval: {retrieval_score*100:.1f}%"
+            )
         else:
             score_str = f"score: {score_pct:.1f}%"
-        
-        title = meta.get('title', 'Untitled')
+
+        title = meta.get("title", "Untitled")
         header = f"#{idx} │ {title}"
-        
+
         # Add namespace indicator
-        if show_namespace and hasattr(match, 'namespace'):
+        if show_namespace and hasattr(match, "namespace"):
             ns_icon = "📄" if match.namespace == NAMESPACE_FULL_TEXT else "📝"
             header += f" │ {ns_icon} {match.namespace}"
         elif namespace_label:
             header += f" │ {namespace_label}"
-        
+
         lines.append(header)
         lines.append(f"   📊 {score_str}")
         lines.append(f"   🏷️  Themes: {meta.get('themes', '—')}")
-        
+
         # Handle date field variations
-        date_val = meta.get('date') or meta.get('start_at') or meta.get('created') or '—'
+        date_val = (
+            meta.get("date") or meta.get("start_at") or meta.get("created") or "—"
+        )
         if isinstance(date_val, str) and len(date_val) > 10:
             date_val = date_val[:10]
         lines.append(f"   📅 Date: {date_val}")
-        
+
         # Include context snippet
         if include_context:
             text = (
-                meta.get('synthesis') or 
-                meta.get('text') or 
-                meta.get('summary') or 
-                meta.get('content') or 
-                ''
+                meta.get("synthesis")
+                or meta.get("text")
+                or meta.get("summary")
+                or meta.get("content")
+                or ""
             )
+            # Older vectors may not store text in metadata; fall back to SQLite.
+            if not text:
+                seg_id = meta.get("segment_id") or getattr(match, "id", None)
+                if isinstance(seg_id, str) and seg_id:
+                    text = _sqlite_get_segment_text(seg_id)
+                if not text:
+                    rec_id = meta.get("recording_id")
+                    if isinstance(rec_id, str) and rec_id:
+                        text = _sqlite_get_recording_transcript(rec_id)
             if text:
-                snippet = (text[:400] + '…') if len(text) > 400 else text
+                snippet = (text[:400] + "…") if len(text) > 400 else text
                 lines.append("")
                 lines.append(f"   💬 Snippet: {snippet}")
-        
+
         lines.append("")
         lines.append(f"{'─' * 60}")
         lines.append("")
 
-    log('INFO', f"   📊 Returned {len(matches)} formatted results (reranked={reranked})")
+    log(
+        "INFO", f"   📊 Returned {len(matches)} formatted results (reranked={reranked})"
+    )
     return "\n".join(lines)
 
 
 # ============================================================================
 # SELF-CORRECTING SEARCH
 # ============================================================================
+
 
 def search_with_self_correction(
     query: str,
@@ -551,80 +666,81 @@ def search_with_self_correction(
 ) -> str:
     """
     🔄 SELF-CORRECTING SEARCH
-    
+
     Performs search with automatic retry and strategy switching
     when initial results have low confidence.
-    
+
     Correction strategies (in order):
     1. Dense semantic search (initial)
     2. Hybrid search (dense + sparse)
     3. Query expansion with synonyms
     4. Full-text namespace search
-    
+
     Args:
         query: Natural language search query
         limit: Max results to return
         include_context: Include text snippets
-        
+
     Returns:
         Formatted search results with correction summary
     """
-    log('INFO', f"🔄 search_with_self_correction: '{query}' (limit={limit})")
-    
+    log("INFO", f"🔄 search_with_self_correction: '{query}' (limit={limit})")
+
     try:
         from src.processing.self_correction import (
-            SelfCorrectionLoop, 
+            SelfCorrectionLoop,
             RetrievalStrategy,
-            QueryExpander
+            QueryExpander,
         )
-        
+
         # Set up search functions for the correction loop
         def dense_fn(q, k):
-            pinecone_client = get_pinecone_client()
+            vector_client = get_vector_db_client()
             embedding_service = get_embedding_service()
             vector = embedding_service.embed_query(q)
-            return pinecone_client.query_similar(
+            return vector_client.query_similar(
                 query_embedding=vector,
                 top_k=k,
                 namespace=NAMESPACE_SUMMARIES,
             )
-        
+
         def hybrid_fn(q, k):
             try:
                 from gui.services.hybrid_search_service import HybridSearchService
+
                 svc = HybridSearchService()
                 result = svc.hybrid_search(q, alpha=0.7, limit=k)
                 # Parse result back to matches (simplified)
                 return []  # Hybrid returns formatted string, would need refactor
             except Exception:
                 return []
-        
+
         def sparse_fn(q, k):
-            pinecone_client = get_pinecone_client()
+            vector_client = get_vector_db_client()
             embedding_service = get_embedding_service()
             vector = embedding_service.embed_query(q)
-            return pinecone_client.query_similar(
+            return vector_client.query_similar(
                 query_embedding=vector,
                 top_k=k,
                 namespace=NAMESPACE_FULL_TEXT,
             )
-        
+
         # Initialize query expander
         expander = QueryExpander()
-        
+
         # Create correction loop
         loop = SelfCorrectionLoop(
             dense_search_fn=dense_fn,
             sparse_search_fn=sparse_fn,
             query_expand_fn=expander.expand,
         )
-        
+
         # Execute with correction
         result = loop.search_with_correction(query, limit=limit)
-        
+
         # Format output
         lines = []
-        
+
         # Add correction summary header
         if result.was_corrected:
             lines.append(f"{'═' * 60}")
@@ -635,7 +751,7 @@ def search_with_self_correction(
             lines.append(f"   Total Latency: {result.total_latency_ms:.0f}ms")
             lines.append(f"{'═' * 60}")
             lines.append("")
-        
+
         # Format matches
         if result.final_result.matches:
             formatted = _format_results(
@@ -646,13 +762,18 @@ def search_with_self_correction(
             )
             lines.append(formatted)
         else:
-            lines.append(f"No results found for '{query}' after {result.corrections_applied} correction attempts.")
-        
+            lines.append(
+                f"No results found for '{query}' after {result.corrections_applied} correction attempts."
+            )
+
         return "\n".join(lines)
-        
+
     except ImportError:
-        log('WARNING', "Self-correction module not available, falling back to standard search")
+        log(
+            "WARNING",
+            "Self-correction module not available, falling back to standard search",
+        )
         return search_all_namespaces(query, limit, include_context)
     except Exception as e:
-        log('ERROR', f"Self-correcting search failed: {e}")
+        log("ERROR", f"Self-correcting search failed: {e}")
         return f"❌ Search Error: {e}"

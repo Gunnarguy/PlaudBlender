@@ -8,13 +8,26 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
-from openai import OpenAI
+if TYPE_CHECKING:  # pragma: no cover
+    # Import only for type-checkers; importing openai can be slow on some setups.
+    from openai import OpenAI as OpenAIClient
 
 
 @lru_cache(maxsize=1)
-def _client() -> OpenAI:
+def _client() -> "OpenAIClient":
+    # Lazily import OpenAI so the rest of the app can boot even if openai is
+    # slow to import or not installed. Chat view is optional.
+    try:
+        from openai import OpenAI
+    except Exception as e:  # pylint: disable=broad-except
+        raise RuntimeError(
+            "OpenAI SDK is required for Chat, but failed to import. "
+            "Install/repair the 'openai' package in your venv and retry. "
+            f"(import error: {e})"
+        ) from e
+
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is required for chat.")
@@ -46,7 +59,9 @@ def send_response(
     client = _client()
     payload: Dict[str, Any] = {
         "model": model,
-        "input": [{"role": m.get("role"), "content": m.get("content", "")} for m in messages],
+        "input": [
+            {"role": m.get("role"), "content": m.get("content", "")} for m in messages
+        ],
         "temperature": temperature,
     }
     if instructions:
