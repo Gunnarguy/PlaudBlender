@@ -12,10 +12,7 @@ openai>=1.63.0
 google-generativeai>=0.3.0
 
 # Vector Database
-# Qdrant (recommended - local-first, more granular, better visibility)
 qdrant-client>=1.12.0
-# Pinecone (legacy - cloud only, gRPC for better performance)
-pinecone[grpc]>=6.0.0
 
 # Model Context Protocol server
 mcp>=0.1.0

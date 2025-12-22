@@ -4,17 +4,18 @@
 
 ## Quick Orientation
 
-| What | Where |
-|------|-------|
-| **Full docs** | `docs/PROJECT_GUIDE.md` — read this first for architecture, structure, and roadmap |
-| **MVP spec** | `docs/chronos-mvp.md` — complete Chronos system architecture |
-| **Entry point** | `streamlit run chronos_app.py` — launches the Streamlit UI |
-| **Pipeline** | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph |
-| **Tests** | `python -m pytest tests/` — 57 tests, run before committing |
+| What            | Where                                                                              |
+| --------------- | ---------------------------------------------------------------------------------- |
+| **Full docs**   | `docs/PROJECT_GUIDE.md` — read this first for architecture, structure, and roadmap |
+| **MVP spec**    | `docs/chronos-mvp.md` — complete Chronos system architecture                       |
+| **Entry point** | `streamlit run chronos_app.py` — launches the Streamlit UI                         |
+| **Pipeline**    | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph     |
+| **Tests**       | `python -m pytest tests/` — 57 tests, run before committing                        |
 
 ## What This Project Does
 
 **Chronos** transforms **Plaud voice recordings** into a **searchable knowledge base**:
+
 - Fetches audio from Plaud API (OAuth) and stores locally
 - Processes through Gemini 3 for cognitive cleaning (removes "ums", extracts events)
 - Indexes to Qdrant with temporal metadata (day-of-week, hour, category)
@@ -62,14 +63,14 @@ archive/                → Legacy GUI and Pinecone code (don't import from here
 
 ## Key Chronos Services (src/chronos/)
 
-| Service | Purpose |
-|---------|---------|
-| `ingest_service` | Download audio from Plaud, verify checksums, store locally |
-| `engine` | Gemini File API integration for cognitive cleaning |
-| `qdrant_client` | Native Qdrant client with temporal payload indexes |
-| `embedding_service` | Gemini text-embedding-004 batch embedding |
-| `analytics` | Day-of-week pattern analysis, sentiment aggregation |
-| `graph_service` | Entity extraction and NetworkX graph building |
+| Service             | Purpose                                                    |
+| ------------------- | ---------------------------------------------------------- |
+| `ingest_service`    | Download audio from Plaud, verify checksums, store locally |
+| `engine`            | Gemini File API integration for cognitive cleaning         |
+| `qdrant_client`     | Native Qdrant client with temporal payload indexes         |
+| `embedding_service` | Gemini text-embedding-004 batch embedding                  |
+| `analytics`         | Day-of-week pattern analysis, sentiment aggregation        |
+| `graph_service`     | Entity extraction and NetworkX graph building              |
 
 ## Don't
 
