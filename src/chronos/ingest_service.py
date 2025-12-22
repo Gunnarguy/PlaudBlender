@@ -233,15 +233,15 @@ class ChronosIngestService:
         failure_count = 0
 
         for rec_data in recordings:
-            # Extract required fields (adjust based on actual Plaud API response)
+            # Extract required fields from Plaud API list response
             recording_id = rec_data.get("id")
             created_at_str = rec_data.get("created_at")
-            duration_ms = rec_data.get("duration_ms", 0)
-            download_url = rec_data.get("download_url") or rec_data.get("audio_url")
-            device_id = rec_data.get("device_id")
+            # Duration is in milliseconds from API
+            duration_ms = rec_data.get("duration", 0)
+            serial_number = rec_data.get("serial_number")
 
-            if not recording_id or not download_url:
-                logger.warning(f"Skipping invalid record: {rec_data}")
+            if not recording_id:
+                logger.warning(f"Skipping record with no ID: {rec_data}")
                 failure_count += 1
                 continue
 
@@ -255,28 +255,14 @@ class ChronosIngestService:
                 failure_count += 1
                 continue
 
-            # Ingest
+            # Store recording metadata (no audio download - we'll use transcripts)
+            # Plaud doesn't provide audio downloads via API (presigned_url is null)
+            # We process transcripts instead
             success, error = self.ingest_recording(
                 recording_id=recording_id,
                 created_at=created_at,
                 duration_ms=duration_ms,
-                download_url=download_url,
-                device_id=device_id,
-            )
-
-            if success:
-                success_count += 1
-            else:
-                failure_count += 1
-                logger.error(f"Failed to ingest {recording_id}: {error}")
-
-        logger.info(
-            f"Ingestion complete: {success_count} success, {failure_count} failures"
-        )
-        return (success_count, failure_count)
-
-    def verify_integrity(self, recording_id: str) -> bool:
-        """Verify file integrity via checksum.
+                download_url=None,  # No audio available via API
 
         Args:
             recording_id: Recording to verify
