@@ -152,14 +152,14 @@ class ChronosEngine:
 
         logger.info(f"Initialized ChronosEngine with model: {self.model_name}")
 
-    def _upload_audio_file(self, audio_path: str) -> genai.File:
+    def _upload_audio_file(self, audio_path: str):
         """Upload audio file to Gemini File API.
 
         Args:
             audio_path: Path to local audio file
 
         Returns:
-            genai.File: File handle for generation
+            File handle for generation
 
         Raises:
             ValueError: If file upload fails

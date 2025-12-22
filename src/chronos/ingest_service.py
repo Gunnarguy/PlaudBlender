@@ -224,7 +224,7 @@ class ChronosIngestService:
         # Fetch from Plaud API (this calls your existing PlaudClient)
         # Note: Adjust this to match your actual PlaudClient API
         try:
-            recordings = self.plaud.get_recordings(limit=limit)
+            recordings = self.plaud.list_recordings(limit=limit)
         except Exception as e:
             logger.error(f"Failed to fetch from Plaud API: {e}")
             return (0, 0)

@@ -8,7 +8,7 @@ import logging
 from typing import List, Dict, Any, Tuple
 import networkx as nx
 
-from src.processing.graph_rag import EntityExtractor, GraphBuilder, CommunityDetector
+from src.ai.graph_rag import EntityExtractor, KnowledgeGraph, CommunityDetector
 from src.models.chronos_schemas import ChronosEvent
 
 logger = logging.getLogger(__name__)
