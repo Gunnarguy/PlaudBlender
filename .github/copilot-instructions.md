@@ -7,30 +7,32 @@
 | What | Where |
 |------|-------|
 | **Full docs** | `docs/PROJECT_GUIDE.md` — read this first for architecture, structure, and roadmap |
-| **Task tracker** | `docs/audit-checklist.md` — live checklist of what's done and what's next |
-| **Pinecone rules** | `docs/pinecone-integration-playbook.md` — metadata schema, namespaces, action items |
-| **Entry point** | `python gui.py` — launches the Tkinter GUI |
+| **MVP spec** | `docs/chronos-mvp.md` — complete Chronos system architecture |
+| **Entry point** | `streamlit run chronos_app.py` — launches the Streamlit UI |
+| **Pipeline** | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph |
 | **Tests** | `python -m pytest tests/` — 57 tests, run before committing |
 
 ## What This Project Does
 
-PlaudBlender transforms **Plaud voice recordings** into a **searchable knowledge base**:
-- Fetches transcripts from Plaud API (OAuth)
-- Stores in SQLite (source of truth) and Pinecone (vector search)
-- Provides a GUI for search, visualization, and management
-- Optional: Notion sync, OpenAI chat, MCP server
+**Chronos** transforms **Plaud voice recordings** into a **searchable knowledge base**:
+- Fetches audio from Plaud API (OAuth) and stores locally
+- Processes through Gemini 3 for cognitive cleaning (removes "ums", extracts events)
+- Indexes to Qdrant with temporal metadata (day-of-week, hour, category)
+- Extracts entities and builds knowledge graph (NetworkX)
+- Provides Streamlit UI with timeline and semantic search
+- Optional: Notion sync, MCP server
 
 ## Project Structure (Simplified)
 
 ```
-gui.py                  → Entry point (delegates to gui/app.py)
+chronos_app.py          → Streamlit UI (Master-Detail with timeline)
 plaud_setup.py          → Setup wizard + OAuth
-scripts/                → CLI tools (sync_to_pinecone.py, process_pending.py, etc.)
-gui/                    → Modular GUI (views/, services/, components/)
-src/                    → Core logic (plaud_client, pinecone_client, database/, processing/)
+scripts/                → CLI tools (chronos_pipeline.py, mcp_server.py, plaud_auth_utils.py)
+src/chronos/            → Core Chronos system (engine, qdrant_client, ingest, graph, analytics)
+src/                    → Shared logic (plaud_client, database/, models/, ai/graph_rag.py)
 tests/                  → Pytest suite
-docs/                   → PROJECT_GUIDE.md, audit-checklist.md, playbooks
-archive/                → Retired code (don't import from here)
+docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
+archive/                → Legacy GUI and Pinecone code (don't import from here)
 ```
 
 ## User Philosophy
@@ -45,32 +47,33 @@ archive/                → Retired code (don't import from here)
 ## Coding Rules
 
 1. **Environment:** All secrets from `.env` via `python-dotenv`. Never hardcode.
-2. **Threading:** GUI stays responsive — all I/O in background threads via `gui/utils/async_tasks.py`
-3. **Imports:** Use `from src.X import Y` pattern. All `src/` subdirs have `__init__.py`.
-4. **Schemas:** Validate data with Pydantic (`src/models/schemas.py`)
-5. **Metadata:** Use `src/models/vector_metadata.py::build_metadata()` when upserting to Pinecone
+2. **Imports:** Use `from src.X import Y` pattern. All `src/` subdirs have `__init__.py`.
+3. **Schemas:** Validate data with Pydantic (`src/models/chronos_schemas.py` for Chronos, `src/models/schemas.py` for legacy)
+4. **Qdrant:** Use `src/chronos/qdrant_client.py` — native Qdrant API with temporal indexes
+5. **Gemini:** Use `src/chronos/engine.py` for audio processing and `src/chronos/embedding_service.py` for vectors
 6. **Tests:** Run `pytest tests/` before any commit. Currently 57 tests.
 
 ## Before You Code
 
-1. **Read `docs/PROJECT_GUIDE.md`** if you need full context
-2. **Check `docs/audit-checklist.md`** to see current priorities
-3. **Read `docs/pinecone-integration-playbook.md`** before touching Pinecone/search code
+1. **Read `docs/chronos-mvp.md`** for Chronos architecture
+2. **Read `docs/PROJECT_GUIDE.md`** if you need full context
+3. **Check `src/chronos/` modules** — this is the active codebase
 4. **Run tests** after any change: `python -m pytest tests/ -q`
 
-## Key Services (gui/services/)
+## Key Chronos Services (src/chronos/)
 
 | Service | Purpose |
 |---------|---------|
-| `transcripts_service` | Fetch/process Plaud recordings via SQL |
-| `pinecone_service` | Index/namespace management, vector ops |
-| `search_service` | Semantic search with reranking |
-| `embedding_service` | Configurable embeddings (Gemini, OpenAI, Pinecone) |
-| `chat_service` | OpenAI Responses API integration |
+| `ingest_service` | Download audio from Plaud, verify checksums, store locally |
+| `engine` | Gemini File API integration for cognitive cleaning |
+| `qdrant_client` | Native Qdrant client with temporal payload indexes |
+| `embedding_service` | Gemini text-embedding-004 batch embedding |
+| `analytics` | Day-of-week pattern analysis, sentiment aggregation |
+| `graph_service` | Entity extraction and NetworkX graph building |
 
 ## Don't
 
-- Don't import from `archive/` — that's retired code
-- Don't use `src/dual_store_processor.py` — it's archived
+- Don't import from `archive/` — that's retired code (legacy GUI, Pinecone shims)
+- Don't use chunking — Gemini's 1M token context processes full recordings
 - Don't scatter `load_dotenv()` — use `src/config.py`
-- Don't make UI calls from background threads — use `root.after()`
+- Don't reference Pinecone — we're 100% Qdrant now

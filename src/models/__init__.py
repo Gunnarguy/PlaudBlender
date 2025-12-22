@@ -1,10 +1,11 @@
 """Data schemas and validation."""
 from .schemas import RecordingSchema, SegmentSchema
-from .vector_metadata import build_metadata, compute_text_hash
+from .chronos_schemas import ChronosRecording, ChronosEvent, TemporalFilter
 
 __all__ = [
     "RecordingSchema",
     "SegmentSchema",
-    "build_metadata",
-    "compute_text_hash",
+    "ChronosRecording",
+    "ChronosEvent",
+    "TemporalFilter",
 ]

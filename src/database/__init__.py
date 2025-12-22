@@ -1,6 +1,14 @@
 """Database models and session management."""
+
 from .engine import SessionLocal, init_db, DB_PATH
-from .models import Recording, Segment, Base
+from .models import (
+    Recording,
+    Segment,
+    ChronosRecording,
+    ChronosEvent,
+    ChronosProcessingJob,
+    Base,
+)
 from .repository import (
     upsert_recording,
     add_segments,
@@ -16,6 +24,9 @@ __all__ = [
     "DB_PATH",
     "Recording",
     "Segment",
+    "ChronosRecording",
+    "ChronosEvent",
+    "ChronosProcessingJob",
     "Base",
     "upsert_recording",
     "add_segments",
