@@ -36,6 +36,7 @@ from src.database.models import (
 )
 from src.database.chronos_repository import set_chronos_recording_transcript
 from src.plaud_client import PlaudClient
+from gui.components.plaud_admin_panel import render_plaud_admin_panel
 
 
 # Page config
@@ -1255,6 +1256,7 @@ def main():
                 "Controls",
                 "Search",
                 "Timeline",
+                "Plaud Admin",
                 "Settings",
                 "Logs",
             ],
@@ -1281,6 +1283,8 @@ def main():
         page_search(qdrant, settings, gemini_available)
     elif page == "Timeline":
         page_timeline(qdrant)
+    elif page == "Plaud Admin":
+        render_plaud_admin_panel()
     elif page == "Settings":
         page_settings(settings, gemini_available)
     else:
