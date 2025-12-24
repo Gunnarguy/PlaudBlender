@@ -4,6 +4,7 @@ Administrative Plaud API helpers not covered by the main PlaudClient.
 Provides device and webhook management helpers and other convenience methods
 used by the Streamlit UI for deeper Plaud integration.
 """
+
 from typing import Any, Dict, List, Optional
 
 from .plaud_client import PlaudClient
@@ -48,7 +49,9 @@ class PlaudAdminClient:
             logger.warning("Could not list webhooks: %s", e)
             return []
 
-    def create_webhook(self, url: str, events: Optional[List[str]] = None) -> Dict[str, Any]:
+    def create_webhook(
+        self, url: str, events: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
         payload = {"url": url}
         if events:
             payload["events"] = events
