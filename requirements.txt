@@ -10,6 +10,7 @@ pytest>=7.4.0
 # Use a Responses API compatible version of the OpenAI SDK.
 openai>=1.63.0
 google-generativeai>=0.3.0
+google-genai>=1.0.0
 
 # Vector Database
 qdrant-client>=1.12.0

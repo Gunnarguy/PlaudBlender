@@ -1,11 +1,12 @@
-"""Chronos embedding service using Gemini text-embedding-004."""
+"""Chronos embedding service using Gemini Embeddings (gemini-embedding-001)."""
 
 import logging
 from typing import List
 
-import google.generativeai as genai
+from google.genai import types
 
 from src.config import get_settings
+from src.chronos.genai_helpers import get_genai_client
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,9 @@ class ChronosEmbeddingService:
         if not self.settings.gemini_api_key:
             raise ValueError("GEMINI_API_KEY not set")
 
-        genai.configure(api_key=self.settings.gemini_api_key)
+        self.client = get_genai_client()
         self.model_name = self.settings.chronos_embedding_model
+        self.output_dim = int(getattr(self.settings, "chronos_embedding_dim", 768))
 
         logger.info(f"Initialized embedding service with model: {self.model_name}")
 
@@ -37,12 +39,20 @@ class ChronosEmbeddingService:
         Returns:
             List[float]: 768-dim embedding vector
         """
-        result = genai.embed_content(
+        result = self.client.models.embed_content(
             model=self.model_name,
-            content=text,
-            task_type=task_type,
+            contents=text,
+            config=types.EmbedContentConfig(
+                task_type=task_type,
+                output_dimensionality=self.output_dim,
+            ),
         )
-        return result["embedding"]
+
+        # google-genai returns a list of embeddings; each has `.values`.
+        embeddings = getattr(result, "embeddings", None) or []
+        if not embeddings:
+            raise ValueError("No embedding returned")
+        return list(embeddings[0].values)
 
     def embed_batch(
         self,
@@ -60,22 +70,22 @@ class ChronosEmbeddingService:
         Returns:
             List of embedding vectors
         """
-        embeddings = []
+        embeddings: List[List[float]] = []
 
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
             logger.debug(f"Embedding batch {i // batch_size + 1} ({len(batch)} texts)")
 
-            result = genai.embed_content(
+            result = self.client.models.embed_content(
                 model=self.model_name,
-                content=batch,
-                task_type=task_type,
+                contents=batch,
+                config=types.EmbedContentConfig(
+                    task_type=task_type,
+                    output_dimensionality=self.output_dim,
+                ),
             )
 
-            # Handle single or batch response
-            if isinstance(result["embedding"][0], list):
-                embeddings.extend(result["embedding"])
-            else:
-                embeddings.append(result["embedding"])
+            batch_embeddings = getattr(result, "embeddings", None) or []
+            embeddings.extend([list(e.values) for e in batch_embeddings])
 
         return embeddings

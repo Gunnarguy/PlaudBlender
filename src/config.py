@@ -25,16 +25,32 @@ class Settings:
     # LLM
     gemini_api_key: Optional[str] = os.getenv("GEMINI_API_KEY")
 
+    # Gemini API version (google-genai defaults to v1beta; allow override for preview features)
+    gemini_api_version: str = os.getenv("GEMINI_API_VERSION", "v1beta")
+
     # Chronos: Gemini Model Selection
     chronos_cleaning_model: str = os.getenv(
-        "CHRONOS_CLEANING_MODEL", "gemini-2.0-flash-exp"
+        # Default to Gemini 3 Flash. Override via CHRONOS_CLEANING_MODEL.
+        "CHRONOS_CLEANING_MODEL",
+        # Gemini 3 models are currently documented as preview IDs.
+        "gemini-3-flash-preview",
     )
     chronos_embedding_model: str = os.getenv(
-        "CHRONOS_EMBEDDING_MODEL", "text-embedding-004"
+        # Use the current Gemini embedding model family.
+        "CHRONOS_EMBEDDING_MODEL",
+        "gemini-embedding-001",
     )
+    chronos_embedding_dim: int = int(os.getenv("CHRONOS_EMBEDDING_DIM", "768"))
     chronos_analyst_model: str = os.getenv(
-        "CHRONOS_ANALYST_MODEL", "gemini-2.0-flash-thinking-exp-1219"
+        # Default to a "thinking" model for harder reasoning / repair passes.
+        # Override via CHRONOS_ANALYST_MODEL.
+        "CHRONOS_ANALYST_MODEL",
+        "gemini-3-pro-preview",
     )
+
+    # Gemini 3 thinking level (applies when supported by the selected model)
+    # Flash supports: minimal/low/medium/high. Pro supports: low/high.
+    chronos_thinking_level: str = os.getenv("CHRONOS_THINKING_LEVEL", "high")
 
     # Pinecone (legacy - for backward compatibility)
     pinecone_api_key: Optional[str] = os.getenv("PINECONE_API_KEY")
@@ -44,6 +60,9 @@ class Settings:
     qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
     qdrant_api_key: Optional[str] = os.getenv("QDRANT_API_KEY")
     qdrant_collection_name: str = os.getenv("QDRANT_COLLECTION_NAME", "chronos_events")
+    # Prevent long "hangs" if Qdrant is down or the URL is misconfigured.
+    # Qdrant client expects seconds.
+    qdrant_timeout_seconds: float = float(os.getenv("QDRANT_TIMEOUT_SECONDS", "5"))
 
     # Database (root-level data directory by default)
     database_url: str = os.getenv(

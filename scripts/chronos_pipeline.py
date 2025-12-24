@@ -13,6 +13,15 @@ import logging
 import sys
 from pathlib import Path
 
+# Increase Python's integer string conversion limit (default 4300 digits).
+# This prevents "Exceeds the limit (4300 digits)" errors when parsing JSON
+# responses from Gemini that contain very large numbers (e.g., token counts).
+# See: https://docs.python.org/3/library/sys.html#sys.set_int_max_str_digits
+if sys.version_info >= (3, 11):
+    sys.set_int_max_str_digits(
+        0
+    )  # 0 = no limit (use with caution, but safe for local processing)
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -21,10 +30,18 @@ from src.database.chronos_repository import (
     get_pending_chronos_recordings,
     mark_chronos_recording_status,
     add_chronos_events,
+    delete_chronos_events_by_recording,
 )
 from src.chronos.ingest_service import ChronosIngestService
+from src.chronos.transcript_processor import TranscriptProcessor
 from src.chronos.engine import ChronosEngine, validate_event_quality
 from src.models.chronos_schemas import ChronosEvent as ChronosEventSchema
+from src.config import get_settings
+from src.chronos.genai_helpers import (
+    get_genai_client,
+    list_model_names,
+    pick_first_available,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +50,120 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run_ingest(session, limit: int = 100) -> int:
+def run_preflight(*, smoke_call: bool = False) -> int:
+    """Validate Gemini configuration and show available models.
+
+    This is the fastest way to debug "model not found / not supported" issues.
+    It lists models accessible to your API key and checks whether the configured
+    Chronos models are present.
+
+    Args:
+        smoke_call: If True, performs a tiny embed call to verify connectivity.
+
+    Returns:
+        int: 0 if ok, non-zero if configuration is missing or models unavailable.
+    """
+    logger.info("=" * 60)
+    logger.info("PREFLIGHT: GEMINI MODELS")
+    logger.info("=" * 60)
+
+    settings = get_settings()
+    if not settings.gemini_api_key:
+        logger.error("GEMINI_API_KEY is not set. Update your .env and retry.")
+        return 2
+
+    logger.info(
+        f"Gemini API version: {getattr(settings, 'gemini_api_version', 'v1beta')}"
+    )
+    logger.info("Listing models available to this API key...")
+    try:
+        names = list_model_names()
+    except Exception as e:
+        logger.error(f"Failed to list models: {e}")
+        return 3
+
+    if not names:
+        logger.error("No models were returned by models.list().")
+        return 4
+
+    # Show a short, helpful subset (full list is often huge).
+    preview = [
+        n
+        for n in names
+        if any(
+            k in n
+            for k in (
+                "gemini-3-",
+                "gemini-2.5-",
+                "gemini-embedding-",
+                "text-embedding",
+            )
+        )
+    ]
+
+    logger.info(f"Found {len(names)} models. Relevant subset ({len(preview)}):")
+    for n in preview[:40]:
+        logger.info(f"  - {n}")
+    if len(preview) > 40:
+        logger.info(f"  ... (+{len(preview) - 40} more)")
+
+    configured_clean = (settings.chronos_cleaning_model or "").strip()
+    configured_analyst = (settings.chronos_analyst_model or "").strip()
+    configured_embed = (settings.chronos_embedding_model or "").strip()
+
+    chosen_clean = pick_first_available(
+        configured_clean,
+        "gemini-3-flash-preview",
+        "gemini-3-pro-preview",
+        "gemini-2.5-flash",
+    )
+    chosen_analyst = pick_first_available(
+        configured_analyst,
+        "gemini-3-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+    )
+    chosen_embed = pick_first_available(
+        configured_embed,
+        "gemini-embedding-001",
+    )
+
+    def _present(label: str, configured: str, chosen: str | None) -> None:
+        ok = (configured in names) if configured else True
+        chosen_ok = (chosen in names) if chosen else False
+        logger.info(
+            f"{label}: configured={configured or '(default)'} (present={ok}), chosen={chosen or '(none)'} (present={chosen_ok})"
+        )
+
+    _present("Chronos cleaning model", configured_clean, chosen_clean)
+    _present("Chronos analyst model", configured_analyst, chosen_analyst)
+    _present("Chronos embedding model", configured_embed, chosen_embed)
+
+    if smoke_call:
+        # A tiny call that should be cheap and fast.
+        from google.genai import types
+
+        client = get_genai_client()
+        model = chosen_embed or configured_embed or "gemini-embedding-001"
+        logger.info(f"Running embed smoke call with model={model!r}...")
+        try:
+            client.models.embed_content(
+                model=model,
+                contents="ping",
+                config=types.EmbedContentConfig(
+                    task_type="RETRIEVAL_DOCUMENT", output_dimensionality=8
+                ),
+            )
+            logger.info("Embed smoke call succeeded.")
+        except Exception as e:
+            logger.error(f"Embed smoke call failed: {e}")
+            return 5
+
+    logger.info("Preflight OK")
+    return 0
+
+
+def run_ingest(session, limit: int = 100, *, fetch_all_pages: bool = False) -> int:
     """Run ingestion phase: download recordings from Plaud.
 
     Returns:
@@ -44,7 +174,9 @@ def run_ingest(session, limit: int = 100) -> int:
     logger.info("=" * 60)
 
     service = ChronosIngestService(db_session=session)
-    success_count, failure_count = service.ingest_recent_recordings(limit=limit)
+    success_count, failure_count = service.ingest_recent_recordings(
+        limit=limit, fetch_all_pages=fetch_all_pages
+    )
 
     logger.info(
         f"Ingestion complete: {success_count} success, {failure_count} failures"
@@ -52,117 +184,51 @@ def run_ingest(session, limit: int = 100) -> int:
     return success_count
 
 
-def run_process(session, limit: int = 10) -> int:
-    """Run processing phase: Gemini cleaning + event extraction.
-
-    Returns:
-        int: Number of recordings processed
-    """
+def run_process(
+    session,
+    limit: int = 10,
+    *,
+    recording_id: str | None = None,
+    force: bool = False,
+) -> int:
+    """Process pending recordings through Gemini using transcripts."""
     logger.info("=" * 60)
-    logger.info("PHASE 2: PROCESS")
+    logger.info("PHASE 2: PROCESS (Transcripts)")
     logger.info("=" * 60)
 
-    # Fetch pending recordings
-    pending = get_pending_chronos_recordings(session, limit=limit)
-    logger.info(f"Found {len(pending)} pending recordings")
+    processor = TranscriptProcessor(db_session=session)
 
-    if not pending:
-        logger.info("No pending recordings to process")
-        return 0
-
-    # Initialize Gemini engine
-    engine = ChronosEngine()
-
-    processed_count = 0
-
-    for recording in pending:
-        logger.info(f"Processing recording: {recording.recording_id}")
-        logger.info(f"  Duration: {recording.duration_seconds}s")
-        logger.info(f"  Audio path: {recording.local_audio_path}")
-
-        # Mark as processing
-        mark_chronos_recording_status(
-            session=session,
-            recording_id=recording.recording_id,
-            status="processing",
+    if recording_id:
+        ok = processor.process_recording_id(
+            recording_id,
+            delete_existing_events=bool(force),
         )
+        success_count, failure_count = (1, 0) if ok else (0, 1)
+    else:
+        # Get pending count
+        pending = get_pending_chronos_recordings(session, limit=limit)
+        logger.info(f"Found {len(pending)} pending recordings")
 
-        try:
-            # Process audio through Gemini
-            events = engine.process_audio_to_events(
-                audio_path=recording.local_audio_path,
-                recording_id=recording.recording_id,
-            )
+        if not pending:
+            logger.info("No pending recordings to process")
+            return 0
 
-            if not events:
-                logger.error(f"Failed to extract events from {recording.recording_id}")
-                mark_chronos_recording_status(
-                    session=session,
-                    recording_id=recording.recording_id,
-                    status="failed",
-                    error_message="Gemini processing returned no events",
-                )
-                continue
+        # Process transcripts
+        success_count, failure_count = processor.process_pending_recordings(limit=limit)
 
-            # Validate quality
-            if not validate_event_quality(events, recording.duration_seconds):
-                logger.warning(
-                    f"Event quality check failed for {recording.recording_id}"
-                )
-                # Still save them, but log the warning
+    logger.info(f"Processed {success_count} recordings successfully")
+    if failure_count > 0:
+        logger.warning(f"{failure_count} recordings failed")
 
-            # Convert Pydantic to SQLAlchemy models
-            from src.database.models import ChronosEvent as ChronosEventDB
-
-            db_events = []
-            for event in events:
-                db_event = ChronosEventDB(
-                    event_id=event.event_id,
-                    recording_id=event.recording_id,
-                    start_ts=event.start_ts,
-                    end_ts=event.end_ts,
-                    day_of_week=event.day_of_week.value,
-                    hour_of_day=event.hour_of_day,
-                    clean_text=event.clean_text,
-                    category=event.category.value,
-                    sentiment=event.sentiment,
-                    keywords=event.keywords,
-                    speaker=event.speaker.value,
-                    raw_transcript_snippet=event.raw_transcript_snippet,
-                    gemini_reasoning=event.gemini_reasoning,
-                )
-                db_events.append(db_event)
-
-            # Save to database
-            add_chronos_events(session, db_events)
-            logger.info(f"Saved {len(db_events)} events to database")
-
-            # Mark as completed
-            mark_chronos_recording_status(
-                session=session,
-                recording_id=recording.recording_id,
-                status="completed",
-            )
-
-            processed_count += 1
-            logger.info(f"Successfully processed {recording.recording_id}")
-
-        except Exception as e:
-            logger.error(
-                f"Error processing {recording.recording_id}: {e}", exc_info=True
-            )
-            mark_chronos_recording_status(
-                session=session,
-                recording_id=recording.recording_id,
-                status="failed",
-                error_message=str(e),
-            )
-
-    logger.info(f"Processing complete: {processed_count}/{len(pending)} recordings")
-    return processed_count
+    return success_count
 
 
-def run_index(session, limit: int = 10) -> int:
+def run_index(
+    session,
+    limit: int = 10,
+    *,
+    recording_id: str | None = None,
+) -> int:
     """Run indexing phase: push events to Qdrant.
 
     Returns:
@@ -187,12 +253,11 @@ def run_index(session, limit: int = 10) -> int:
         logger.warning(f"Collection may already exist: {e}")
 
     # Fetch events that need indexing (those without qdrant_point_id)
-    events_to_index = (
-        session.query(ChronosEventDB)
-        .filter(ChronosEventDB.qdrant_point_id.is_(None))
-        .limit(limit * 10)  # Get more events (multiple per recording)
-        .all()
-    )
+    q = session.query(ChronosEventDB).filter(ChronosEventDB.qdrant_point_id.is_(None))
+    if recording_id:
+        q = q.filter(ChronosEventDB.recording_id == recording_id)
+
+    events_to_index = q.limit(limit * 10).all()  # multiple events per recording
 
     if not events_to_index:
         logger.info("No events to index")
@@ -262,7 +327,12 @@ def run_index(session, limit: int = 10) -> int:
     return indexed_count
 
 
-def run_graph(session, limit: int = 10) -> int:
+def run_graph(
+    session,
+    limit: int = 10,
+    *,
+    recording_id: str | None = None,
+) -> int:
     """Run graph extraction phase: build knowledge graph from events.
 
     Returns:
@@ -288,12 +358,11 @@ def run_graph(session, limit: int = 10) -> int:
     graph_extractor = ChronosGraphExtractor()
 
     # Fetch events that have been indexed
-    events_to_process = (
-        session.query(ChronosEventDB)
-        .filter(ChronosEventDB.qdrant_point_id.isnot(None))
-        .limit(limit * 10)
-        .all()
-    )
+    q = session.query(ChronosEventDB).filter(ChronosEventDB.qdrant_point_id.isnot(None))
+    if recording_id:
+        q = q.filter(ChronosEventDB.recording_id == recording_id)
+
+    events_to_process = q.limit(limit * 10).all()
 
     if not events_to_process:
         logger.info("No events to process for graph extraction")
@@ -359,6 +428,16 @@ def run_graph(session, limit: int = 10) -> int:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Chronos Pipeline Runner")
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="List available Gemini models and validate configured model IDs",
+    )
+    parser.add_argument(
+        "--preflight-smoke",
+        action="store_true",
+        help="Run preflight plus a tiny embed call (verifies connectivity)",
+    )
     parser.add_argument("--ingest", action="store_true", help="Run ingestion phase")
     parser.add_argument("--process", action="store_true", help="Run processing phase")
     parser.add_argument("--index", action="store_true", help="Run indexing phase")
@@ -367,13 +446,48 @@ def main():
     )
     parser.add_argument("--full", action="store_true", help="Run full pipeline")
     parser.add_argument("--limit", type=int, default=10, help="Max items per phase")
+    parser.add_argument(
+        "--recording-id",
+        type=str,
+        default=None,
+        help="Operate on a single recording_id (applies to --process/--index/--graph)",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="For --process with --recording-id: delete existing DB events first",
+    )
+    parser.add_argument(
+        "--fetch-all",
+        action="store_true",
+        help="For --ingest: paginate through ALL recordings in Plaud account (not just most recent 100)",
+    )
 
     args = parser.parse_args()
 
     # If no specific phase, show help
-    if not any([args.ingest, args.process, args.index, args.graph, args.full]):
+    if not any(
+        [
+            args.preflight,
+            args.preflight_smoke,
+            args.ingest,
+            args.process,
+            args.index,
+            args.graph,
+            args.full,
+        ]
+    ):
         parser.print_help()
         return
+
+    if args.preflight or args.preflight_smoke:
+        code = run_preflight(smoke_call=bool(args.preflight_smoke))
+        # If the user asked ONLY for preflight, exit early.
+        if not any([args.ingest, args.process, args.index, args.graph, args.full]):
+            raise SystemExit(code)
+        # If preflight failed but the user asked for other phases, stop early.
+        if code != 0:
+            raise SystemExit(code)
 
     # Initialize database
     init_db()
@@ -381,16 +495,21 @@ def main():
 
     try:
         if args.full or args.ingest:
-            run_ingest(session, limit=args.limit)
+            run_ingest(session, limit=args.limit, fetch_all_pages=bool(args.fetch_all))
 
         if args.full or args.process:
-            run_process(session, limit=args.limit)
+            run_process(
+                session,
+                limit=args.limit,
+                recording_id=args.recording_id,
+                force=bool(args.force),
+            )
 
         if args.full or args.index:
-            run_index(session, limit=args.limit)
+            run_index(session, limit=args.limit, recording_id=args.recording_id)
 
         if args.full or args.graph:
-            run_graph(session, limit=args.limit)
+            run_graph(session, limit=args.limit, recording_id=args.recording_id)
 
         logger.info("=" * 60)
         logger.info("PIPELINE COMPLETE")

@@ -51,6 +51,7 @@ class ChronosQdrantClient:
         self.client = QdrantClient(
             url=self.settings.qdrant_url,
             api_key=self.settings.qdrant_api_key,
+            timeout=self.settings.qdrant_timeout_seconds,
         )
 
         logger.info(
@@ -135,7 +136,8 @@ class ChronosQdrantClient:
                 "recording_id": event.recording_id,
                 "start_ts": event.start_ts.isoformat(),
                 "end_ts": event.end_ts.isoformat(),
-                "timestamp": event.start_ts.isoformat(),  # Primary temporal index
+                "timestamp": event.start_ts.isoformat(),  # ISO string for display
+                "start_ts_unix": event.start_ts.timestamp(),  # Unix timestamp for filtering
                 "day_of_week": event.day_of_week.value,
                 "hour_of_day": event.hour_of_day,
                 "clean_text": event.clean_text,
@@ -188,6 +190,7 @@ class ChronosQdrantClient:
                         "start_ts": event.start_ts.isoformat(),
                         "end_ts": event.end_ts.isoformat(),
                         "timestamp": event.start_ts.isoformat(),
+                        "start_ts_unix": event.start_ts.timestamp(),  # Unix timestamp for filtering
                         "day_of_week": event.day_of_week.value,
                         "hour_of_day": event.hour_of_day,
                         "clean_text": event.clean_text,
@@ -236,11 +239,11 @@ class ChronosQdrantClient:
             if temporal_filter.start_date:
                 must_conditions.append(
                     FieldCondition(
-                        key="timestamp",
+                        key="start_ts_unix",
                         range=Range(
-                            gte=temporal_filter.start_date.isoformat(),
+                            gte=temporal_filter.start_date.timestamp(),
                             lte=(
-                                temporal_filter.end_date.isoformat()
+                                temporal_filter.end_date.timestamp()
                                 if temporal_filter.end_date
                                 else None
                             ),
@@ -344,10 +347,32 @@ class ChronosQdrantClient:
             Dict with collection info
         """
         info = self.client.get_collection(self.collection_name)
+
+        def _get_attr(obj: Any, name: str, default: Any = None) -> Any:
+            if isinstance(obj, dict):
+                return obj.get(name, default)
+            return getattr(obj, name, default)
+
+        points_count = _get_attr(info, "points_count", 0)
+
+        # qdrant-client versions differ in what they expose on CollectionInfo.
+        # For single-vector collections, vectors_count is effectively points_count.
+        vectors_count = _get_attr(info, "vectors_count", None)
+        if vectors_count is None:
+            vectors_count = points_count
+
+        indexed_vectors_count = _get_attr(info, "indexed_vectors_count", None)
+        if indexed_vectors_count is None:
+            indexed_vectors_count = vectors_count
+
+        status = _get_attr(info, "status", "unknown")
+        if hasattr(status, "value"):
+            status = status.value
+
         return {
             "collection_name": self.collection_name,
-            "vectors_count": info.vectors_count,
-            "points_count": info.points_count,
-            "indexed_vectors_count": info.indexed_vectors_count,
-            "status": info.status.value,
+            "vectors_count": vectors_count,
+            "points_count": points_count,
+            "indexed_vectors_count": indexed_vectors_count,
+            "status": status,
         }

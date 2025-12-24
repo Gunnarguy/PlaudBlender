@@ -143,9 +143,10 @@ class ChronosIngestService:
         recording_id: str,
         created_at: datetime,
         duration_ms: int,
-        download_url: str,
+        download_url: Optional[str] = None,
         device_id: Optional[str] = None,
         force_redownload: bool = False,
+        title: Optional[str] = None,
     ) -> Tuple[bool, Optional[str]]:
         """Ingest a single recording.
 
@@ -153,7 +154,7 @@ class ChronosIngestService:
             recording_id: Plaud recording ID
             created_at: Recording timestamp (UTC)
             duration_ms: Duration in milliseconds
-            download_url: Pre-signed download URL from Plaud
+            download_url: Pre-signed download URL from Plaud (optional)
             device_id: Device identifier (optional)
             force_redownload: Re-download even if exists
 
@@ -165,6 +166,30 @@ class ChronosIngestService:
         if existing and not force_redownload:
             logger.info(f"Recording {recording_id} already ingested, skipping")
             return (True, None)
+
+        # Plaud currently does not reliably provide downloadable audio URLs.
+        # If we don't have a download URL, ingest metadata only and let the
+        # transcript-based processor handle extraction + event creation.
+        if not download_url:
+            try:
+                upsert_chronos_recording(
+                    session=self.db,
+                    recording_id=recording_id,
+                    created_at=created_at,
+                    duration_seconds=duration_ms // 1000,
+                    local_audio_path="",  # transcript-only mode
+                    source="plaud",
+                    device_id=device_id,
+                    title=title,
+                    checksum=None,
+                )
+                logger.info(
+                    f"Ingested recording {recording_id} (metadata only; transcript mode)"
+                )
+                return (True, None)
+            except Exception as e:
+                logger.error(f"Database error: {e}")
+                return (False, str(e))
 
         # Determine file extension from URL
         parsed_url = urlparse(download_url)
@@ -207,6 +232,7 @@ class ChronosIngestService:
         self,
         limit: int = 100,
         days_back: int = 7,
+        fetch_all_pages: bool = False,
     ) -> Tuple[int, int]:
         """Ingest recent recordings from Plaud API.
 
@@ -215,16 +241,47 @@ class ChronosIngestService:
         Args:
             limit: Max recordings to fetch per batch
             days_back: Only fetch recordings from last N days
+            fetch_all_pages: If True, paginate through all recordings (ignores limit for pagination)
 
         Returns:
             Tuple[int, int]: (success_count, failure_count)
         """
-        logger.info(f"Fetching recordings (limit={limit}, days_back={days_back})")
+        logger.info(
+            f"Fetching recordings (limit={limit}, days_back={days_back}, fetch_all_pages={fetch_all_pages})"
+        )
 
-        # Fetch from Plaud API (this calls your existing PlaudClient)
-        # Note: Adjust this to match your actual PlaudClient API
+        # Fetch from Plaud API with optional pagination
         try:
-            recordings = self.plaud.list_recordings(limit=limit)
+            if fetch_all_pages:
+                # Paginate through all recordings (page by page)
+                logger.info("Paginating through ALL recordings...")
+                recordings = []
+                page_size = 100
+                offset = 0
+                total_fetched = 0
+
+                while True:
+                    batch = self.plaud.list_recordings(limit=page_size, offset=offset)
+                    if not batch:
+                        break
+
+                    recordings.extend(batch)
+                    total_fetched += len(batch)
+                    logger.info(f"  ... fetched {total_fetched} so far")
+
+                    if limit and total_fetched >= limit:
+                        logger.info(f"Reached limit ({limit}), stopping pagination")
+                        break
+                    if len(batch) < page_size:
+                        logger.info(
+                            "Reached end of Plaud recordings (last page smaller than page_size)"
+                        )
+                        break
+
+                    offset += len(batch)
+            else:
+                # Single batch fetch (most recent N only)
+                recordings = self.plaud.list_recordings(limit=limit)
         except Exception as e:
             logger.error(f"Failed to fetch from Plaud API: {e}")
             return (0, 0)
@@ -262,7 +319,22 @@ class ChronosIngestService:
                 recording_id=recording_id,
                 created_at=created_at,
                 duration_ms=duration_ms,
-                download_url=None,  # No audio available via API
+                device_id=serial_number,
+            )
+
+            if success:
+                success_count += 1
+            else:
+                failure_count += 1
+                logger.error(f"Failed to ingest {recording_id}: {error}")
+
+        logger.info(
+            f"Ingestion complete: {success_count} success, {failure_count} failures"
+        )
+        return (success_count, failure_count)
+
+    def verify_integrity(self, recording_id: str) -> bool:
+        """Verify file integrity via checksum.
 
         Args:
             recording_id: Recording to verify

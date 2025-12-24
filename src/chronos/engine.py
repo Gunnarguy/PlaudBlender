@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-import google.generativeai as genai
+from google.genai import types
 from pydantic import ValidationError
 
 from src.config import get_settings
@@ -19,6 +19,13 @@ from src.models.chronos_schemas import (
     GeminiEventOutput,
     DayOfWeek,
     EventCategory,
+)
+
+from src.chronos.genai_helpers import (
+    get_genai_client,
+    is_model_not_found,
+    normalize_thinking_level,
+    pick_first_available,
 )
 
 logger = logging.getLogger(__name__)
@@ -144,16 +151,27 @@ class ChronosEngine:
         if not self.settings.gemini_api_key:
             raise ValueError("GEMINI_API_KEY not set in environment")
 
-        genai.configure(api_key=self.settings.gemini_api_key)
+        self.client = get_genai_client()
 
-        # Select model based on config
-        self.model_name = self.settings.chronos_cleaning_model
-        self.model = genai.GenerativeModel(self.model_name)
+        # Select model based on config, but prefer a model that is actually
+        # available to the configured API key.
+        configured = (self.settings.chronos_cleaning_model or "").strip()
+        fallback = pick_first_available(
+            configured,
+            "gemini-3-flash-preview",
+            "gemini-3-pro-preview",
+            "gemini-2.5-flash",
+        )
+        self.model_name = fallback or configured or "gemini-3-flash-preview"
+
+        self._thinking_level = normalize_thinking_level(
+            getattr(self.settings, "chronos_thinking_level", "")
+        )
 
         logger.info(f"Initialized ChronosEngine with model: {self.model_name}")
 
     def _upload_audio_file(self, audio_path: str):
-        """Upload audio file to Gemini File API.
+        """Upload audio file to Gemini Files API.
 
         Args:
             audio_path: Path to local audio file
@@ -168,16 +186,26 @@ class ChronosEngine:
             raise ValueError(f"Audio file not found: {audio_path}")
 
         logger.info(f"Uploading audio file: {audio_path}")
-        file_handle = genai.upload_file(audio_path)
+        file_handle = self.client.files.upload(file=audio_path)
 
-        # Wait for file to be processed (required for large files)
-        while file_handle.state.name == "PROCESSING":
-            logger.debug("Waiting for file processing...")
-            time.sleep(5)
-            file_handle = genai.get_file(file_handle.name)
+        # Some media types may require processing. Best-effort polling.
+        # (Files API is Gemini Developer API only.)
+        try:
+            while (
+                getattr(getattr(file_handle, "state", None), "name", None)
+                == "PROCESSING"
+            ):
+                logger.debug("Waiting for file processing...")
+                time.sleep(5)
+                file_handle = self.client.files.get(name=file_handle.name)
 
-        if file_handle.state.name == "FAILED":
-            raise ValueError(f"File upload failed: {file_handle.state}")
+            if getattr(getattr(file_handle, "state", None), "name", None) == "FAILED":
+                raise ValueError(
+                    f"File upload failed: {getattr(file_handle, 'state', None)}"
+                )
+        except Exception:
+            # If state polling isn't supported for this file type/account, just proceed.
+            pass
 
         logger.info(f"File uploaded successfully: {file_handle.name}")
         return file_handle
@@ -221,19 +249,29 @@ class ChronosEngine:
                 logger.info(
                     f"Generating events (attempt {attempt + 1}/{max_retries})..."
                 )
-                response = self.model.generate_content(
-                    [file_handle, prompt],
-                    generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json",
-                        temperature=0.2,  # Lower temperature for more consistent structure
-                    ),
+                config: dict = {
+                    "response_mime_type": "application/json",
+                    # Structured Outputs: ask the API to enforce schema adherence.
+                    "response_json_schema": GeminiEventOutput.model_json_schema(),
+                    "temperature": 0.2,
+                }
+                if self._thinking_level is not None:
+                    config["thinking_config"] = types.ThinkingConfig(
+                        thinking_level=self._thinking_level
+                    )
+
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=[file_handle, prompt],
+                    config=config,
                 )
 
                 # Parse JSON
-                raw_json = response.text
-                logger.debug(f"Raw Gemini response: {raw_json[:500]}...")
-
-                output_data = json.loads(raw_json)
+                output_data = getattr(response, "parsed", None)
+                if output_data is None:
+                    raw_json = response.text or ""
+                    logger.debug(f"Raw Gemini response: {raw_json[:500]}...")
+                    output_data = json.loads(raw_json)
 
                 # Validate with Pydantic
                 validated = GeminiEventOutput(**output_data)
@@ -241,7 +279,7 @@ class ChronosEngine:
 
                 # Clean up uploaded file
                 try:
-                    genai.delete_file(file_handle.name)
+                    self.client.files.delete(name=file_handle.name)
                     logger.debug(f"Deleted uploaded file: {file_handle.name}")
                 except Exception as e:
                     logger.warning(f"Failed to delete file: {e}")
@@ -262,6 +300,18 @@ class ChronosEngine:
                     return None
 
             except Exception as e:
+                # If the selected model doesn't exist for this API key, try a
+                # sane fallback once so transcript-first pipelines don't hard fail.
+                if (
+                    is_model_not_found(e)
+                    and self.model_name != "gemini-3-flash-preview"
+                ):
+                    logger.warning(
+                        f"Model '{self.model_name}' not found/available; switching to gemini-3-flash-preview"
+                    )
+                    self.model_name = "gemini-3-flash-preview"
+                    continue
+
                 logger.error(f"Processing error: {e}")
                 if attempt < max_retries - 1:
                     logger.info("Retrying...")

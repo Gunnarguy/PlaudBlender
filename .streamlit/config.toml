@@ -1,0 +1,13 @@
+# Streamlit theme configuration (matches the legacy GUI's dark, high-contrast palette)
+
+[theme]
+base = "dark"
+primaryColor = "#89b4fa"             # accent
+backgroundColor = "#1e1e2e"          # main background
+secondaryBackgroundColor = "#313244" # panels
+textColor = "#cdd6f4"                # primary text
+font = "sans serif"
+
+[server]
+# The app will still work without these; they're just nice defaults.
+headless = true

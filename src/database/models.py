@@ -99,12 +99,19 @@ class ChronosRecording(Base):
     __tablename__ = "chronos_recordings"
 
     recording_id = Column(String, primary_key=True)  # Plaud API ID
+    # Optional human metadata (Plaud sometimes provides a title)
+    title = Column(String, nullable=True)
     created_at = Column(DateTime, nullable=False)  # Recording start time (UTC)
     duration_seconds = Column(Integer, nullable=False)
     local_audio_path = Column(String, nullable=False)
     source = Column(String, default="plaud", nullable=False)
     device_id = Column(String, nullable=True)
     checksum = Column(String, nullable=True)  # SHA256 for integrity
+
+    # Transcript cache (Chronos is currently transcript-first because Plaud audio URLs
+    # are not reliably available via API).
+    transcript = Column(Text, nullable=True)
+    transcript_cached_at = Column(DateTime, nullable=True)
 
     # Processing workflow
     processing_status = Column(

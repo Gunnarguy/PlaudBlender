@@ -6,6 +6,7 @@ to extract entities and relationships from cleaned narrative events.
 
 import logging
 from typing import List, Dict, Any, Tuple
+
 import networkx as nx
 
 from src.ai.graph_rag import EntityExtractor, KnowledgeGraph, CommunityDetector
@@ -20,8 +21,11 @@ class ChronosGraphExtractor:
     def __init__(self):
         """Initialize graph extraction components."""
         self.entity_extractor = EntityExtractor()
-        self.graph_builder = GraphBuilder()
         self.community_detector = CommunityDetector()
+
+        # We keep the last KnowledgeGraph around because CommunityDetector
+        # operates on KnowledgeGraph (it builds a NetworkX graph internally).
+        self._knowledge_graph: KnowledgeGraph = KnowledgeGraph()
 
         logger.info("Initialized ChronosGraphExtractor")
 
@@ -39,22 +43,44 @@ class ChronosGraphExtractor:
         """
         logger.info(f"Extracting entities from {len(events)} events")
 
-        all_entities = []
+        # Reset for each extraction run.
+        self._knowledge_graph = KnowledgeGraph()
+        all_entities: List[Dict[str, Any]] = []
 
         # Extract entities from each event
         for event in events:
             try:
-                # Use the clean text for extraction
-                entities = self.entity_extractor.extract_entities(event.clean_text)
+                # graph_rag.EntityExtractor expects a doc_id and returns strongly-typed
+                # Entity and Relationship objects.
+                entities, relationships = self.entity_extractor.extract_entities(
+                    event.clean_text,
+                    doc_id=event.event_id,
+                )
 
-                # Enrich with event metadata
-                for entity in entities:
-                    entity["source_event_id"] = event.event_id
-                    entity["source_recording_id"] = event.recording_id
-                    entity["timestamp"] = event.start_ts.isoformat()
-                    entity["category"] = event.category.value
+                for ent in entities:
+                    self._knowledge_graph.add_entity(ent)
+                    # Preserve provenance in the exported dicts (helpful for debugging/UI).
+                    ent_dict = (
+                        ent.to_dict()
+                        if hasattr(ent, "to_dict")
+                        else {
+                            "id": getattr(ent, "id", None),
+                            "name": getattr(ent, "name", None),
+                        }
+                    )
+                    ent_dict["source_event_id"] = event.event_id
+                    ent_dict["source_recording_id"] = event.recording_id
+                    ent_dict["timestamp"] = event.start_ts.isoformat()
+                    ent_dict["category"] = event.category.value
+                    all_entities.append(ent_dict)
 
-                all_entities.extend(entities)
+                for rel in relationships:
+                    self._knowledge_graph.add_relationship(rel)
+
+                self._knowledge_graph.link_document(
+                    event.event_id,
+                    [e.id for e in entities],
+                )
 
             except Exception as e:
                 logger.error(f"Failed to extract from event {event.event_id}: {e}")
@@ -62,8 +88,25 @@ class ChronosGraphExtractor:
 
         logger.info(f"Extracted {len(all_entities)} total entities")
 
-        # Build graph
-        graph = self.graph_builder.build_graph(all_entities)
+        # Build a NetworkX view (useful for quick stats + downstream visualization)
+        graph = nx.Graph()
+
+        for entity_id, entity in self._knowledge_graph.entities.items():
+            graph.add_node(
+                entity_id,
+                name=entity.name,
+                type=getattr(entity.entity_type, "value", str(entity.entity_type)),
+                mention_count=getattr(entity, "mention_count", 1),
+            )
+
+        for rel in self._knowledge_graph.relationships:
+            if rel.source_id in graph.nodes and rel.target_id in graph.nodes:
+                graph.add_edge(
+                    rel.source_id,
+                    rel.target_id,
+                    weight=getattr(rel, "weight", 1.0),
+                    type=getattr(rel.relation_type, "value", str(rel.relation_type)),
+                )
 
         logger.info(
             f"Built graph with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges"
@@ -71,7 +114,7 @@ class ChronosGraphExtractor:
 
         return all_entities, graph
 
-    def detect_communities(self, graph: nx.Graph) -> Dict[str, List[str]]:
+    def detect_communities(self, graph: nx.Graph) -> List[Dict[str, Any]]:
         """Detect communities in the graph.
 
         Args:
@@ -80,11 +123,14 @@ class ChronosGraphExtractor:
         Returns:
             Dict mapping community_id to list of node names
         """
-        communities = self.community_detector.detect_communities(graph)
+        # CommunityDetector operates on KnowledgeGraph, not the NetworkX graph.
+        # (It will construct a NetworkX graph internally when needed.)
+        communities = self.community_detector.detect_communities(self._knowledge_graph)
 
         logger.info(f"Detected {len(communities)} communities")
 
-        return communities
+        # Return dicts for easy pickling / UI use.
+        return [c.to_dict() for c in communities]
 
     def query_expansion(
         self,

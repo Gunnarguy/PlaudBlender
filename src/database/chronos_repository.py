@@ -21,6 +21,7 @@ from .models import ChronosRecording, ChronosEvent, ChronosProcessingJob
 def upsert_chronos_recording(
     session: Session,
     recording_id: str,
+    title: Optional[str],
     created_at: datetime,
     duration_seconds: int,
     local_audio_path: str,
@@ -33,6 +34,7 @@ def upsert_chronos_recording(
     Args:
         session: SQLAlchemy session
         recording_id: Plaud API recording ID
+        title: Optional human title
         created_at: Recording timestamp (UTC)
         duration_seconds: Total duration
         local_audio_path: Path to downloaded audio
@@ -47,6 +49,7 @@ def upsert_chronos_recording(
 
     if rec:
         # Update existing
+        rec.title = title
         rec.created_at = created_at
         rec.duration_seconds = duration_seconds
         rec.local_audio_path = local_audio_path
@@ -57,6 +60,7 @@ def upsert_chronos_recording(
         # Insert new
         rec = ChronosRecording(
             recording_id=recording_id,
+            title=title,
             created_at=created_at,
             duration_seconds=duration_seconds,
             local_audio_path=local_audio_path,
@@ -69,6 +73,26 @@ def upsert_chronos_recording(
     session.commit()
     session.refresh(rec)
     return rec
+
+
+def set_chronos_recording_transcript(
+    session: Session,
+    recording_id: str,
+    transcript_text: str,
+) -> None:
+    """Cache transcript text on a Chronos recording.
+
+    This enables the UI to show a "library of transcriptions" without re-calling
+    Plaud on every page refresh.
+    """
+
+    rec = session.query(ChronosRecording).filter_by(recording_id=recording_id).first()
+    if not rec:
+        return
+
+    rec.transcript = transcript_text
+    rec.transcript_cached_at = datetime.utcnow()
+    session.commit()
 
 
 def get_chronos_recording(
@@ -144,6 +168,19 @@ def get_chronos_events_by_recording(
         .order_by(ChronosEvent.start_ts)
         .all()
     )
+
+
+def delete_chronos_events_by_recording(session: Session, recording_id: str) -> int:
+    """Delete all Chronos events for a recording.
+
+    Returns the number of deleted rows.
+    """
+
+    q = session.query(ChronosEvent).filter_by(recording_id=recording_id)
+    count = q.count()
+    q.delete(synchronize_session=False)
+    session.commit()
+    return int(count)
 
 
 def get_chronos_events_by_day(

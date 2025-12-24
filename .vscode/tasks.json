@@ -2,11 +2,12 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Run: GUI (gui.py)",
+      "label": "Run: Chronos UI (Streamlit)",
       "type": "shell",
-      "command": "python",
-      "args": ["gui.py"],
+      "command": "streamlit",
+      "args": ["run", "chronos_app.py"],
       "problemMatcher": [],
+      "isBackground": true,
       "group": "build"
     },
     {
