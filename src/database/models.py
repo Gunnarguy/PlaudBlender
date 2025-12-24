@@ -217,3 +217,28 @@ class ChronosProcessingJob(Base):
 
     def __repr__(self) -> str:
         return f"ChronosProcessingJob(id={self.job_id}, type={self.job_type}, status={self.status})"
+
+
+class ChronosWebhookEvent(Base):
+    """Persisted incoming Plaud webhook events.
+
+    Storing webhook payloads allows Chronos to audit incoming events and
+    replay them into the pipeline (ingest/process) in a controlled way.
+    """
+
+    __tablename__ = "chronos_webhook_events"
+
+    event_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    webhook_id = Column(String, nullable=True)
+    event_type = Column(String, nullable=False)
+    payload = Column(JSON, nullable=False)
+    headers = Column(JSON, nullable=True)
+    # Optional link to a recording if the event references one
+    recording_id = Column(String, ForeignKey("chronos_recordings.recording_id"), nullable=True)
+
+    received_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    processed = Column(String, default="new", nullable=False)  # new | processed | failed
+    processed_at = Column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"ChronosWebhookEvent(id={self.event_id}, type={self.event_type}, received_at={self.received_at})"

@@ -323,3 +323,58 @@ def retry_failed_chronos_job(session: Session, job_id: str) -> None:
         job.started_at = None
         job.completed_at = None
         session.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Webhook event persistence for Plaud → Chronos integration
+# ═══════════════════════════════════════════════════════════════════
+
+
+def add_chronos_webhook_event(
+    session: Session,
+    webhook_id: Optional[str],
+    event_type: str,
+    payload: dict,
+    headers: Optional[dict] = None,
+    recording_id: Optional[str] = None,
+) -> str:
+    """Persist an incoming webhook event. Returns generated event_id."""
+    from .models import ChronosWebhookEvent
+
+    ev = ChronosWebhookEvent(
+        webhook_id=webhook_id,
+        event_type=event_type,
+        payload=payload,
+        headers=headers,
+        recording_id=recording_id,
+    )
+    session.add(ev)
+    session.commit()
+    session.refresh(ev)
+    # Return a plain string for callers (SQLAlchemy attribute will be resolved at runtime)
+    return str(ev.event_id)
+
+
+def list_chronos_webhook_events(session: Session, limit: int = 200):
+    """Return recent webhook events ordered by received_at desc."""
+    from .models import ChronosWebhookEvent
+
+    return (
+        session.query(ChronosWebhookEvent)
+        .order_by(ChronosWebhookEvent.received_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def mark_webhook_event_processed(session: Session, event_id: str, status: str = "processed") -> None:
+    """Mark a webhook event as processed/failed."""
+    from .models import ChronosWebhookEvent
+
+    ev = session.query(ChronosWebhookEvent).filter_by(event_id=event_id).first()
+    if not ev:
+        return
+    # Use setattr to avoid static type-checker complaints about SQLAlchemy Column descriptors.
+    setattr(ev, "processed", status)
+    setattr(ev, "processed_at", datetime.utcnow())
+    session.commit()

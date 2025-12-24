@@ -6,6 +6,7 @@ from .models import (
     Segment,
     ChronosRecording,
     ChronosEvent,
+    ChronosWebhookEvent,
     ChronosProcessingJob,
     Base,
 )
@@ -16,6 +17,9 @@ from .repository import (
     get_segments_by_status,
     mark_recording_status,
     mark_segment_status,
+    add_chronos_webhook_event,
+    list_chronos_webhook_events,
+    mark_webhook_event_processed,
 )
 
 __all__ = [
@@ -27,6 +31,7 @@ __all__ = [
     "ChronosRecording",
     "ChronosEvent",
     "ChronosProcessingJob",
+    "ChronosWebhookEvent",
     "Base",
     "upsert_recording",
     "add_segments",
@@ -34,4 +39,7 @@ __all__ = [
     "get_segments_by_status",
     "mark_recording_status",
     "mark_segment_status",
+    "add_chronos_webhook_event",
+    "list_chronos_webhook_events",
+    "mark_webhook_event_processed",
 ]
