@@ -26,5 +26,6 @@
     "**/__pycache__": true,
     "data/": true,
     "lib/": true
-  }
+  },
+  "editor.fontSize": 10
 }
