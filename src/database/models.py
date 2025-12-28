@@ -72,7 +72,7 @@ class Segment(Base):
     end_ms = Column(Integer, nullable=True)
     theme = Column(String, nullable=True)
     namespace = Column(String, default="full_text")
-    pinecone_id = Column(String, nullable=True)
+    vector_id = Column(String, nullable=True)  # Qdrant vector ID
     embedding_model = Column(String, nullable=True)
     status = Column(String, default="pending")  # pending | indexed
     extra = Column(JSON, nullable=True)

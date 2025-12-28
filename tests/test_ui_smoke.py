@@ -117,12 +117,6 @@ class TestViewImports:
 
         assert TranscriptsView is not None
 
-    def test_pinecone_view_import(self):
-        """Verify PineconeView can be imported."""
-        from gui.views.pinecone import PineconeView
-
-        assert PineconeView is not None
-
     def test_search_view_import(self):
         """Verify SearchView can be imported."""
         from gui.views.search import SearchView
@@ -257,7 +251,6 @@ class TestFullModuleTree:
         import gui.views.base
         import gui.views.dashboard
         import gui.views.transcripts
-        import gui.views.pinecone
         import gui.views.search
         import gui.views.timeline
         import gui.views.settings
@@ -267,7 +260,6 @@ class TestFullModuleTree:
         import gui.services
         import gui.services.clients
         import gui.services.embedding_service
-        import gui.services.pinecone_service
         import gui.services.search_service
         import gui.services.settings_service
         import gui.services.timeline_service

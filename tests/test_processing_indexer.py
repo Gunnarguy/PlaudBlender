@@ -61,7 +61,7 @@ def test_index_pending_segments_updates_status_and_ids():
             seg_id = f"seg-{i}"
             seg = session.get(Segment, seg_id)
             assert seg.status == "indexed"
-            assert seg.pinecone_id == f"vec-{seg_id}"
+            assert seg.vector_id == f"vec-{seg_id}"
             assert seg.embedding_model == "dummy"
             assert embedded[seg_id]["metadata"]["recording_id"] == "rec_idx"
     finally:

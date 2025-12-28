@@ -21,7 +21,7 @@
 - Indexes to Qdrant with temporal metadata (day-of-week, hour, category)
 - Extracts entities and builds knowledge graph (NetworkX)
 - Provides Streamlit UI with timeline and semantic search
-- Optional: Notion sync, MCP server
+- Full Plaud integration: devices, workflows, webhooks
 
 ## Project Structure (Simplified)
 
@@ -30,11 +30,31 @@ chronos_app.py          → Streamlit UI (Master-Detail with timeline)
 plaud_setup.py          → Setup wizard + OAuth
 scripts/                → CLI tools (chronos_pipeline.py, mcp_server.py, plaud_auth_utils.py)
 src/chronos/            → Core Chronos system (engine, qdrant_client, ingest, graph, analytics)
-src/                    → Shared logic (plaud_client, database/, models/, ai/graph_rag.py)
+src/                    → Plaud modules (plaud_client, plaud_workflow, plaud_device, plaud_webhook)
+gui/components/         → Streamlit UI panels (device_panel, workflow_panel, webhook_panel)
 tests/                  → Pytest suite
-docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
-archive/                → Legacy GUI and Pinecone code (don't import from here)
+docs/                   → PROJECT_GUIDE.md, chronos-mvp.md, PlaudDocs/
+archive/                → Legacy GUI code (don't import from here)
 ```
+
+## Plaud API Integration (src/)
+
+| Module           | Purpose                                                   |
+| ---------------- | --------------------------------------------------------- |
+| `plaud_client`   | OAuth, recordings list, transcripts, user info            |
+| `plaud_workflow` | AI workflow orchestration (transcription + ETL + summary) |
+| `plaud_device`   | Device management (NotePin, Note, NotePro status/storage) |
+| `plaud_webhook`  | Async event handling with signature verification          |
+| `plaud_admin`    | Administrative helpers (webhooks, devices, quick actions) |
+
+## Streamlit UI Components (gui/components/)
+
+| Component           | Purpose                                               |
+| ------------------- | ----------------------------------------------------- |
+| `device_panel`      | Device monitoring (battery, storage, sync recordings) |
+| `workflow_panel`    | Submit/monitor AI workflows, view results             |
+| `webhook_panel`     | Incoming events viewer, config, signature testing     |
+| `plaud_admin_panel` | Integration hub with overview + quick actions         |
 
 ## User Philosophy
 

@@ -36,7 +36,12 @@ from src.database.models import (
 )
 from src.database.chronos_repository import set_chronos_recording_transcript
 from src.plaud_client import PlaudClient
+
+# Import all Plaud UI components
 from gui.components.plaud_admin_panel import render_plaud_admin_panel
+from gui.components.device_panel import render_device_panel
+from gui.components.workflow_panel import render_workflow_panel
+from gui.components.webhook_panel import render_webhook_panel
 
 
 # Page config
@@ -317,6 +322,7 @@ def page_search(qdrant: ChronosQdrantClient, settings, gemini_available: bool):
             temporal_filter = TemporalFilter(
                 start_date=datetime.combine(start_date, datetime.min.time()),
                 end_date=datetime.combine(end_date, datetime.max.time()),
+                hours_of_day=None,
             )
         elif filter_mode == "Day of Week":
             days = st.multiselect(
@@ -325,7 +331,9 @@ def page_search(qdrant: ChronosQdrantClient, settings, gemini_available: bool):
                 default=[],
                 key="search_days",
             )
-            temporal_filter = TemporalFilter(days_of_week=[DayOfWeek(d) for d in days])
+            temporal_filter = TemporalFilter(
+                days_of_week=[DayOfWeek(d) for d in days], hours_of_day=None
+            )
         else:
             hours = st.slider(
                 "Hour range",
@@ -485,6 +493,7 @@ def page_timeline(qdrant: ChronosQdrantClient):
     tf = TemporalFilter(
         start_date=datetime.now() - timedelta(days=int(days)),
         end_date=datetime.now(),
+        hours_of_day=None,
     )
     try:
         t0 = time.perf_counter()
@@ -914,13 +923,15 @@ def page_recordings(settings, gemini_available: bool):
                     key=f"bulk_checkbox_{r.recording_id}",
                     label_visibility="collapsed",
                 )
-                st.session_state.bulk_selections[r.recording_id] = is_selected
-                if is_selected:
-                    selected_recordings.append(r.recording_id)
+                rec_id = getattr(r, "recording_id", None)
+                st.session_state.bulk_selections[rec_id] = is_selected
+                if is_selected and isinstance(rec_id, str) and rec_id:
+                    selected_recordings.append(rec_id)
             with bulk_col2:
-                label = r.recording_id
-                if r.title:
-                    label = f"{r.title} · {r.recording_id}"
+                label = rec_id
+                title = getattr(r, "title", None)
+                if title:
+                    label = f"{title} · {rec_id}"
                 st.caption(label)
             with bulk_col3:
                 st.caption(r.processing_status)
@@ -1042,7 +1053,7 @@ def page_recordings(settings, gemini_available: bool):
         options = []
         for r in recs:
             label = r.recording_id
-            if r.title:
+            if getattr(r, "title", None):
                 label = f"{r.title} · {r.recording_id}"
             options.append(label)
 
@@ -1051,7 +1062,7 @@ def page_recordings(settings, gemini_available: bool):
             options=options,
             index=0,
         )
-        selected_id = pick.split(" · ")[-1].strip()
+        selected_id = pick.split(" · ")[-1].strip() if pick else None
         rec = (
             session.query(ChronosRecordingDB)
             .filter_by(recording_id=selected_id)
@@ -1115,26 +1126,34 @@ def page_recordings(settings, gemini_available: bool):
         if fetch_tx:
             with st.spinner("Fetching transcript from Plaud…"):
                 try:
-                    file_details = PlaudClient().get_recording(rec.recording_id)
+                    rec_id = getattr(rec, "recording_id", None)
+                    if isinstance(rec_id, str) and rec_id:
+                        file_details = PlaudClient().get_recording(rec_id)
                     transcript = _extract_transcript_from_plaud_file_details(
                         file_details
                     )
                     if not transcript:
                         st.warning("No transcript found in Plaud source_list.")
                     else:
-                        set_chronos_recording_transcript(
-                            session, rec.recording_id, transcript
-                        )
+                        rec_id = getattr(rec, "recording_id", None)
+                        if isinstance(rec_id, str) and rec_id:
+                            set_chronos_recording_transcript(
+                                session, rec_id, transcript
+                            )
                         st.success(f"Cached transcript ({len(transcript):,} chars)")
                         st.rerun()
                 except Exception as e:
                     st.error(f"Transcript fetch failed: {e}")
 
         if process_one:
-            code = _run_pipeline_with_live_logs(
-                ["--process", "--recording-id", rec.recording_id, "--limit", "1"],
-                header=f"Process {rec.recording_id}",
+            rec_id = getattr(rec, "recording_id", None)
+            args = (
+                ["--process", "--recording-id", rec_id, "--limit", "1"]
+                if isinstance(rec_id, str) and rec_id
+                else ["--process", "--limit", "1"]
             )
+            args = [str(a) for a in args]
+            code = _run_pipeline_with_live_logs(args, header=f"Process {rec_id}")
             (
                 st.success("Process finished")
                 if code == 0
@@ -1143,16 +1162,20 @@ def page_recordings(settings, gemini_available: bool):
             st.rerun()
 
         if force_one:
-            code = _run_pipeline_with_live_logs(
-                [
+            rec_id = getattr(rec, "recording_id", None)
+            args = ["--process", "--force", "--limit", "1"]
+            if isinstance(rec_id, str) and rec_id:
+                args = [
                     "--process",
                     "--recording-id",
-                    rec.recording_id,
+                    rec_id,
                     "--force",
                     "--limit",
                     "1",
-                ],
-                header=f"Force reprocess {rec.recording_id}",
+                ]
+            args = [str(a) for a in args]
+            code = _run_pipeline_with_live_logs(
+                args, header=f"Force reprocess {rec_id}"
             )
             (
                 st.success("Force reprocess finished")
@@ -1162,10 +1185,14 @@ def page_recordings(settings, gemini_available: bool):
             st.rerun()
 
         if index_one:
-            code = _run_pipeline_with_live_logs(
-                ["--index", "--recording-id", rec.recording_id, "--limit", "25"],
-                header=f"Index {rec.recording_id}",
+            rec_id = getattr(rec, "recording_id", None)
+            args = (
+                ["--index", "--recording-id", rec_id, "--limit", "25"]
+                if isinstance(rec_id, str) and rec_id
+                else ["--index", "--limit", "25"]
             )
+            args = [str(a) for a in args]
+            code = _run_pipeline_with_live_logs(args, header=f"Index {rec_id}")
             (
                 st.success("Index finished")
                 if code == 0
@@ -1248,31 +1275,74 @@ def main():
 
     with st.sidebar:
         st.header("Navigation")
+
+        # Main navigation sections
+        st.markdown("**📊 Core**")
         page = st.radio(
-            "",
+            "core_nav",
             [
                 "Dashboard",
-                "Recordings",
-                "Controls",
                 "Search",
                 "Timeline",
-                "Plaud Admin",
+                "Recordings",
+            ],
+            index=0,
+            label_visibility="collapsed",
+            key="core_nav",
+        )
+
+        st.markdown("**⚙️ Operations**")
+        ops_page = st.radio(
+            "",
+            [
+                "(none)",
+                "Controls",
+                "Plaud Hub",
+                "Devices",
+                "Workflows",
+                "Webhooks",
+            ],
+            index=0,
+            label_visibility="collapsed",
+            key="ops_nav",
+        )
+
+        st.markdown("**🔧 System**")
+        sys_page = st.radio(
+            "",
+            [
+                "(none)",
                 "Settings",
                 "Logs",
             ],
             index=0,
             label_visibility="collapsed",
+            key="sys_nav",
         )
 
-        with st.expander("Diagnostics", expanded=False):
+        # Determine active page
+        if ops_page and ops_page != "(none)":
+            page = ops_page
+        elif sys_page and sys_page != "(none)":
+            page = sys_page
+
+        with st.expander("🔍 Diagnostics", expanded=False):
             st.write(
                 {
                     "gemini": "OK" if gemini_available else "MISSING GEMINI_API_KEY",
                     "qdrant_url": settings.qdrant_url,
                     "collection": settings.qdrant_collection_name,
+                    "plaud_oauth": (
+                        "OK" if settings.plaud_client_id else "NOT CONFIGURED"
+                    ),
                 }
             )
 
+        # Version badge
+        st.divider()
+        st.caption("Chronos v2.1.0 · Full Plaud Integration")
+
+    # Route to appropriate page
     if page == "Dashboard":
         page_dashboard(qdrant, settings, gemini_available)
     elif page == "Recordings":
@@ -1283,12 +1353,20 @@ def main():
         page_search(qdrant, settings, gemini_available)
     elif page == "Timeline":
         page_timeline(qdrant)
-    elif page == "Plaud Admin":
+    elif page == "Plaud Hub":
         render_plaud_admin_panel()
+    elif page == "Devices":
+        render_device_panel()
+    elif page == "Workflows":
+        render_workflow_panel()
+    elif page == "Webhooks":
+        render_webhook_panel()
     elif page == "Settings":
         page_settings(settings, gemini_available)
-    else:
+    elif page == "Logs":
         page_logs()
+    else:
+        page_dashboard(qdrant, settings, gemini_available)
 
     render_status_bar(settings, gemini_available)
 

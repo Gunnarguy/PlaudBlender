@@ -1,10 +1,8 @@
 """
 Vector Store Abstraction Layer
 
-Allows seamless switching between vector database backends.
-Set VECTOR_DB=qdrant or VECTOR_DB=pinecone in .env
-
-Default: qdrant (local-first, more granular, better visibility)
+Provides a unified interface to the Qdrant vector database.
+Qdrant is used for all vector operations (local-first, granular, excellent visibility).
 """
 
 import os
@@ -22,15 +20,13 @@ class VectorDBProvider(Enum):
     """Supported vector database providers."""
 
     QDRANT = "qdrant"
-    PINECONE = "pinecone"
 
 
 class VectorStoreProtocol(Protocol):
     """
     Protocol defining the interface for vector store clients.
 
-    Both QdrantVectorClient and PineconeClient implement this interface,
-    making them interchangeable.
+    QdrantVectorClient implements this interface.
     """
 
     collection_name: str
@@ -85,14 +81,9 @@ def get_vector_db_provider() -> VectorDBProvider:
     """
     Get the configured vector database provider.
 
-    Reads from VECTOR_DB env var. Defaults to 'qdrant'.
+    Returns Qdrant (the only supported provider).
     """
-    provider_str = os.getenv("VECTOR_DB", "qdrant").lower()
-
-    if provider_str == "pinecone":
-        return VectorDBProvider.PINECONE
-    else:
-        return VectorDBProvider.QDRANT
+    return VectorDBProvider.QDRANT
 
 
 def get_vector_client(
@@ -122,17 +113,11 @@ def get_vector_client(
             _vector_client.switch_collection(collection_name)
         return _vector_client
 
-    # Create new client based on provider
-    if provider == VectorDBProvider.QDRANT:
-        from src.qdrant_client import QdrantVectorClient
+    # Create Qdrant client (the only supported provider)
+    from src.qdrant_client import QdrantVectorClient
 
-        _vector_client = QdrantVectorClient(collection_name=collection_name)
-        logger.info("Using Qdrant vector store (local-first)")
-    else:
-        from src.pinecone_client import PineconeClient
-
-        _vector_client = PineconeClient(index_name=collection_name)
-        logger.info("Using Pinecone vector store (cloud)")
+    _vector_client = QdrantVectorClient(collection_name=collection_name)
+    logger.info("Using Qdrant vector store (local-first)")
 
     _current_provider = provider
     return _vector_client
@@ -146,13 +131,8 @@ def reset_vector_client():
 
 
 def is_qdrant() -> bool:
-    """Check if current provider is Qdrant."""
-    return get_vector_db_provider() == VectorDBProvider.QDRANT
-
-
-def is_pinecone() -> bool:
-    """Check if current provider is Pinecone."""
-    return get_vector_db_provider() == VectorDBProvider.PINECONE
+    """Check if current provider is Qdrant (always True)."""
+    return True
 
 
 def get_provider_info() -> Dict[str, Any]:

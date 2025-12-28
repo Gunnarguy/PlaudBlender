@@ -282,7 +282,7 @@ class ChronosQdrantClient:
         # Execute search
         if query_vector:
             # Semantic + filter
-            results = self.client.search(
+            results = self.client.search_points(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
                 query_filter=query_filter,

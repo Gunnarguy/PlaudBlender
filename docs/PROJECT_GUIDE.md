@@ -23,10 +23,12 @@
 ## What Is PlaudBlender?
 
 PlaudBlender transforms **Plaud voice recordings** into a **searchable knowledge base** with:
-- A **GUI control plane** (Tkinter) for managing recordings, vectors, search, and visualization
-- A **data pipeline** (SQLite → AI processing → Pinecone) for durable storage and fast retrieval
+- A **Chronos system** for temporal-aware semantic search and knowledge graph
+- A **GUI control plane** (Streamlit) for managing recordings, vectors, search, and visualization
+- A **data pipeline** (SQLite → Gemini processing → Qdrant) for durable storage and fast retrieval
+- **Full Plaud API integration** (OAuth, Workflows, AI Summary, Webhooks, Device Management)
 - **Advanced RAG capabilities** (hybrid search, reranking, GraphRAG, self-correction)
-- **Optional integrations** (Notion sync, OpenAI Chat, MCP server)
+- **Optional integrations** (Notion sync, MCP server)
 
 ### Core Philosophy
 > _"Gunnar loves data, granularity, and depth—the ability to drill down and see what's happening under the hood."_
@@ -75,28 +77,27 @@ python gui.py
 ### North Star
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     GUI (Control Plane)                      │
-│  Dashboard │ Transcripts │ Pinecone │ Search │ Settings     │
+│                     Chronos UI (Streamlit)                   │
+│  Timeline │ Search │ Insights │ Knowledge Graph │ Settings  │
 └─────────────────────────┬───────────────────────────────────┘
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                   Services Layer                             │
-│  transcripts_service │ pinecone_service │ search_service    │
-│  embedding_service │ stats_service │ chat_service           │
+│                   Plaud API Integration                      │
+│  plaud_client │ plaud_workflow │ plaud_device │ webhook     │
 └─────────────────────────┬───────────────────────────────────┘
                           │
           ┌───────────────┼───────────────┐
           ▼               ▼               ▼
     ┌──────────┐   ┌────────────┐   ┌──────────┐
-    │ SQLite   │   │  Pinecone  │   │  Notion  │
-    │ (truth)  │   │  (serving) │   │ (optional)│
+    │ SQLite   │   │  Qdrant    │   │  Notion  │
+    │ (truth)  │   │  (vectors) │   │ (optional)│
     └──────────┘   └────────────┘   └──────────┘
 ```
 
 ### Key Principles
 - **SQLite is the source of truth** (`data/brain.db`) — all recordings and segments persist here
-- **Pinecone is the serving index** — fast vector search with metadata pointing back to SQL IDs
+- **Qdrant is the vector index** — local-first, granular temporal metadata, fast semantic search
 - **Pydantic enforces contracts** — validated schemas at ingestion boundaries
 - **GUI stays responsive** — all I/O runs in background threads
 
@@ -107,18 +108,26 @@ python gui.py
 ### Canonical pipeline (SQL-first)
 ```
 1. INGEST:  Plaud API → validate → SQLite (recordings, status=raw)
-2. PROCESS: recordings → chunk → SQLite (segments, status=pending)
-3. INDEX:   segments → embed → Pinecone (metadata: recording_id, segment_id)
-4. SERVE:   GUI reads Pinecone for search, SQL for provenance/details
+2. PROCESS: recordings → Gemini cognitive cleaning → SQLite (events, status=pending)
+3. INDEX:   events → embed → Qdrant (temporal metadata: day_of_week, hour, category)
+4. SERVE:   Chronos UI reads Qdrant for search, SQL for provenance/details
 ```
 
-### Namespaces
-- `full_text` — chunked transcript segments
-- `summaries` — AI-generated syntheses
+### Temporal Metadata (Chronos)
+Each event in Qdrant includes:
+- `day_of_week` (0-6) — enables "What do I do on Mondays?" queries
+- `hour` (0-23) — time-of-day patterns
+- `category` — event type (meeting, idea, task, etc.)
+- `sentiment` — AI-detected emotional tone
+- `entities` — extracted people, places, concepts
 
-### Metadata contract (every vector)
-Required: `recording_id`, `source`, `model`, `dimension`, `text_hash`
-Recommended: `segment_id`, `themes`, `title`, `indexed_at`
+### Plaud API Integration
+| Module           | Purpose                                             |
+| ---------------- | --------------------------------------------------- |
+| `plaud_client`   | OAuth, recordings, transcripts                      |
+| `plaud_workflow` | AI workflow orchestration (transcription + ETL)     |
+| `plaud_device`   | Device management (NotePin, Note, NotePro)          |
+| `plaud_webhook`  | Async event handling (transcription complete, etc.) |
 
 ---
 
@@ -126,84 +135,100 @@ Recommended: `segment_id`, `themes`, `title`, `indexed_at`
 
 ```
 PlaudBlender/
-├── gui.py                      # Entry point → gui/app.py
+├── chronos_app.py              # Entry point → Streamlit UI
 ├── plaud_setup.py              # Setup wizard + OAuth
 ├── verify_integration.py       # Developer smoke tests
 ├── generate_mindmap.py         # Mind map from Notion data
 ├── requirements.txt
 ├── pyproject.toml              # Project metadata + pytest config
+├── docker-compose.yml          # Qdrant + services
 ├── .env.example                # Environment template
 │
-├── gui/                        # GUI package (control plane)
-│   ├── app.py                  # Main application + action registry
-│   ├── state.py                # Centralized state
-│   ├── theme.py                # Styling
-│   ├── views/                  # Dashboard, Transcripts, Pinecone, Search, etc.
-│   ├── services/               # Business logic (transcripts, pinecone, search, etc.)
-│   ├── components/             # Reusable widgets (stat_card, status_bar)
-│   └── utils/                  # Threading, tooltips, logging
-│
-├── src/                        # Core processing & clients
+├── src/                        # Core modules
 │   ├── config.py               # Single .env loader
 │   ├── plaud_oauth.py          # OAuth 2.0 client
-│   ├── plaud_client.py         # Plaud API wrapper
-│   ├── pinecone_client.py      # Pinecone wrapper
+│   ├── plaud_client.py         # Plaud API wrapper (recordings, transcripts)
+│   ├── plaud_workflow.py       # Plaud Workflow API (AI pipelines)
+│   ├── plaud_device.py         # Plaud Device management
+│   ├── plaud_webhook.py        # Webhook handler for async events
+│   ├── vector_store.py         # Qdrant abstraction layer
 │   ├── notion_sync.py          # Direct Notion integration
 │   ├── notion_client.py        # Notion API client
 │   ├── visualizer.py           # Mind map generation
-│   ├── ai/                     # Embedding providers
+│   │
+│   ├── chronos/                # Chronos system (temporal search)
+│   │   ├── engine.py           # Gemini File API for cognitive cleaning
+│   │   ├── qdrant_client.py    # Native Qdrant with temporal indexes
+│   │   ├── embedding_service.py # Gemini embeddings
+│   │   ├── ingest_service.py   # Audio download and storage
+│   │   ├── analytics.py        # Day-of-week patterns, sentiment
+│   │   ├── graph_service.py    # Entity extraction, NetworkX
+│   │   └── transcript_processor.py # Text processing
+│   │
+│   ├── ai/                     # AI/embedding providers
 │   ├── database/               # SQLAlchemy engine + models
 │   ├── models/                 # Pydantic schemas
-│   └── processing/             # Chunking, GraphRAG, self-correction, etc.
+│   └── processing/             # Chunking, GraphRAG, self-correction
+│
+├── gui/                        # Legacy GUI package (being replaced by Streamlit)
 │
 ├── scripts/                    # CLI tools
-│   ├── sync_to_pinecone.py     # Batch Plaud → Pinecone
-│   ├── process_pending.py      # Process SQL recordings
+│   ├── chronos_pipeline.py     # Full pipeline: ingest → process → index
+│   ├── mcp_server.py           # MCP server for AI agents
 │   ├── plaud_auth_utils.py     # OAuth diagnostics
-│   └── mcp_server.py           # MCP server (OpenAI Responses)
+│   └── migrate_rename_vector_id.py # Database migration
 │
-├── tests/                      # Pytest suite
-├── data/                       # Local data (brain.db, caches) — gitignored
-├── docs/                       # This guide + references
-│   ├── PROJECT_GUIDE.md        # ← You are here (consolidated)
-│   ├── audit-checklist.md      # Live task tracker
-│   ├── pinecone-cheatsheet.md  # Quick API links
-│   ├── pinecone-integration-playbook.md  # Agent instructions
-│   └── archive/                # Historical reference docs
+├── tests/                      # Pytest suite (57+ tests)
+├── data/                       # Local data (brain.db, audio, caches)
+├── docs/                       # Documentation
+│   ├── PROJECT_GUIDE.md        # ← You are here
+│   ├── chronos-mvp.md          # Chronos system architecture
+│   ├── PlaudDocs/              # Plaud API documentation
+│   └── archive/                # Historical reference
 │
-├── archive/                    # Retired code (gui_legacy.py, etc.)
-├── lib/                        # Vendor libraries (vis.js, tom-select)
-└── .vscode/                    # Workspace settings
+└── archive/                    # Retired code
 ```
 
 ---
 
 ## Environment Variables
 
-### Required (Plaud)
+### Required (Plaud OAuth)
 ```
 PLAUD_CLIENT_ID=
 PLAUD_CLIENT_SECRET=
 PLAUD_REDIRECT_URI=http://localhost:8080/callback
 ```
 
-### Optional (enables features)
+### Plaud API Settings (optional)
 ```
-# AI Processing
-GEMINI_API_KEY=             # Gemini for theme extraction
-PINECONE_API_KEY=           # Vector database
-PINECONE_INDEX_NAME=transcripts
+PLAUD_WEBHOOK_SECRET=       # For webhook signature verification
+PLAUD_WEBHOOK_URL=          # Your webhook endpoint
+PLAUD_DEFAULT_LANGUAGE=en   # Default transcription language
+PLAUD_ENABLE_DIARIZATION=1  # Enable speaker diarization
+PLAUD_WORKFLOW_TIMEOUT=600  # Workflow timeout in seconds
+```
 
-# OpenAI (Chat + MCP)
-OPENAI_API_KEY=
-OPENAI_DEFAULT_MODEL=gpt-4.1
+### AI Processing
+```
+GEMINI_API_KEY=             # Gemini for processing + embeddings
+CHRONOS_CLEANING_MODEL=gemini-3-flash-preview
+CHRONOS_EMBEDDING_MODEL=gemini-embedding-001
+CHRONOS_ANALYST_MODEL=gemini-3-pro-preview
+```
 
-# Notion (optional sync)
+### Qdrant (Vector Store)
+```
+QDRANT_URL=http://localhost:6333
+QDRANT_API_KEY=             # Optional for Qdrant Cloud
+QDRANT_COLLECTION_NAME=chronos_events
+```
+
+### Optional Integrations
+```
+# Notion (two-way sync)
 NOTION_TOKEN=
 NOTION_DATABASE_ID=
-
-# Embedding provider
-AI_PROVIDER=gemini          # gemini | openai | pinecone
 ```
 
 ---
