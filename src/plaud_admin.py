@@ -13,6 +13,10 @@ from .utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+_LOGGED_MISSING_DEVICES_ENDPOINT = False
+_LOGGED_MISSING_WEBHOOKS_ENDPOINT = False
+
+
 class PlaudAdminClient:
     """Convenience wrapper for administrative Plaud API operations.
 
@@ -30,9 +34,24 @@ class PlaudAdminClient:
         Falls back to an empty list if the API doesn't expose a devices endpoint.
         """
         try:
-            return self.plaud._request("GET", "/devices")
+            result = self.plaud._request("GET", "/devices")
+            if isinstance(result, list):
+                return result
+            if isinstance(result, dict):
+                devices = result.get("devices")
+                return devices if isinstance(devices, list) else []
+            return []
         except Exception as e:
-            logger.warning("Could not list devices: %s", e)
+            global _LOGGED_MISSING_DEVICES_ENDPOINT
+            status_code = getattr(getattr(e, "response", None), "status_code", None)
+            if status_code == 404 and not _LOGGED_MISSING_DEVICES_ENDPOINT:
+                _LOGGED_MISSING_DEVICES_ENDPOINT = True
+                logger.info(
+                    "Plaud devices endpoint is not available for this auth/API base (404). "
+                    "Device management may require the App API-token API (api.plaud.ai) instead of third-party OAuth."
+                )
+            elif status_code != 404:
+                logger.warning("Could not list devices: %s", e)
             return []
 
     def get_device(self, device_id: str) -> Dict[str, Any]:
@@ -44,15 +63,30 @@ class PlaudAdminClient:
 
     def list_webhooks(self) -> List[Dict[str, Any]]:
         try:
-            return self.plaud._request("GET", "/webhooks")
+            result = self.plaud._request("GET", "/webhooks")
+            if isinstance(result, list):
+                return result
+            if isinstance(result, dict):
+                webhooks = result.get("webhooks")
+                return webhooks if isinstance(webhooks, list) else []
+            return []
         except Exception as e:
-            logger.warning("Could not list webhooks: %s", e)
+            global _LOGGED_MISSING_WEBHOOKS_ENDPOINT
+            status_code = getattr(getattr(e, "response", None), "status_code", None)
+            if status_code == 404 and not _LOGGED_MISSING_WEBHOOKS_ENDPOINT:
+                _LOGGED_MISSING_WEBHOOKS_ENDPOINT = True
+                logger.info(
+                    "Plaud webhooks endpoint is not available for this auth/API base (404). "
+                    "Webhook management may require a different Plaud API surface than third-party OAuth."
+                )
+            elif status_code != 404:
+                logger.warning("Could not list webhooks: %s", e)
             return []
 
     def create_webhook(
         self, url: str, events: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        payload = {"url": url}
+        payload: Dict[str, Any] = {"url": url}
         if events:
             payload["events"] = events
         try:

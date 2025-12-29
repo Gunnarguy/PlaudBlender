@@ -26,9 +26,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
 
-import requests
 
+import requests
 from .plaud_oauth import PlaudOAuthClient
+from .plaud_api_token import PlaudAPITokenClient
 from .config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,10 @@ settings = get_settings()
 
 # Plaud API base URL
 PLAUD_API_BASE = "https://platform.plaud.ai/developer/api/open/third-party"
+
+
+_LOGGED_DEVICES_404 = False
+_LOGGED_DEVICE_FILES_404 = False
 
 
 class DeviceType(Enum):
@@ -145,14 +150,20 @@ class PlaudDeviceManager:
     - Settings configuration
     """
 
-    def __init__(self, oauth_client: Optional[PlaudOAuthClient] = None):
+    def __init__(
+        self,
+        oauth_client: Optional[PlaudOAuthClient] = None,
+        api_token_client: Optional[PlaudAPITokenClient] = None,
+    ):
         """
         Initialize device manager.
 
         Args:
             oauth_client: PlaudOAuthClient instance (auto-created if not provided)
+            api_token_client: PlaudAPITokenClient instance (auto-created if not provided)
         """
         self.oauth = oauth_client or PlaudOAuthClient()
+        self.api_token_client = api_token_client or PlaudAPITokenClient()
 
     def _get_headers(self) -> Dict[str, str]:
         """Get authorization headers for API requests."""
@@ -220,17 +231,31 @@ class PlaudDeviceManager:
 
     def list_devices(self) -> List[PlaudDevice]:
         """
-        List all bound devices.
+        List all bound devices using API token if available, else fallback to OAuth/dev endpoint.
 
         Returns:
             List of PlaudDevice objects
         """
+        # Try API-token method first
         try:
-            response = self._request("GET", "/devices/")
-            devices_data = (
-                response if isinstance(response, list) else response.get("devices", [])
-            )
-
+            api_token = self.api_token_client.get_api_token()
+            headers = {
+                "Authorization": f"Bearer {api_token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            url = "https://api.plaud.ai/devices/"
+            resp = requests.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            # Devices may be under 'devices' or root list
+            devices_data = data.get("devices") if isinstance(data, dict) else data
+            if devices_data is None and isinstance(data, list):
+                devices_data = data
+            if not devices_data:
+                devices_data = []
+            if not isinstance(devices_data, list):
+                devices_data = []
             devices = []
             for d in devices_data:
                 device = PlaudDevice(
@@ -258,13 +283,66 @@ class PlaudDeviceManager:
                     raw_data=d,
                 )
                 devices.append(device)
-
-            logger.info(f"Found {len(devices)} device(s)")
+            logger.info(f"[API-token] Found {len(devices)} device(s)")
             return devices
-
-        except Exception as e:
-            logger.error(f"Error listing devices: {e}")
-            return []
+        except Exception as api_exc:
+            logger.warning(f"API-token device listing failed: {api_exc}")
+            # Fallback to old OAuth/dev endpoint
+            try:
+                response = self._request("GET", "/devices")
+                devices_data_any = (
+                    response
+                    if isinstance(response, list)
+                    else response.get("devices", [])
+                )
+                devices_data: List[Dict[str, Any]] = (
+                    devices_data_any if isinstance(devices_data_any, list) else []
+                )
+                devices = []
+                for item in devices_data:
+                    if not isinstance(item, dict):
+                        continue
+                    d = item
+                    device = PlaudDevice(
+                        id=d.get("id", ""),
+                        name=d.get("name") or d.get("device_name", "Unknown Device"),
+                        device_type=self._parse_device_type(
+                            d.get("type") or d.get("device_type", "")
+                        ),
+                        serial_number=d.get("serial_number") or d.get("sn", ""),
+                        firmware_version=d.get("firmware_version")
+                        or d.get("fw_version", ""),
+                        battery_level=d.get("battery_level") or d.get("power", 0),
+                        is_charging=d.get("is_charging", False),
+                        storage_total_mb=d.get("storage_total")
+                        or d.get("total_storage", 0),
+                        storage_free_mb=d.get("storage_free")
+                        or d.get("free_storage", 0),
+                        state=self._parse_device_state(
+                            d.get("state") or d.get("status", "")
+                        ),
+                        last_sync=self._parse_datetime(
+                            d.get("last_sync") or d.get("last_upload")
+                        ),
+                        wifi_connected=d.get("wifi_connected", False),
+                        owner_id=d.get("owner_id") or d.get("user_id"),
+                        raw_data=d,
+                    )
+                    devices.append(device)
+                logger.info(f"[OAuth fallback] Found {len(devices)} device(s)")
+                return devices
+            except Exception as e:
+                global _LOGGED_DEVICES_404
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                if status_code == 404 and not _LOGGED_DEVICES_404:
+                    _LOGGED_DEVICES_404 = True
+                    logger.info(
+                        "Plaud devices endpoint is not available for this auth/API base (404). "
+                        "Device management may require the App API-token API (api.plaud.ai)."
+                    )
+                elif status_code != 404:
+                    logger.error(f"Error listing devices: {e}")
+                return []
 
     def get_device(self, device_id: str) -> Optional[PlaudDevice]:
         """
@@ -278,6 +356,8 @@ class PlaudDeviceManager:
         """
         try:
             response = self._request("GET", f"/devices/{device_id}")
+            if not isinstance(response, dict):
+                return None
             d = response
 
             return PlaudDevice(
@@ -301,7 +381,16 @@ class PlaudDeviceManager:
                 raw_data=d,
             )
         except Exception as e:
-            logger.error(f"Error getting device {device_id}: {e}")
+            global _LOGGED_DEVICES_404
+            status_code = getattr(getattr(e, "response", None), "status_code", None)
+            if status_code == 404 and not _LOGGED_DEVICES_404:
+                _LOGGED_DEVICES_404 = True
+                logger.info(
+                    "Plaud devices endpoint is not available for this auth/API base (404). "
+                    "Device management may require the App API-token API (api.plaud.ai)."
+                )
+            elif status_code != 404:
+                logger.error(f"Error getting device {device_id}: {e}")
             return None
 
     def get_device_status(self, device_id: str) -> Dict[str, Any]:
@@ -360,12 +449,18 @@ class PlaudDeviceManager:
                 "GET", f"/devices/{device_id}/files", params=params
             )
 
-            files_data = (
+            files_data_any = (
                 response if isinstance(response, list) else response.get("files", [])
+            )
+            files_data: List[Dict[str, Any]] = (
+                files_data_any if isinstance(files_data_any, list) else []
             )
 
             recordings = []
-            for f in files_data:
+            for item in files_data:
+                if not isinstance(item, dict):
+                    continue
+                f = item
                 recording = DeviceRecording(
                     id=f.get("id", ""),
                     device_id=device_id,
@@ -385,7 +480,16 @@ class PlaudDeviceManager:
             return recordings
 
         except Exception as e:
-            logger.error(f"Error getting device recordings: {e}")
+            global _LOGGED_DEVICE_FILES_404
+            status_code = getattr(getattr(e, "response", None), "status_code", None)
+            if status_code == 404 and not _LOGGED_DEVICE_FILES_404:
+                _LOGGED_DEVICE_FILES_404 = True
+                logger.info(
+                    "Plaud device files endpoint is not available for this auth/API base (404). "
+                    "Fetching recordings directly from devices may require a different Plaud API surface."
+                )
+            elif status_code != 404:
+                logger.error(f"Error getting device recordings: {e}")
             return []
 
     def get_devices_summary(self) -> Dict[str, Any]:

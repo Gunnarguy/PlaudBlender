@@ -11,7 +11,7 @@ Goal: keep the *nuance* and "under the hood" visibility Gunnar likes:
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import subprocess
@@ -223,7 +223,7 @@ def page_dashboard(qdrant: ChronosQdrantClient, settings, gemini_available: bool
         c1, c2 = st.columns(2)
         with c1:
             if st.button(
-                "Run preflight", use_container_width=True, disabled=not gemini_available
+                "Run preflight", width="stretch", disabled=not gemini_available
             ):
                 import subprocess
                 import sys
@@ -252,7 +252,7 @@ def page_dashboard(qdrant: ChronosQdrantClient, settings, gemini_available: bool
             st.link_button(
                 "Open Qdrant dashboard",
                 url=settings.qdrant_url.rstrip("/") + "/dashboard",
-                use_container_width=True,
+                width="stretch",
             )
 
         st.code("python scripts/chronos_pipeline.py --full", language="bash")
@@ -367,17 +367,13 @@ def page_search(qdrant: ChronosQdrantClient, settings, gemini_available: bool):
             "Debug mode (show raw payloads)", value=False, key="search_debug"
         )
 
-        run = st.button("Run search", type="primary", use_container_width=True)
+        run = st.button("Run search", type="primary", width="stretch")
 
         with st.expander("Saved searches", expanded=False):
             saved = st.session_state.get("saved_searches", {})
             if saved:
                 pick = st.selectbox("Load", options=["(select)"] + sorted(saved.keys()))
-                if (
-                    pick
-                    and pick != "(select)"
-                    and st.button("Apply", use_container_width=True)
-                ):
+                if pick and pick != "(select)" and st.button("Apply", width="stretch"):
                     snap = saved[pick]
                     # Update widget values via session_state keys.
                     st.session_state.search_query_text = snap.get("query_text", "")
@@ -402,9 +398,7 @@ def page_search(qdrant: ChronosQdrantClient, settings, gemini_available: bool):
             name = st.text_input(
                 "Save current as", placeholder="e.g. anxiety_last_week"
             )
-            if st.button(
-                "Save", use_container_width=True, disabled=not bool(name.strip())
-            ):
+            if st.button("Save", width="stretch", disabled=not bool(name.strip())):
                 saved = dict(st.session_state.get("saved_searches", {}))
                 saved[name.strip()] = {
                     "query_text": query_text,
@@ -484,7 +478,7 @@ def page_timeline(qdrant: ChronosQdrantClient):
         limit = st.slider(
             "Max events", min_value=50, max_value=2000, value=300, step=50
         )
-        build = st.button("Build timeline", type="primary", use_container_width=True)
+        build = st.button("Build timeline", type="primary", width="stretch")
 
     if not build:
         st.info("Pick a window and click “Build timeline”.")
@@ -720,7 +714,7 @@ def page_controls(settings, gemini_available: bool):
         f"python scripts/chronos_pipeline.py {' '.join(preflight_args)}",
         language="bash",
     )
-    if st.button("Preflight", key="preflight_button", use_container_width=True):
+    if st.button("Preflight", key="preflight_button", width="stretch"):
         code = _run_pipeline_with_live_logs(preflight_args, header="Preflight")
         if code != 0:
             st.error(f"Preflight failed (exit code {code}).")
@@ -838,17 +832,15 @@ def page_recordings(settings, gemini_available: bool):
                 "Search (title/id)", placeholder="meeting / grocery / ..."
             ).strip()
         with col4:
-            refresh = st.button("↻ Refresh", use_container_width=True)
+            refresh = st.button("↻ Refresh", width="stretch")
 
         # Query recordings.
         q = session.query(ChronosRecordingDB)
         if status_filter:
             q = q.filter(ChronosRecordingDB.processing_status.in_(status_filter))
         if days_back:
-            q = q.filter(
-                ChronosRecordingDB.created_at
-                >= (datetime.utcnow() - timedelta(days=int(days_back)))
-            )
+            cutoff = datetime.now(timezone.utc) - timedelta(days=int(days_back))
+            q = q.filter(ChronosRecordingDB.created_at >= cutoff.replace(tzinfo=None))
         if text_q:
             like = f"%{text_q}%"
             q = q.filter(
@@ -878,7 +870,7 @@ def page_recordings(settings, gemini_available: bool):
                 }
             )
 
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.dataframe(rows, width="stretch", hide_index=True)
 
         # Bulk selection section
         st.divider()
@@ -917,13 +909,15 @@ def page_recordings(settings, gemini_available: bool):
                 [0.5, 2, 1, 1, 1]
             )
             with bulk_col1:
+                rec_id = getattr(r, "recording_id", None)
                 is_selected = st.checkbox(
-                    label="",
-                    value=st.session_state.bulk_selections.get(r.recording_id, False),
-                    key=f"bulk_checkbox_{r.recording_id}",
+                    label=f"select_{rec_id or 'recording'}",
+                    value=st.session_state.bulk_selections.get(
+                        getattr(r, "recording_id", ""), False
+                    ),
+                    key=f"bulk_checkbox_{getattr(r, 'recording_id', '')}",
                     label_visibility="collapsed",
                 )
-                rec_id = getattr(r, "recording_id", None)
                 st.session_state.bulk_selections[rec_id] = is_selected
                 if is_selected and isinstance(rec_id, str) and rec_id:
                     selected_recordings.append(rec_id)
@@ -953,7 +947,7 @@ def page_recordings(settings, gemini_available: bool):
             with bulk_action_cols[0]:
                 if st.button(
                     "🔄 Process selected",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=not gemini_available,
                 ):
                     for rec_id in selected_recordings:
@@ -971,7 +965,7 @@ def page_recordings(settings, gemini_available: bool):
             with bulk_action_cols[1]:
                 if st.button(
                     "⚡ Index selected",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=not gemini_available,
                 ):
                     for rec_id in selected_recordings:
@@ -989,7 +983,7 @@ def page_recordings(settings, gemini_available: bool):
             with bulk_action_cols[2]:
                 if st.button(
                     "🔂 Force reprocess",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=not gemini_available,
                 ):
                     for rec_id in selected_recordings:
@@ -1014,7 +1008,7 @@ def page_recordings(settings, gemini_available: bool):
             with bulk_action_cols[3]:
                 if st.button(
                     "📝 Fetch transcripts",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     for rec_id in selected_recordings:
                         st.info(f"Fetching transcript for {rec_id}…")
@@ -1102,23 +1096,23 @@ def page_recordings(settings, gemini_available: bool):
 
         actions1, actions2, actions3, actions4 = st.columns(4)
         with actions1:
-            fetch_tx = st.button("Fetch + cache transcript", use_container_width=True)
+            fetch_tx = st.button("Fetch + cache transcript", width="stretch")
         with actions2:
             process_one = st.button(
                 "Process (Gemini)",
-                use_container_width=True,
+                width="stretch",
                 disabled=not gemini_available,
             )
         with actions3:
             index_one = st.button(
                 "Index (Qdrant)",
-                use_container_width=True,
+                width="stretch",
                 disabled=not gemini_available,
             )
         with actions4:
             force_one = st.button(
                 "Force reprocess",
-                use_container_width=True,
+                width="stretch",
                 disabled=not gemini_available,
                 help="Deletes existing DB events first, then reprocesses.",
             )
@@ -1237,7 +1231,7 @@ def page_recordings(settings, gemini_available: bool):
                     "qdrant": bool(e.qdrant_point_id),
                 }
             )
-        st.dataframe(ev_rows, use_container_width=True, hide_index=True)
+        st.dataframe(ev_rows, width="stretch", hide_index=True)
     finally:
         session.close()
 
@@ -1293,7 +1287,7 @@ def main():
 
         st.markdown("**⚙️ Operations**")
         ops_page = st.radio(
-            "",
+            "ops_nav",
             [
                 "(none)",
                 "Controls",
@@ -1309,7 +1303,7 @@ def main():
 
         st.markdown("**🔧 System**")
         sys_page = st.radio(
-            "",
+            "sys_nav",
             [
                 "(none)",
                 "Settings",
