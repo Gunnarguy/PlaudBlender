@@ -30,6 +30,9 @@ pillow>=10.0.0
 streamlit>=1.28.0
 streamlit-timeline>=0.0.2
 
+# Webhook server (lightweight Flask for local webhook receiver)
+flask>=3.0.0
+
 # ─────────────────────────────────────────────────────────────
 # Audio Processing (optional - install for audio features)
 # ─────────────────────────────────────────────────────────────

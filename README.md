@@ -1,256 +1,192 @@
-# 🧠 PlaudBlender
+# 🕰️ Chronos (PlaudBlender)
 
-**Transform your Plaud voice recordings into a searchable, visual knowledge graph.**
+**Transform your Plaud voice recordings into a searchable, queryable knowledge timeline.**
 
-**Canonical docs live in `docs/PROJECT_GUIDE.md`** (this README is a quick-start + pointers only).
+Record with Plaud → Fetch transcripts → Clean with AI → Search semantically
 
-Connect directly to Plaud's API to fetch your transcripts, process them with AI to extract themes and insights, and visualize connections as interactive mind maps.
+---
+
+## ⚡ Quick Start (3 Steps)
+
+### 1. Install & Configure
+
+```bash
+# Clone and install
+git clone https://github.com/Gunnarguy/PlaudBlender.git
+cd PlaudBlender
+pip install -r requirements.txt
+
+# Create your .env file
+cp .env.example .env
+```
+
+Edit `.env` with your API keys:
+```bash
+# Required for Plaud (get from platform.plaud.ai/developer)
+PLAUD_CLIENT_ID=your_client_id
+PLAUD_CLIENT_SECRET=your_client_secret
+PLAUD_REDIRECT_URI=http://localhost:8080/callback
+
+# Required for AI processing (get from ai.google.dev)
+GEMINI_API_KEY=your_gemini_key
+
+# Optional (defaults work for local)
+QDRANT_URL=http://localhost:6333
+```
+
+### 2. Start Services
+
+```bash
+# Start Qdrant (vector database)
+docker run -p 6333:6333 qdrant/qdrant
+
+# Authenticate with Plaud (one-time)
+python plaud_setup.py
+```
+
+### 3. Launch Chronos
+
+```bash
+streamlit run chronos_app.py
+```
+
+Open http://localhost:8501 and click **Fetch New Recordings** to get started!
 
 ---
 
 ## 🎯 What It Does
 
 ```
-📱 Record with Plaud Device/App
-         ↓
-🔐 OAuth → Plaud API
-         ↓
-📝 Fetch Transcripts Automatically  
-         ↓
-🧠 AI Processing (Gemini)
-   • Extract themes & topics
-   • Generate summaries
-   • Find semantic connections
-         ↓
-🗄️ Store in Vector DB (Pinecone)
-         ↓
-🔍 Semantic Search & 🎨 Visual Mind Maps
+📱 Plaud Recording (5-7 hours of voice notes)
+       ↓
+🔄 Fetch from Plaud API
+       ↓
+🧠 Gemini AI cleans transcripts → structured events
+       ↓
+📤 Index to Qdrant with temporal metadata
+       ↓
+🔍 Search: "What do I think about on Mondays?"
 ```
+
+**Key Features:**
+- 🔍 **Semantic Search** — Find events by meaning, not just keywords
+- 📅 **Temporal Filters** — Query by day of week, hour, or date range
+- 🏷️ **Categories** — Events tagged as work, personal, meeting, deep_work, etc.
+- 📊 **Full Visibility** — See latency, scores, raw payloads (for power users)
 
 ---
 
-## 🚀 Quick Start
+## 📖 UI Pages
 
-### 1. Create Plaud OAuth App
-
-1. Go to [platform.plaud.ai/developer/portal](https://platform.plaud.ai/developer/portal)
-2. Click **"New OAuth App"**
-3. Fill in:
-   - **App Name**: `PlaudBlender`
-   - **Homepage URL**: `https://github.com/yourusername/PlaudBlender`
-   - **Authorization callback URL**: `http://localhost:8080/callback`
-4. Copy your **Client ID** and **Client Secret**
-
-### 2. Install & Configure
-
-```bash
-# Clone the repo
-git clone https://github.com/yourusername/PlaudBlender.git
-cd PlaudBlender
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create .env file
-cp .env.example .env
-
-# Edit .env with your credentials
-nano .env
-```
-
-Add to `.env`:
-```bash
-PLAUD_CLIENT_ID=your_client_id
-PLAUD_CLIENT_SECRET=your_client_secret
-PLAUD_REDIRECT_URI=http://localhost:8080/callback
-
-# Optional: For AI processing
-GEMINI_API_KEY=your_gemini_key
-PINECONE_API_KEY=your_pinecone_key
-PINECONE_INDEX_NAME=transcripts
-```
-
-### 3. Authenticate & Test
-
-```bash
-python plaud_setup.py
-```
-
-If the Plaud consent page shows a **400 Bad Request** in the browser console, it’s almost always a **redirect URI mismatch**. Double-check that:
-- `PLAUD_REDIRECT_URI` in your `.env` matches the URL registered in the Plaud developer portal **exactly** (scheme/host/port/path).
-- During local dev, prefer: `http://localhost:8080/callback` (and register that exact URL).
-
-You may also see Chrome console warnings like **“preload … not used”** or **“credentials mode does not match / crossorigin”** coming from Plaud’s own page assets (e.g. `resource.plaud.ai`). Those warnings are **harmless** and unrelated to PlaudBlender.
-
-This will:
-- Check your configuration
-- Open browser for Plaud OAuth login
-- Test the API connection
-- Show your recent recordings
-
-### 4. Diagnostics & Testing
-
-- Print consent URL without running the full wizard:
-  ```bash
-  python scripts/plaud_auth_utils.py --print-consent-url
-  ```
-- Validate/auto-refresh your Plaud token and verify the API user:
-  ```bash
-  python scripts/plaud_auth_utils.py --check-token
-  ```
-- Run tests (shows skips with reasons):
-  ```bash
-  python -m pytest -rs
-  ```
-  Skips: `test_components.py` (legacy live component probes) and `test_gui_import.py` (legacy import probe covered elsewhere).
-
-### 5. OpenAI Responses MCP server (ChatGPT connectors)
-
-Expose PlaudBlender via the Model Context Protocol using OpenAI's Responses API. This runs over stdio and is ready for ChatGPT connectors or any MCP-capable client.
-
-```bash
-python -m scripts.mcp_server
-```
-
-Environment variables:
-- `OPENAI_API_KEY` (required)
-- `OPENAI_DEFAULT_MODEL` (optional, defaults to `gpt-4.1`)
-- `OPENAI_BASE_URL` (optional, for gateways/proxies)
-
-Available MCP tools:
-- `ping` — health probe.
-- `list_models` — list accessible OpenAI model IDs for the configured project.
-- `respond` — send a prompt through the OpenAI Responses API and return combined text output.
+| Page | What it does |
+|------|--------------|
+| **🏠 Home** | Quick status, metrics, one-click actions |
+| **🔍 Search** | Semantic + temporal search with filters |
+| **📚 Library** | Browse all recordings, view events, manage processing |
+| **⚡ Pipeline** | 3-step Fetch → Process → Index workflow |
+| **📱 Plaud** | Device management, workflows, webhooks |
+| **⚙️ Settings** | Configuration, diagnostics, logs |
 
 ---
 
-## 💻 Usage
-
-### Launch the GUI (recommended)
+## 🔧 CLI Commands
 
 ```bash
-python gui.py
+# Full pipeline (fetch + process + index)
+python scripts/chronos_pipeline.py --full --limit 25
+
+# Individual steps
+python scripts/chronos_pipeline.py --ingest --limit 50    # Fetch from Plaud
+python scripts/chronos_pipeline.py --process --limit 10   # Clean with Gemini
+python scripts/chronos_pipeline.py --index --limit 100    # Push to Qdrant
+
+# Diagnostics
+python scripts/chronos_pipeline.py --preflight           # Check Gemini models
+python scripts/plaud_auth_utils.py --check-token         # Validate OAuth
+
+# Tests
+python -m pytest tests/ -q
 ```
-
-### Sync Plaud → Pinecone (batch)
-
-```bash
-python scripts/sync_to_pinecone.py
-```
-
-### Process pending SQL recordings into segments (SQL pipeline)
-
-```bash
-python scripts/process_pending.py
-```
-
-### Verify advanced feature wiring (developer smoke)
-
-```bash
-python verify_integration.py
-```
-
-### In-app Chat (OpenAI Responses)
-
-- Set `OPENAI_API_KEY` (and optional `OPENAI_DEFAULT_MODEL`, `OPENAI_BASE_URL`) in `.env`.
-- Launch the GUI (`python gui.py`) and open the **💬 Chat** tab.
-- Configure model/temperature, optionally set a system prompt, and chat using the OpenAI Responses API.
-- Advanced: enable "Advanced overrides" to pass raw JSON overrides to `responses.create` (e.g., `{ "max_output_tokens": 200, "top_p": 0.9, "tools": [...], "tool_choice": "auto" }`).
-
-### Pinecone quick links
-
-See `docs/pinecone-cheatsheet.md` for the most relevant Pinecone API links (query/upsert, namespaces, control-plane, assistant chat options, error handling, and cost/ops).
 
 ---
 
 ## 📁 Project Structure
 
 ```
-PlaudBlender/
-├── gui.py                      # GUI entry point (calls gui/app.py)
-├── plaud_setup.py              # Setup & Plaud OAuth validation
-├── requirements.txt            # Python dependencies
-├── .env.example                # Environment variable template
-├── data/                       # Local app data (SQLite DB, caches)
-├── gui/                        # Tkinter GUI (views/services/components)
-├── src/                        # Processing pipeline, DB layer, clients
-├── scripts/                    # Batch tools (sync, process, mcp)
-└── docs/                       # Roadmap, playbooks, references
+chronos_app.py          # Main UI (Streamlit)
+plaud_setup.py          # OAuth setup wizard
+scripts/
+  chronos_pipeline.py   # CLI pipeline runner
+  mcp_server.py         # MCP server for AI agents
+src/
+  chronos/              # Core engine (ingest, process, embed, search)
+  plaud_*.py            # Plaud API clients
+  database/             # SQLite models & repos
+  models/               # Pydantic schemas
+data/
+  brain.db              # Local SQLite database
+  raw/                  # Downloaded audio files
 ```
 
 ---
 
-## 🔐 OAuth Flow
+## 🔑 Environment Variables
 
-PlaudBlender uses OAuth 2.0 to securely access your Plaud data:
-
-1. **You authenticate** in your browser with your Plaud account
-2. **Plaud issues** an access token to PlaudBlender
-3. **Tokens are stored** locally in `.plaud_tokens.json`
-4. **Auto-refresh** when tokens expire
-
-Your Plaud credentials are never stored - only OAuth tokens that can be revoked.
-
----
-
-## 🧩 Features
-
-### ✅ Direct Plaud Integration
-- OAuth 2.0 authentication
-- Fetch recordings and transcripts
-- Access AI summaries from Plaud
-
-### ✅ AI-Powered Processing
-- Theme extraction with Gemini 2.0
-- Semantic embeddings for search
-- Connection discovery between recordings
-
-### ✅ Interactive Visualizations
-- Force-directed knowledge graphs
-- Theme-based color coding
-- Zoom, pan, and explore connections
-
-### ✅ Semantic Search
-- Query your recordings in natural language
-- Find related content across all transcripts
-- Export results for further analysis
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PLAUD_CLIENT_ID` | Yes | From Plaud developer portal |
+| `PLAUD_CLIENT_SECRET` | Yes | From Plaud developer portal |
+| `PLAUD_REDIRECT_URI` | Yes | `http://localhost:8080/callback` |
+| `GEMINI_API_KEY` | Yes | From ai.google.dev |
+| `QDRANT_URL` | No | Defaults to `http://localhost:6333` |
+| `QDRANT_API_KEY` | No | Only for Qdrant Cloud |
 
 ---
 
-## ⚠️ Beta Notes
+## 🐛 Troubleshooting
 
-As per Plaud's beta program:
-- **Testing only** - not for production use yet
-- **Unlimited Plan** Plaud accounts only
-- No user revocation UI yet (coming in ~2 weeks)
-- Regional data residency changes coming (may require re-auth)
-
----
-
-## 🏗️ Architecture
-
+**Qdrant won't connect:**
+```bash
+docker run -p 6333:6333 qdrant/qdrant
 ```
-📱 Plaud Device/App
-  ↓
-☁️ Plaud Cloud (recordings + transcripts)
-  ↓
-🔐 OAuth 2.0 Authentication
-  ↓
-🗄️ Pinecone Vector Database
-  ├── Namespace: full_text (complete transcripts)
-  └── Namespace: summaries (AI summaries)
-  ↓
-💻 Your Computer
-  ├── Query tool (search transcripts)
-  └── Visualizer (generate mind maps)
+
+**Plaud OAuth fails (400 Bad Request):**
+- Check that `PLAUD_REDIRECT_URI` in `.env` **exactly** matches your Plaud app registration
+- Run `python plaud_setup.py` to re-authenticate
+
+**Gemini model not found:**
+```bash
+python scripts/chronos_pipeline.py --preflight
 ```
 
 ---
 
-## 📚 Documentation
+## 📚 More Documentation
 
-- **Project guide (single source of truth):** `docs/PROJECT_GUIDE.md`
-- Roadmap: `docs/architecture-roadmap.md`
-- Live audit/UX checklist: `docs/audit-checklist.md`
-- Pinecone playbook: `docs/pinecone-integration-playbook.md`
+- [docs/chronos-mvp.md](docs/chronos-mvp.md) — Full system architecture
+- [docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md) — Complete project reference
+- [SIMPLIFICATION.md](SIMPLIFICATION.md) — UI design decisions
 
+---
+
+## 🔐 OAuth & Security
+
+- OAuth 2.0 tokens stored locally in `.plaud_tokens.json`
+- Auto-refresh on expiry
+- Your Plaud password is never stored
+
+---
+
+## MCP Server (for AI agents)
+
+```bash
+python -m scripts.mcp_server
+```
+
+Requires `OPENAI_API_KEY` in `.env`.
+
+---
+
+## License
+
+MIT

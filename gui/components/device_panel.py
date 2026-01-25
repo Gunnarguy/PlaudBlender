@@ -221,13 +221,30 @@ def render_device_panel() -> None:
         "and sync recordings directly to Chronos."
     )
 
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    client_id = os.getenv("PLAUD_CLIENT_ID")
+    client_secret = os.getenv("PLAUD_CLIENT_SECRET")
+    missing_creds = not client_id or not client_secret
+    if missing_creds:
+        st.error(
+            "Plaud Client ID and/or Secret not set in .env. Please set PLAUD_CLIENT_ID and PLAUD_CLIENT_SECRET and restart the app."
+        )
+        st.info(
+            "You can find these in your Plaud developer portal. Add them to your .env file at the project root."
+        )
+        st.code(
+            """PLAUD_CLIENT_ID=your_client_id_here\nPLAUD_CLIENT_SECRET=your_client_secret_here\nPLAUD_REDIRECT_URI=http://localhost:8080/callback""",
+            language="dotenv",
+        )
+        return
     try:
         manager = PlaudDeviceManager()
     except Exception as e:
         st.error(f"Failed to initialize device manager: {e}")
-        st.info(
-            "Make sure your Plaud OAuth is configured (run `python plaud_setup.py`)."
-        )
+        st.info("Check your .env and Plaud credentials.")
         return
 
     # Tab layout for different views
@@ -246,7 +263,12 @@ def render_device_panel() -> None:
             devices = manager.list_devices()
 
         if not devices:
-            st.warning("No devices found.")
+            st.warning(
+                "No devices found.\n\nIf you just added your credentials, make sure your Plaud developer account/app is enabled for the API-token device endpoint. If you believe this is an error, contact Plaud support to enable https://api.plaud.ai/devices/ for your app."
+            )
+            st.info(
+                "If you have just connected a device, try Refresh Devices or restart the app."
+            )
             return
 
         for device in devices:
@@ -259,11 +281,17 @@ def render_device_panel() -> None:
                 render_device_card(device)
 
     with tab2:
+
         with st.spinner("Loading devices..."):
             devices = manager.list_devices()
 
         if not devices:
-            st.warning("No devices found.")
+            st.warning(
+                "No devices found.\n\nIf you just added your credentials, make sure your Plaud developer account/app is enabled for the API-token device endpoint. If you believe this is an error, contact Plaud support to enable https://api.plaud.ai/devices/ for your app."
+            )
+            st.info(
+                "If you have just connected a device, try Refresh Devices or restart the app."
+            )
             return
 
         device_options = {
