@@ -103,7 +103,7 @@ def render_plaud_overview() -> None:
     with action_cols[0]:
         if st.button(
             "🔄 Sync Recordings",
-            use_container_width=True,
+            width="stretch",
             help="Fetch latest recordings from Plaud",
         ):
             import subprocess
@@ -129,7 +129,7 @@ def render_plaud_overview() -> None:
     with action_cols[1]:
         if st.button(
             "⚡ Process Pending",
-            use_container_width=True,
+            width="stretch",
             help="Process pending recordings through Gemini",
         ):
             import subprocess
@@ -155,7 +155,7 @@ def render_plaud_overview() -> None:
     with action_cols[2]:
         if st.button(
             "📊 Index to Qdrant",
-            use_container_width=True,
+            width="stretch",
             help="Index processed events to vector store",
         ):
             import subprocess
@@ -181,7 +181,7 @@ def render_plaud_overview() -> None:
     with action_cols[3]:
         if st.button(
             "🔗 Full Pipeline",
-            use_container_width=True,
+            width="stretch",
             help="Run complete ingest → process → index",
         ):
             import subprocess

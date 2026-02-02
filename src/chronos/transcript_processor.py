@@ -7,6 +7,7 @@ this module processes transcripts directly through Gemini for event extraction.
 
 import json
 import logging
+import uuid
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -134,12 +135,15 @@ BROKEN_JSON:
         transcript_text: str,
         recording_id: str,
         max_retries: int = 3,
+        verbose: bool = True,
     ) -> Optional[GeminiEventOutput]:
         """Process transcript text through Gemini (modified for text input).
 
         Args:
             transcript_text: Raw transcript from Plaud
             recording_id: Recording ID
+            max_retries: Number of retries on failure
+            verbose: Print detailed progress to stdout
 
         Returns:
             GeminiEventOutput with extracted events
@@ -156,8 +160,25 @@ BROKEN_JSON:
 
 Extract events from this transcript following the schema exactly."""
 
+        # Show what we're sending to Gemini
+        if verbose:
+            transcript_words = len(transcript_text.split())
+            transcript_chars = len(transcript_text)
+            print(
+                f"      📊 Transcript: {transcript_words:,} words, {transcript_chars:,} chars",
+                flush=True,
+            )
+            print(f"      🤖 Model: {self.engine.model_name}", flush=True)
+            print(f"      📤 Sending to Gemini API...", flush=True)
+
         for attempt in range(max_retries):
             try:
+                if verbose and attempt > 0:
+                    print(
+                        f"      🔄 Retry attempt {attempt + 1}/{max_retries}...",
+                        flush=True,
+                    )
+
                 logger.info(
                     f"Processing transcript for {recording_id} (attempt {attempt + 1}/{max_retries})..."
                 )
@@ -172,23 +193,79 @@ Extract events from this transcript following the schema exactly."""
                         thinking_level=self.engine._thinking_level
                     )
 
-                response = self.engine.client.models.generate_content(
-                    model=self.engine.model_name,
-                    contents=full_prompt,
-                    config=config,
-                )
+                # Use streaming to show real-time progress
+                if verbose:
+                    response_text = ""
+                    token_count = 0
+                    events_found = 0
+                    last_print_len = 0
+                    start_time = __import__("time").time()
 
-                # Parse and validate
-                # If Structured Outputs parsing is available, prefer it.
-                parsed = getattr(response, "parsed", None)
-                if parsed is not None:
-                    validated = GeminiEventOutput(**parsed)
-                    logger.info(
-                        f"Extracted {validated.total_events} events from transcript"
+                    stream = self.engine.client.models.generate_content_stream(
+                        model=self.engine.model_name,
+                        contents=full_prompt,
+                        config=config,
                     )
-                    return validated
 
-                raw_text = (response.text or "").strip()
+                    for chunk in stream:
+                        chunk_text = chunk.text or ""
+                        response_text += chunk_text
+                        token_count += len(chunk_text.split())  # Rough estimate
+
+                        # Count events as we see them in the stream
+                        events_found = response_text.count('"event_id"')
+
+                        # Update progress every ~500 chars
+                        if len(response_text) - last_print_len > 500:
+                            elapsed = __import__("time").time() - start_time
+                            # Show streaming progress with event count
+                            print(
+                                f"\r      📝 Streaming: {len(response_text):,} chars | {events_found} events | {elapsed:.0f}s",
+                                end="",
+                                flush=True,
+                            )
+                            last_print_len = len(response_text)
+
+                    # Final newline after streaming
+                    elapsed = __import__("time").time() - start_time
+                    print(
+                        f"\r      📝 Streaming: {len(response_text):,} chars | {events_found} events | {elapsed:.0f}s ✓",
+                        flush=True,
+                    )
+
+                    # Get final usage from last chunk if available
+                    usage = getattr(chunk, "usage_metadata", None)
+                    if usage:
+                        print(
+                            f"      📊 Tokens - Input: {getattr(usage, 'prompt_token_count', '?'):,} | Output: {getattr(usage, 'candidates_token_count', '?'):,}",
+                            flush=True,
+                        )
+
+                    # Parse the accumulated response
+                    raw_text = response_text.strip()
+                else:
+                    # Non-verbose: use regular call
+                    response = self.engine.client.models.generate_content(
+                        model=self.engine.model_name,
+                        contents=full_prompt,
+                        config=config,
+                    )
+                    raw_text = (response.text or "").strip()
+
+                    # Check for structured output in non-verbose mode
+                    parsed = getattr(response, "parsed", None)
+                    if parsed is not None:
+                        validated = GeminiEventOutput(**parsed)
+                        logger.info(
+                            f"Extracted {validated.total_events} events from transcript"
+                        )
+                        return validated
+
+                if verbose:
+                    print(
+                        f"      🔍 Parsing JSON ({len(raw_text):,} chars)...",
+                        flush=True,
+                    )
 
                 # Handle markdown code fences (Gemini sometimes wraps JSON)
                 if raw_text.startswith("```"):
@@ -232,28 +309,77 @@ Extract events from this transcript following the schema exactly."""
 
                 validated = GeminiEventOutput(**output_data)
 
+                if verbose:
+                    print(
+                        f"      ✅ Extracted {validated.total_events} events",
+                        flush=True,
+                    )
+                    self._print_event_summary(validated.events)
+
                 logger.info(
                     f"Extracted {validated.total_events} events from transcript"
                 )
                 return validated
 
             except ValidationError as e:
+                if verbose:
+                    print(f"      ❌ Validation error: {str(e)[:100]}", flush=True)
                 logger.error(f"Pydantic validation failed: {e}")
                 return None
 
             except json.JSONDecodeError as e:
+                if verbose:
+                    print(f"      ⚠️ JSON parse error, retrying...", flush=True)
                 logger.error(f"JSON parse error: {e}")
                 if attempt < max_retries - 1:
                     continue
                 return None
 
             except Exception as e:
+                if verbose:
+                    print(f"      ❌ Error: {str(e)[:80]}", flush=True)
                 logger.error(f"Failed to process transcript: {e}")
                 if attempt < max_retries - 1:
                     continue
                 return None
 
         return None
+
+    def _print_event_summary(self, events: list) -> None:
+        """Print a summary of extracted events."""
+        if not events:
+            return
+
+        # Show first 3 events as preview
+        print(f"      📋 Event preview:", flush=True)
+        for i, e in enumerate(events[:3]):
+            category = getattr(e, "category", "unknown")
+            if hasattr(category, "value"):
+                category = category.value
+            clean_text = getattr(e, "clean_text", "")[:60]
+            sentiment = getattr(e, "sentiment", 0)
+            print(
+                f"         {i+1}. [{category}] {clean_text}... (sentiment: {sentiment:.1f})",
+                flush=True,
+            )
+
+        if len(events) > 3:
+            print(f"         ... and {len(events) - 3} more events", flush=True)
+
+        # Category breakdown
+        from collections import Counter
+
+        categories = Counter()
+        for e in events:
+            cat = getattr(e, "category", "unknown")
+            if hasattr(cat, "value"):
+                cat = cat.value
+            categories[cat] += 1
+
+        cat_summary = ", ".join(
+            f"{cat}: {count}" for cat, count in categories.most_common(5)
+        )
+        print(f"      📊 Categories: {cat_summary}", flush=True)
 
     def process_pending_recordings(
         self, limit: Optional[int] = None
@@ -370,19 +496,32 @@ Extract events from this transcript following the schema exactly."""
                 return False
 
             # Store events in database (convert Pydantic schema -> ORM model)
+            # Generate real UUIDs instead of using Gemini's placeholder values
             db_events = [
                 ChronosEventModel(
-                    event_id=e.event_id,
+                    event_id=str(uuid.uuid4()),  # REAL UUID, not Gemini's placeholder
                     recording_id=e.recording_id,
                     start_ts=e.start_ts,
                     end_ts=e.end_ts,
-                    day_of_week=str(e.day_of_week),
+                    day_of_week=(
+                        e.day_of_week.value
+                        if hasattr(e.day_of_week, "value")
+                        else str(e.day_of_week)
+                    ),
                     hour_of_day=e.hour_of_day,
                     clean_text=e.clean_text,
-                    category=str(e.category),
+                    category=(
+                        e.category.value
+                        if hasattr(e.category, "value")
+                        else str(e.category)
+                    ),
                     sentiment=e.sentiment,
                     keywords=e.keywords,
-                    speaker=str(e.speaker),
+                    speaker=(
+                        e.speaker.value
+                        if hasattr(e.speaker, "value")
+                        else str(e.speaker)
+                    ),
                     raw_transcript_snippet=e.raw_transcript_snippet,
                     gemini_reasoning=e.gemini_reasoning,
                 )

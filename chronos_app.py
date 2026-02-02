@@ -12,9 +12,11 @@ Design principles:
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import time
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -175,10 +177,19 @@ def get_system_status(settings) -> Dict[str, Any]:
 
 
 def run_pipeline_command(args: List[str], header: str) -> int:
-    """Run pipeline subprocess and stream output to UI."""
+    """Run pipeline subprocess and stream output to UI with progress bars."""
+    import re
+
     st.subheader(header)
+
+    # Create UI elements
+    progress_bar = st.progress(0)
+    status_text = st.empty()
     output_area = st.empty()
     lines: List[str] = []
+
+    # Regex to parse progress lines like: "⏳ Gemini: [████░░░░] 3/10 (30%) → processing..."
+    progress_pattern = re.compile(r"(\d+)/(\d+)\s*\((\d+)%\)")
 
     proc = subprocess.Popen(
         [sys.executable, "scripts/chronos_pipeline.py", *args],
@@ -190,11 +201,60 @@ def run_pipeline_command(args: List[str], header: str) -> int:
 
     assert proc.stdout is not None
     for line in proc.stdout:
-        lines.append(line.rstrip("\n"))
+        clean_line = line.rstrip("\n")
+        lines.append(clean_line)
         lines = lines[-300:]
+
+        # Parse progress from line
+        match = progress_pattern.search(clean_line)
+        if match:
+            current, total, pct = (
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3)),
+            )
+            progress_bar.progress(pct / 100)
+            status_text.markdown(f"**{current}/{total}** — {clean_line[:100]}")
+        elif "📝 Streaming:" in clean_line:
+            # Real-time streaming progress - this is the key update!
+            status_text.markdown(f"🔄 **{clean_line.strip()}**")
+        elif "⏳ Still processing" in clean_line:
+            # Heartbeat - show elapsed time prominently
+            status_text.markdown(f"🧠 **{clean_line.strip()}**")
+        elif "📊 Transcript:" in clean_line:
+            # Show transcript stats
+            status_text.markdown(f"📊 **{clean_line.strip()}**")
+        elif "📊 Tokens" in clean_line:
+            # Token usage stats
+            status_text.markdown(f"📊 **{clean_line.strip()}**")
+        elif "🤖 Model:" in clean_line:
+            status_text.markdown(f"🤖 **{clean_line.strip()}**")
+        elif "📤 Sending to Gemini" in clean_line:
+            status_text.markdown(f"📤 **Sending to Gemini API (streaming)...**")
+        elif "🔍 Parsing" in clean_line:
+            status_text.markdown(f"🔍 **{clean_line.strip()}**")
+        elif "📋 Event preview" in clean_line:
+            status_text.markdown(f"📋 **Parsing extracted events...**")
+        elif "📊 Categories:" in clean_line:
+            status_text.markdown(f"📊 **{clean_line.strip()}**")
+        elif "🔄 Fetching transcript" in clean_line:
+            status_text.markdown(f"📥 **Fetching transcript from Plaud...**")
+        elif "📄 Recording" in clean_line:
+            # Extract recording info
+            status_text.markdown(f"**{clean_line}**")
+        elif "✅" in clean_line:
+            status_text.markdown(f"✅ {clean_line}")
+        elif "❌" in clean_line:
+            status_text.markdown(f"❌ {clean_line}")
+        elif "════" in clean_line:
+            # Phase header - show prominently
+            status_text.markdown(f"**{clean_line.replace('═', '').strip()}**")
+
         output_area.code("\n".join(lines), language="text")
 
-    return proc.wait()
+    result = proc.wait()
+    progress_bar.progress(1.0)
+    return result
 
 
 def format_event_card(event: Dict[str, Any]) -> str:
@@ -276,7 +336,7 @@ def page_home(settings, status: Dict[str, Any]):
     with action_cols[0]:
         if st.button(
             "🔄 Fetch New Recordings",
-            use_container_width=True,
+            width="stretch",
             disabled=not status["plaud"],
         ):
             code = run_pipeline_command(["--ingest", "--limit", "25"], "Fetching...")
@@ -285,7 +345,7 @@ def page_home(settings, status: Dict[str, Any]):
     with action_cols[1]:
         if st.button(
             "🧠 Process Pending",
-            use_container_width=True,
+            width="stretch",
             disabled=not status["gemini"],
         ):
             code = run_pipeline_command(["--process", "--limit", "10"], "Processing...")
@@ -294,7 +354,7 @@ def page_home(settings, status: Dict[str, Any]):
     with action_cols[2]:
         if st.button(
             "📤 Index to Qdrant",
-            use_container_width=True,
+            width="stretch",
             disabled=not (status["qdrant"] and status["gemini"]),
         ):
             code = run_pipeline_command(["--index", "--limit", "50"], "Indexing...")
@@ -303,7 +363,7 @@ def page_home(settings, status: Dict[str, Any]):
     with action_cols[3]:
         if st.button(
             "🚀 Run Full Pipeline",
-            use_container_width=True,
+            width="stretch",
             disabled=not (status["plaud"] and status["gemini"] and status["qdrant"]),
         ):
             code = run_pipeline_command(["--full", "--limit", "10"], "Full Pipeline")
@@ -400,7 +460,7 @@ def page_search(settings, status: Dict[str, Any]):
 
         limit = st.slider("Max results", 10, 200, 50)
 
-        search_btn = st.button("🔍 Search", type="primary", use_container_width=True)
+        search_btn = st.button("🔍 Search", type="primary", width="stretch")
 
         with st.expander("Advanced"):
             debug = st.checkbox("Show raw payloads")
@@ -527,7 +587,7 @@ def page_library(settings, status: Dict[str, Any]):
                 }
             )
 
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.dataframe(rows, width="stretch", hide_index=True)
 
         # Detail view
         st.markdown("---")
@@ -561,7 +621,7 @@ def page_library(settings, status: Dict[str, Any]):
             with action_cols[0]:
                 if st.button(
                     "🧠 Process",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=not status["gemini"],
                 ):
                     code = run_pipeline_command(
@@ -579,7 +639,7 @@ def page_library(settings, status: Dict[str, Any]):
                         st.rerun()
             with action_cols[1]:
                 if st.button(
-                    "📤 Index", use_container_width=True, disabled=not status["gemini"]
+                    "📤 Index", width="stretch", disabled=not status["gemini"]
                 ):
                     code = run_pipeline_command(
                         [
@@ -597,7 +657,7 @@ def page_library(settings, status: Dict[str, Any]):
             with action_cols[2]:
                 if st.button(
                     "🔄 Force Reprocess",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=not status["gemini"],
                 ):
                     code = run_pipeline_command(
@@ -617,7 +677,7 @@ def page_library(settings, status: Dict[str, Any]):
             with action_cols[3]:
                 if st.button(
                     "📝 Fetch Transcript",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=not status["plaud"],
                 ):
                     try:
@@ -688,7 +748,7 @@ def page_pipeline(settings, status: Dict[str, Any]):
         st.caption("Pull recordings from Plaud API")
         if st.button(
             "🔄 Fetch from Plaud",
-            use_container_width=True,
+            width="stretch",
             disabled=not status["plaud"],
             type="primary",
         ):
@@ -702,7 +762,7 @@ def page_pipeline(settings, status: Dict[str, Any]):
         st.caption("Clean transcripts with Gemini AI")
         if st.button(
             "🧠 Process with AI",
-            use_container_width=True,
+            width="stretch",
             disabled=not status["gemini"],
             type="primary",
         ):
@@ -716,7 +776,7 @@ def page_pipeline(settings, status: Dict[str, Any]):
         st.caption("Make searchable in Qdrant")
         if st.button(
             "📤 Index to Qdrant",
-            use_container_width=True,
+            width="stretch",
             disabled=not (status["gemini"] and status["qdrant"]),
             type="primary",
         ):
@@ -731,7 +791,7 @@ def page_pipeline(settings, status: Dict[str, Any]):
     st.subheader("Full Pipeline")
     if st.button(
         "🚀 Run All Steps",
-        use_container_width=True,
+        width="stretch",
         disabled=not (status["plaud"] and status["gemini"] and status["qdrant"]),
     ):
         code = run_pipeline_command(
@@ -763,7 +823,7 @@ def page_pipeline(settings, status: Dict[str, Any]):
 
         cmd_cols = st.columns(4)
         with cmd_cols[0]:
-            if st.button("Custom Ingest", use_container_width=True):
+            if st.button("Custom Ingest", width="stretch"):
                 args = ["--ingest", "--limit", str(ingest_limit)]
                 if fetch_all:
                     args.append("--fetch-all")
@@ -771,7 +831,7 @@ def page_pipeline(settings, status: Dict[str, Any]):
                 code = run_pipeline_command(args, "Custom Ingest")
 
         with cmd_cols[1]:
-            if st.button("Custom Process", use_container_width=True):
+            if st.button("Custom Process", width="stretch"):
                 args = ["--process", "--limit", str(process_limit)]
                 if recording_id:
                     args += ["--recording-id", recording_id]
@@ -781,7 +841,7 @@ def page_pipeline(settings, status: Dict[str, Any]):
                 code = run_pipeline_command(args, "Custom Process")
 
         with cmd_cols[2]:
-            if st.button("Custom Index", use_container_width=True):
+            if st.button("Custom Index", width="stretch"):
                 args = ["--index", "--limit", str(index_limit)]
                 if recording_id:
                     args += ["--recording-id", recording_id]
@@ -789,7 +849,7 @@ def page_pipeline(settings, status: Dict[str, Any]):
                 code = run_pipeline_command(args, "Custom Index")
 
         with cmd_cols[3]:
-            if st.button("Custom Graph", use_container_width=True):
+            if st.button("Custom Graph", width="stretch"):
                 args = ["--graph", "--limit", str(graph_limit)]
                 if recording_id:
                     args += ["--recording-id", recording_id]
@@ -799,10 +859,10 @@ def page_pipeline(settings, status: Dict[str, Any]):
         st.markdown("### Diagnostics")
         diag_cols = st.columns(2)
         with diag_cols[0]:
-            if st.button("Preflight Check", use_container_width=True):
+            if st.button("Preflight Check", width="stretch"):
                 code = run_pipeline_command(["--preflight"], "Preflight")
         with diag_cols[1]:
-            if st.button("Smoke Test (with API call)", use_container_width=True):
+            if st.button("Smoke Test (with API call)", width="stretch"):
                 code = run_pipeline_command(["--preflight-smoke"], "Smoke Test")
 
 
@@ -876,20 +936,20 @@ def page_plaud(settings, status: Dict[str, Any]):
         st.subheader("Quick Actions")
         quick_cols = st.columns(3)
         with quick_cols[0]:
-            if st.button("🔄 Fetch Latest Recordings", use_container_width=True):
+            if st.button("🔄 Fetch Latest Recordings", width="stretch"):
                 code = run_pipeline_command(
                     ["--ingest", "--limit", "25"], "Fetching..."
                 )
                 st.rerun() if code == 0 else None
         with quick_cols[1]:
-            if st.button("📜 Get Recording Stats", use_container_width=True):
+            if st.button("📜 Get Recording Stats", width="stretch"):
                 try:
                     stats = client.get_recording_stats()
                     st.json(stats)
                 except Exception as e:
                     st.error(f"Failed: {e}")
         with quick_cols[2]:
-            if st.button("👤 User Info", use_container_width=True):
+            if st.button("👤 User Info", width="stretch"):
                 if user:
                     st.json(user)
                 else:
@@ -904,6 +964,634 @@ def page_plaud(settings, status: Dict[str, Any]):
         from gui.components.webhook_panel import render_webhook_panel
 
         render_webhook_panel()
+
+
+# ---------------------------------------------------------------------------
+# PAGE: TIMELINE (Super Robust Visual Timeline)
+# ---------------------------------------------------------------------------
+
+
+def page_timeline(settings, status: Dict[str, Any]):
+    """
+    Beautiful, interactive timeline that shows EVERYTHING.
+
+    Features:
+    - Multi-scale timeline (zoom from months → hours)
+    - Heatmap: day-of-week × hour patterns
+    - Category color-coding
+    - Sentiment overlay
+    - Drill-down detail panel
+    """
+    st.header("📅 Timeline")
+    st.markdown(
+        '<p class="subtitle">Your complete cognitive timeline — zoom, filter, explore</p>',
+        unsafe_allow_html=True,
+    )
+
+    init_db()
+    session = SessionLocal()
+
+    try:
+        # Load all events
+        events = (
+            session.query(ChronosEventDB).order_by(ChronosEventDB.start_ts.desc()).all()
+        )
+        recordings = session.query(ChronosRecordingDB).all()
+
+        if not events:
+            st.info(
+                "No events yet. Go to **Pipeline** to fetch and process recordings first."
+            )
+            return
+
+        # Convert to dicts for processing
+        events_data = []
+        for e in events:
+            events_data.append(
+                {
+                    "event_id": e.event_id,
+                    "recording_id": e.recording_id,
+                    "start_ts": e.start_ts,
+                    "end_ts": e.end_ts,
+                    "day_of_week": e.day_of_week,
+                    "hour_of_day": e.hour_of_day,
+                    "clean_text": e.clean_text,
+                    "category": e.category or "unknown",
+                    "sentiment": e.sentiment or 0.0,
+                    "keywords": e.keywords or [],
+                    "speaker": e.speaker or "self_talk",
+                }
+            )
+
+        # Build recordings lookup
+        rec_lookup = {r.recording_id: r for r in recordings}
+
+        # --------------- FILTERS ---------------
+        st.markdown("### 🎛️ Filters")
+        filter_cols = st.columns([2, 2, 2, 1])
+
+        with filter_cols[0]:
+            # Date range
+            min_date = min(e["start_ts"].date() for e in events_data)
+            max_date = max(e["start_ts"].date() for e in events_data)
+            date_range = st.date_input(
+                "Date range",
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date,
+            )
+            if isinstance(date_range, tuple) and len(date_range) == 2:
+                start_date, end_date = date_range
+            else:
+                start_date, end_date = min_date, max_date
+
+        with filter_cols[1]:
+            # Categories
+            all_categories = sorted(set(e["category"] for e in events_data))
+            selected_categories = st.multiselect(
+                "Categories",
+                all_categories,
+                default=all_categories,
+            )
+
+        with filter_cols[2]:
+            # Days of week
+            all_days = [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+            selected_days = st.multiselect(
+                "Days",
+                all_days,
+                default=all_days,
+            )
+
+        with filter_cols[3]:
+            # Hour range
+            hour_range = st.slider("Hours", 0, 23, (0, 23))
+
+        # Apply filters
+        filtered_events = [
+            e
+            for e in events_data
+            if (e["start_ts"].date() >= start_date and e["start_ts"].date() <= end_date)
+            and e["category"] in selected_categories
+            and e["day_of_week"] in selected_days
+            and e["hour_of_day"] >= hour_range[0]
+            and e["hour_of_day"] <= hour_range[1]
+        ]
+
+        st.markdown(
+            f"**Showing {len(filtered_events):,} of {len(events_data):,} events**"
+        )
+
+        # --------------- TABS ---------------
+        tab_timeline, tab_heatmap, tab_categories, tab_sentiment, tab_list = st.tabs(
+            ["📊 Timeline", "🔥 Heatmap", "📁 Categories", "💭 Sentiment", "📋 List"]
+        )
+
+        # Category colors
+        CATEGORY_COLORS = {
+            "work": "#4A90D9",
+            "personal": "#9B59B6",
+            "meeting": "#E67E22",
+            "deep_work": "#2ECC71",
+            "break": "#95A5A6",
+            "reflection": "#1ABC9C",
+            "idea": "#F1C40F",
+            "unknown": "#7F8C8D",
+        }
+
+        # --------------- TAB: INTERACTIVE TIMELINE ---------------
+        with tab_timeline:
+            st.markdown("#### Interactive Timeline")
+            st.markdown(
+                "*Zoom with scroll wheel, pan by dragging, click items for details*"
+            )
+
+            # Generate vis-timeline items
+            timeline_items = []
+            for i, e in enumerate(filtered_events[:500]):  # Limit for performance
+                color = CATEGORY_COLORS.get(e["category"], "#7F8C8D")
+                # Truncate text for timeline display
+                display_text = (
+                    e["clean_text"][:80] + "..."
+                    if len(e["clean_text"]) > 80
+                    else e["clean_text"]
+                )
+                timeline_items.append(
+                    {
+                        "id": i,
+                        "content": display_text.replace('"', '\\"').replace("\n", " "),
+                        "start": e["start_ts"].isoformat(),
+                        "end": (
+                            e["end_ts"].isoformat()
+                            if e["end_ts"] != e["start_ts"]
+                            else None
+                        ),
+                        "group": e["category"],
+                        "style": f"background-color: {color}; border-color: {color};",
+                        "event_id": e["event_id"],
+                    }
+                )
+
+            # Generate groups (categories)
+            groups = [
+                {
+                    "id": cat,
+                    "content": cat.replace("_", " ").title(),
+                    "style": f"color: {CATEGORY_COLORS.get(cat, '#7F8C8D')}",
+                }
+                for cat in sorted(selected_categories)
+            ]
+
+            # Build the timeline HTML
+            timeline_html = f"""
+            <link rel="stylesheet" href="app/static/lib/vis-timeline/vis-timeline-graph2d.min.css">
+            <script src="app/static/lib/vis-timeline/vis-timeline-graph2d.min.js"></script>
+            <style>
+                #timeline-container {{
+                    width: 100%;
+                    height: 500px;
+                    border: 1px solid rgba(255,255,255,0.1);
+                    border-radius: 8px;
+                    background: rgba(30, 30, 46, 0.8);
+                }}
+                .vis-item {{
+                    border-radius: 4px;
+                    font-size: 11px;
+                    padding: 2px 6px;
+                }}
+                .vis-item.vis-selected {{
+                    border-width: 2px;
+                    box-shadow: 0 0 10px rgba(255,255,255,0.3);
+                }}
+                .vis-label {{
+                    color: #cdd6f4;
+                    font-weight: 600;
+                }}
+                .vis-time-axis .vis-text {{
+                    color: #a6adc8;
+                }}
+                .vis-panel.vis-background {{
+                    background: rgba(30, 30, 46, 0.95);
+                }}
+            </style>
+            <div id="timeline-container"></div>
+            <script>
+                var items = new vis.DataSet({json.dumps(timeline_items)});
+                var groups = new vis.DataSet({json.dumps(groups)});
+                var container = document.getElementById('timeline-container');
+                var options = {{
+                    height: '500px',
+                    stack: true,
+                    showCurrentTime: true,
+                    zoomMin: 1000 * 60 * 60,  // 1 hour
+                    zoomMax: 1000 * 60 * 60 * 24 * 365,  // 1 year
+                    orientation: 'top',
+                    groupOrder: 'content'
+                }};
+                var timeline = new vis.Timeline(container, items, groups, options);
+            </script>
+            """
+
+            # Group events by date for a simple bar chart
+            from collections import defaultdict
+
+            daily_counts = defaultdict(lambda: defaultdict(int))
+            for e in filtered_events:
+                date_str = e["start_ts"].strftime("%Y-%m-%d")
+                daily_counts[date_str][e["category"]] += 1
+
+            if daily_counts:
+                import pandas as pd
+
+                # Create DataFrame for stacked bar
+                dates = sorted(daily_counts.keys())
+                chart_data = []
+                for date in dates:
+                    row = {"date": date}
+                    for cat in selected_categories:
+                        row[cat] = daily_counts[date].get(cat, 0)
+                    chart_data.append(row)
+
+                df = pd.DataFrame(chart_data)
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.set_index("date")
+
+                st.bar_chart(df, width="stretch", height=400)
+
+            # Simple day-by-day event timeline
+            st.markdown("#### Daily Event Flow")
+
+            # Group by date
+            events_by_date = defaultdict(list)
+            for e in filtered_events:
+                date_str = e["start_ts"].strftime("%Y-%m-%d (%A)")
+                events_by_date[date_str].append(e)
+
+            # Show recent days with expandable details
+            for date_str in sorted(events_by_date.keys(), reverse=True)[:14]:
+                day_events = events_by_date[date_str]
+                with st.expander(
+                    f"📅 {date_str} — {len(day_events)} events", expanded=False
+                ):
+                    for e in sorted(day_events, key=lambda x: x["start_ts"]):
+                        time_str = e["start_ts"].strftime("%H:%M")
+                        cat_color = CATEGORY_COLORS.get(e["category"], "#7F8C8D")
+                        sentiment_emoji = (
+                            "😊"
+                            if e["sentiment"] > 0.3
+                            else "😐" if e["sentiment"] > -0.3 else "😔"
+                        )
+
+                        st.markdown(
+                            f"""<div style="
+                                border-left: 4px solid {cat_color};
+                                padding: 8px 12px;
+                                margin: 4px 0;
+                                background: rgba(49, 50, 68, 0.6);
+                                border-radius: 0 8px 8px 0;
+                            ">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span><b>{time_str}</b> · <span style="color: {cat_color}">{e['category'].replace('_', ' ').title()}</span></span>
+                                    <span>{sentiment_emoji} {e['sentiment']:.2f}</span>
+                                </div>
+                                <div style="margin-top: 6px; font-size: 0.9rem;">{e['clean_text'][:300]}{'...' if len(e['clean_text']) > 300 else ''}</div>
+                                <div style="margin-top: 4px; opacity: 0.6; font-size: 0.75rem;">
+                                    {', '.join(e['keywords'][:5]) if e['keywords'] else '—'}
+                                </div>
+                            </div>""",
+                            unsafe_allow_html=True,
+                        )
+
+        # --------------- TAB: HEATMAP ---------------
+        with tab_heatmap:
+            st.markdown("#### Activity Heatmap")
+            st.markdown("*When do you record? Discover your temporal patterns.*")
+
+            import pandas as pd
+            import numpy as np
+
+            # Build heatmap matrix: hour (0-23) × day (Mon-Sun)
+            day_order = [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+            heatmap_data = np.zeros((24, 7))
+
+            for e in filtered_events:
+                day_idx = (
+                    day_order.index(e["day_of_week"])
+                    if e["day_of_week"] in day_order
+                    else 0
+                )
+                hour_idx = e["hour_of_day"]
+                heatmap_data[hour_idx, day_idx] += 1
+
+            # Create DataFrame
+            heatmap_df = pd.DataFrame(
+                heatmap_data,
+                index=[f"{h:02d}:00" for h in range(24)],
+                columns=day_order,
+            )
+
+            # Display as heatmap using Streamlit
+            st.markdown("##### Events by Hour × Day of Week")
+
+            # Use plotly for proper heatmap
+            try:
+                import plotly.express as px
+                import plotly.graph_objects as go
+
+                fig = px.imshow(
+                    heatmap_df.values,
+                    labels=dict(x="Day of Week", y="Hour of Day", color="Event Count"),
+                    x=day_order,
+                    y=[f"{h:02d}:00" for h in range(24)],
+                    color_continuous_scale="Viridis",
+                    aspect="auto",
+                )
+                fig.update_layout(
+                    height=600,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#cdd6f4"),
+                )
+                st.plotly_chart(fig, width="stretch")
+            except ImportError:
+                # Fallback to simple table with color coding
+                st.dataframe(
+                    heatmap_df.style.background_gradient(cmap="viridis", axis=None),
+                    width="stretch",
+                )
+
+            # Summary stats
+            stat_cols = st.columns(4)
+            with stat_cols[0]:
+                busiest_hour = heatmap_data.sum(axis=1).argmax()
+                st.metric("🔥 Busiest Hour", f"{busiest_hour:02d}:00")
+            with stat_cols[1]:
+                busiest_day_idx = heatmap_data.sum(axis=0).argmax()
+                st.metric("📅 Busiest Day", day_order[busiest_day_idx])
+            with stat_cols[2]:
+                total_events = len(filtered_events)
+                total_days = len(set(e["start_ts"].date() for e in filtered_events))
+                avg_per_day = total_events / max(total_days, 1)
+                st.metric("📊 Avg Events/Day", f"{avg_per_day:.1f}")
+            with stat_cols[3]:
+                peak_count = int(heatmap_data.max())
+                st.metric("⚡ Peak Hour Count", peak_count)
+
+        # --------------- TAB: CATEGORIES ---------------
+        with tab_categories:
+            st.markdown("#### Category Distribution")
+
+            import pandas as pd
+            from collections import Counter
+
+            # Count by category
+            cat_counts = Counter(e["category"] for e in filtered_events)
+            cat_df = pd.DataFrame(
+                [
+                    {
+                        "Category": cat.replace("_", " ").title(),
+                        "Count": count,
+                        "color": CATEGORY_COLORS.get(cat, "#7F8C8D"),
+                    }
+                    for cat, count in cat_counts.most_common()
+                ]
+            )
+
+            if not cat_df.empty:
+                col1, col2 = st.columns([2, 1])
+
+                with col1:
+                    try:
+                        import plotly.express as px
+
+                        fig = px.pie(
+                            cat_df,
+                            values="Count",
+                            names="Category",
+                            color="Category",
+                            color_discrete_map={
+                                cat.replace("_", " ").title(): CATEGORY_COLORS.get(
+                                    cat, "#7F8C8D"
+                                )
+                                for cat in cat_counts.keys()
+                            },
+                            hole=0.4,
+                        )
+                        fig.update_layout(
+                            height=400,
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            font=dict(color="#cdd6f4"),
+                        )
+                        st.plotly_chart(fig, width="stretch")
+                    except ImportError:
+                        st.bar_chart(cat_df.set_index("Category")["Count"])
+
+                with col2:
+                    st.markdown("##### Breakdown")
+                    for _, row in cat_df.iterrows():
+                        pct = row["Count"] / len(filtered_events) * 100
+                        st.markdown(
+                            f"**{row['Category']}**: {row['Count']} ({pct:.1f}%)"
+                        )
+
+            # Category timeline (stacked area)
+            st.markdown("##### Category Trends Over Time")
+            from collections import defaultdict
+
+            cat_by_date = defaultdict(lambda: defaultdict(int))
+            for e in filtered_events:
+                date_str = e["start_ts"].strftime("%Y-%m-%d")
+                cat_by_date[date_str][e["category"]] += 1
+
+            if cat_by_date:
+                dates = sorted(cat_by_date.keys())
+                trend_data = []
+                for date in dates:
+                    row = {"date": date}
+                    for cat in selected_categories:
+                        row[cat.replace("_", " ").title()] = cat_by_date[date].get(
+                            cat, 0
+                        )
+                    trend_data.append(row)
+
+                trend_df = pd.DataFrame(trend_data)
+                trend_df["date"] = pd.to_datetime(trend_df["date"])
+                trend_df = trend_df.set_index("date")
+
+                st.area_chart(trend_df, width="stretch", height=300)
+
+        # --------------- TAB: SENTIMENT ---------------
+        with tab_sentiment:
+            st.markdown("#### Sentiment Analysis")
+            st.markdown("*Track your emotional patterns over time*")
+
+            import pandas as pd
+
+            # Sentiment over time
+            sent_data = [
+                {
+                    "date": e["start_ts"],
+                    "sentiment": e["sentiment"],
+                    "category": e["category"],
+                    "text": e["clean_text"][:100],
+                }
+                for e in filtered_events
+                if e["sentiment"] is not None
+            ]
+
+            if sent_data:
+                sent_df = pd.DataFrame(sent_data)
+
+                # Rolling average
+                sent_df = sent_df.sort_values("date")
+                sent_df["rolling_avg"] = (
+                    sent_df["sentiment"].rolling(window=10, min_periods=1).mean()
+                )
+
+                col1, col2 = st.columns([3, 1])
+
+                with col1:
+                    st.markdown("##### Sentiment Timeline (Rolling Avg)")
+                    chart_df = sent_df.set_index("date")[["sentiment", "rolling_avg"]]
+                    st.line_chart(chart_df, width="stretch", height=300)
+
+                with col2:
+                    avg_sent = sent_df["sentiment"].mean()
+                    emoji = (
+                        "😊" if avg_sent > 0.2 else "😐" if avg_sent > -0.2 else "😔"
+                    )
+                    st.metric("Average Sentiment", f"{emoji} {avg_sent:.2f}")
+
+                    pos_pct = (sent_df["sentiment"] > 0.2).sum() / len(sent_df) * 100
+                    st.metric("Positive Events", f"{pos_pct:.1f}%")
+
+                    neg_pct = (sent_df["sentiment"] < -0.2).sum() / len(sent_df) * 100
+                    st.metric("Negative Events", f"{neg_pct:.1f}%")
+
+                # Sentiment by category
+                st.markdown("##### Sentiment by Category")
+                cat_sent = (
+                    sent_df.groupby("category")["sentiment"]
+                    .agg(["mean", "count"])
+                    .reset_index()
+                )
+                cat_sent.columns = ["Category", "Avg Sentiment", "Count"]
+                cat_sent["Category"] = cat_sent["Category"].apply(
+                    lambda x: x.replace("_", " ").title()
+                )
+                st.dataframe(cat_sent, width="stretch", hide_index=True)
+
+                # Most positive/negative
+                st.markdown("##### Extremes")
+                extremes_col1, extremes_col2 = st.columns(2)
+
+                with extremes_col1:
+                    st.markdown("**Most Positive Events**")
+                    top_pos = sent_df.nlargest(3, "sentiment")
+                    for _, row in top_pos.iterrows():
+                        st.success(f"😊 {row['sentiment']:.2f} — {row['text']}...")
+
+                with extremes_col2:
+                    st.markdown("**Most Negative Events**")
+                    top_neg = sent_df.nsmallest(3, "sentiment")
+                    for _, row in top_neg.iterrows():
+                        st.error(f"😔 {row['sentiment']:.2f} — {row['text']}...")
+            else:
+                st.info(
+                    "No sentiment data available. Process recordings to extract sentiment."
+                )
+
+        # --------------- TAB: LIST VIEW ---------------
+        with tab_list:
+            st.markdown("#### Full Event List")
+
+            import pandas as pd
+
+            # Search within events
+            search_text = st.text_input("🔍 Search events", placeholder="keyword...")
+
+            display_events = filtered_events
+            if search_text:
+                display_events = [
+                    e
+                    for e in filtered_events
+                    if search_text.lower() in e["clean_text"].lower()
+                    or search_text.lower() in " ".join(e["keywords"]).lower()
+                ]
+                st.markdown(
+                    f"*Found {len(display_events)} events matching '{search_text}'*"
+                )
+
+            # Pagination
+            events_per_page = 25
+            total_pages = max(
+                1, (len(display_events) + events_per_page - 1) // events_per_page
+            )
+            page_num = st.number_input("Page", 1, total_pages, 1)
+
+            start_idx = (page_num - 1) * events_per_page
+            end_idx = start_idx + events_per_page
+            page_events = display_events[start_idx:end_idx]
+
+            # Display as cards
+            for e in page_events:
+                cat_color = CATEGORY_COLORS.get(e["category"], "#7F8C8D")
+                time_str = e["start_ts"].strftime("%Y-%m-%d %H:%M")
+                duration = (e["end_ts"] - e["start_ts"]).total_seconds()
+
+                rec = rec_lookup.get(e["recording_id"])
+                rec_title = rec.title if rec and rec.title else e["recording_id"][:16]
+
+                st.markdown(
+                    f"""<div class="event-card">
+                        <div style="display: flex; justify-content: space-between;">
+                            <div>
+                                <span class="status-pill" style="background: {cat_color}20; border-color: {cat_color};">{e['category'].replace('_', ' ').title()}</span>
+                                <span class="muted">{time_str}</span>
+                                <span class="muted">· {duration:.0f}s</span>
+                            </div>
+                            <div>
+                                <span style="font-size: 0.8rem;">{'😊' if e['sentiment'] > 0.3 else '😐' if e['sentiment'] > -0.3 else '😔'} {e['sentiment']:.2f}</span>
+                            </div>
+                        </div>
+                        <div style="margin-top: 8px;">{e['clean_text']}</div>
+                        <div style="margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap;">
+                            {''.join(f'<span style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 12px; font-size: 0.7rem;">{kw}</span>' for kw in e['keywords'][:5])}
+                        </div>
+                        <div class="muted" style="margin-top: 6px;">
+                            📎 {rec_title}
+                        </div>
+                    </div>""",
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown(
+                f"*Page {page_num} of {total_pages} ({len(display_events)} events)*"
+            )
+
+    except Exception as ex:
+        st.error(f"Error loading timeline: {ex}")
+        import traceback
+
+        st.code(traceback.format_exc())
+    finally:
+        session.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1018,7 +1706,8 @@ def main():
             "Navigate",
             [
                 "🏠 Home",
-                "🔍 Search",
+                "� Timeline",
+                "�🔍 Search",
                 "📚 Library",
                 "⚡ Pipeline",
                 "📱 Plaud",
@@ -1050,7 +1739,9 @@ def main():
     # Route to page
     if page == "🏠 Home":
         page_home(settings, status)
-    elif page == "🔍 Search":
+    elif page == "� Timeline":
+        page_timeline(settings, status)
+    elif page == "�🔍 Search":
         page_search(settings, status)
     elif page == "📚 Library":
         page_library(settings, status)

@@ -100,15 +100,15 @@ def render_usb_devices_section() -> None:
     col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
         if watcher.is_running:
-            if st.button("⏹️ Stop Watching", use_container_width=True):
+            if st.button("⏹️ Stop Watching", width="stretch"):
                 watcher.stop()
                 st.rerun()
         else:
-            if st.button("▶️ Start Watching", use_container_width=True):
+            if st.button("▶️ Start Watching", width="stretch"):
                 watcher.start()
                 st.rerun()
     with col2:
-        if st.button("🔍 Scan Now", use_container_width=True):
+        if st.button("🔍 Scan Now", width="stretch"):
             watcher.scan_now()
             st.rerun()
     with col3:
@@ -149,7 +149,7 @@ def render_usb_devices_section() -> None:
                 if st.button(
                     "⬇️ Sync All to Chronos",
                     key=f"sync_usb_{path}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     st.info("Syncing USB recordings to Chronos...")
                     # This would trigger local file ingestion
@@ -183,12 +183,12 @@ def render_auto_sync_section() -> None:
     with col1:
         if sync.is_running:
             st.markdown("**Status:** 🟢 Running")
-            if st.button("⏹️ Stop Auto-Sync", use_container_width=True):
+            if st.button("⏹️ Stop Auto-Sync", width="stretch"):
                 sync.stop()
                 st.rerun()
         else:
             st.markdown("**Status:** ⚪ Stopped")
-            if st.button("▶️ Start Auto-Sync", use_container_width=True):
+            if st.button("▶️ Start Auto-Sync", width="stretch"):
                 sync.start()
                 st.rerun()
 
@@ -227,7 +227,7 @@ def render_auto_sync_section() -> None:
         )
 
     # Manual trigger
-    if st.button("🚀 Trigger Manual Sync", use_container_width=True):
+    if st.button("🚀 Trigger Manual Sync", width="stretch"):
         job = sync.trigger_manual_sync(full=True)
         st.info(f"Manual sync queued: {job.trigger.value}")
 
@@ -268,7 +268,7 @@ def render_api_devices_section() -> None:
         return
 
     # Refresh button
-    if st.button("🔄 Refresh from API", use_container_width=True):
+    if st.button("🔄 Refresh from API", width="stretch"):
         st.rerun()
 
     # Get devices

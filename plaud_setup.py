@@ -150,13 +150,13 @@ def test_connection(oauth_client):
 
         # List recent recordings
         print("\nFetching recent recordings...")
-        recordings = client.list_recordings(limit=5)
+        recordings = client.list_recordings(page=1, page_size=10)
         print(f"  ✅ Found {len(recordings)} recordings")
 
         if recordings:
             print("\n  Recent recordings:")
             for rec in recordings[:5]:
-                title = rec.get('title', 'Untitled')[:40]
+                title = (rec.get("name") or rec.get("title") or "Untitled")[:40]
                 rec_id = rec.get('id', 'unknown')[:8]
                 print(f"    📝 {title} ({rec_id}...)")
 

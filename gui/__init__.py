@@ -1,9 +1,33 @@
-"""Lightweight GUI package used by the test suite.
+"""GUI package for Chronos Streamlit components.
 
-The original PlaudBlender GUI evolved over time. The current repo focuses on the
-Chronos pipeline (Qdrant-first), but the unit tests expect a basic importable
-`gui` package tree.
+This package contains reusable Streamlit UI components for:
+- Device integration panel
+- Workflow management panel
+- Webhook monitoring panel
 
-These modules are intentionally minimal and avoid hard dependencies on a display
-server (e.g., Tkinter) so they can be imported in headless test runs.
+The main app is chronos_app.py at the project root.
 """
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class AppState:
+    """Minimal app state for test compatibility."""
+
+    current_view: str = "home"
+
+
+@dataclass
+class PlaudBlenderApp:
+    """Minimal app shell for test compatibility."""
+
+    state: AppState = field(default_factory=AppState)
+
+    def run(self) -> None:
+        """No-op for tests."""
+        return None
+
+    def switch_view(self, view_name: str) -> None:
+        """Switch view for tests."""
+        self.state.current_view = view_name

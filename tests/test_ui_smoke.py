@@ -1,13 +1,11 @@
 """
 UI Component Smoke Tests.
-Tests that views and components can be imported and instantiated.
-Note: Actual Tkinter rendering requires a display, so these tests focus on import/structure.
+Tests that core modules can be imported and instantiated.
 """
 
 import pytest
 import sys
 import os
-from unittest.mock import Mock, patch, MagicMock
 
 # Ensure project root is on path
 ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -16,58 +14,46 @@ if ROOT not in sys.path:
 
 
 # ===========================================================================
-# Theme Tests
+# GUI Package Tests
 # ===========================================================================
 
 
-class TestTheme:
-    """Tests for gui/theme.py."""
+class TestGUIPackage:
+    """Tests for gui package (now minimal)."""
 
-    def test_theme_import(self):
-        """Verify theme module can be imported."""
-        from gui.theme import Theme, ModernTheme
+    def test_gui_import(self):
+        """Verify gui package can be imported."""
+        import gui
 
-        assert Theme is not None
-        assert ModernTheme is not None
+        assert gui is not None
 
-    def test_modern_theme_instantiation(self):
-        """Verify ModernTheme can be instantiated."""
-        from gui.theme import ModernTheme
-
-        theme = ModernTheme()
-        assert theme is not None
-
-
-# ===========================================================================
-# State Tests
-# ===========================================================================
-
-
-class TestState:
-    """Tests for gui/state.py."""
-
-    def test_state_import(self):
-        """Verify AppState can be imported."""
-        from gui.state import AppState
+    def test_app_state_import(self):
+        """Verify AppState can be imported from gui."""
+        from gui import AppState
 
         assert AppState is not None
 
-    def test_state_instantiation(self):
+    def test_app_state_instantiation(self):
         """Verify AppState can be instantiated."""
-        from gui.state import AppState
+        from gui import AppState
 
         state = AppState()
         assert state is not None
+        assert hasattr(state, "current_view")
 
-    def test_state_has_required_attributes(self):
-        """Verify AppState has expected attributes."""
-        from gui.state import AppState
+    def test_plaudblender_app_import(self):
+        """Verify PlaudBlenderApp can be imported."""
+        from gui import PlaudBlenderApp
 
-        state = AppState()
+        assert PlaudBlenderApp is not None
 
-        # Should have core attributes (exact names may vary)
-        # Just verify it's a functional object
-        assert hasattr(state, "__dict__") or hasattr(state, "__slots__")
+    def test_plaudblender_app_methods(self):
+        """Verify PlaudBlenderApp has required methods."""
+        from gui import PlaudBlenderApp
+
+        app = PlaudBlenderApp()
+        assert hasattr(app, "run")
+        assert hasattr(app, "switch_view")
 
 
 # ===========================================================================
@@ -90,139 +76,102 @@ class TestComponents:
 
         assert StatusBar is not None
 
+    def test_device_panel_import(self):
+        """Verify device_panel can be imported."""
+        from gui.components.device_panel import render_device_panel
 
-# ===========================================================================
-# View Import Tests
-# ===========================================================================
+        assert render_device_panel is not None
 
+    def test_workflow_panel_import(self):
+        """Verify workflow_panel can be imported."""
+        from gui.components.workflow_panel import render_workflow_panel
 
-class TestViewImports:
-    """Tests that all views can be imported without error."""
+        assert render_workflow_panel is not None
 
-    def test_base_view_import(self):
-        """Verify BaseView can be imported."""
-        from gui.views.base import BaseView
+    def test_webhook_panel_import(self):
+        """Verify webhook_panel can be imported."""
+        from gui.components.webhook_panel import render_webhook_panel
 
-        assert BaseView is not None
-
-    def test_dashboard_view_import(self):
-        """Verify DashboardView can be imported."""
-        from gui.views.dashboard import DashboardView
-
-        assert DashboardView is not None
-
-    def test_transcripts_view_import(self):
-        """Verify TranscriptsView can be imported."""
-        from gui.views.transcripts import TranscriptsView
-
-        assert TranscriptsView is not None
-
-    def test_search_view_import(self):
-        """Verify SearchView can be imported."""
-        from gui.views.search import SearchView
-
-        assert SearchView is not None
-
-    def test_timeline_view_import(self):
-        """Verify TimelineView can be imported."""
-        from gui.views.timeline import TimelineView
-
-        assert TimelineView is not None
-
-    def test_settings_view_import(self):
-        """Verify SettingsView can be imported."""
-        from gui.views.settings import SettingsView
-
-        assert SettingsView is not None
-
-    def test_logs_view_import(self):
-        """Verify LogsView can be imported."""
-        from gui.views.logs import LogsView
-
-        assert LogsView is not None
-
-    def test_notion_view_import(self):
-        """Verify NotionView can be imported."""
-        from gui.views.notion import NotionView
-
-        assert NotionView is not None
+        assert render_webhook_panel is not None
 
 
 # ===========================================================================
-# Utils Tests
+# Src Module Tests
 # ===========================================================================
 
 
-class TestUtils:
-    """Tests for gui/utils/."""
+class TestSrcModules:
+    """Tests for src package core modules."""
 
-    def test_tooltips_import(self):
-        """Verify tooltip utilities can be imported."""
-        from gui.utils.tooltips import ToolTip
+    def test_config_import(self):
+        """Verify config can be imported."""
+        import src.config
 
-        assert ToolTip is not None
+        assert src.config is not None
+        from src.config import get_settings
 
-    def test_async_tasks_import(self):
-        """Verify async task utilities can be imported."""
-        from gui.utils.async_tasks import run_async
+        assert get_settings is not None
 
-        assert run_async is not None
+    def test_database_import(self):
+        """Verify database package can be imported."""
+        import src.database
+        import src.database.engine
+        import src.database.models
+        import src.database.repository
 
-    def test_logging_import(self):
-        """Verify logging utilities can be imported."""
-        from gui.utils.logging import log, logger
+        assert src.database is not None
 
-        assert log is not None
-        assert logger is not None
+    def test_models_import(self):
+        """Verify models package can be imported."""
+        import src.models
+        import src.models.schemas
+        import src.models.chronos_schemas
 
+        assert src.models is not None
 
-# ===========================================================================
-# App Import Tests
-# ===========================================================================
+    def test_chronos_import(self):
+        """Verify chronos package can be imported."""
+        import src.chronos
 
+        assert src.chronos is not None
 
-class TestAppImport:
-    """Tests for main application module."""
+    def test_chronos_modules_import(self):
+        """Verify chronos submodules can be imported."""
+        from src.chronos.qdrant_client import ChronosQdrantClient
+        from src.chronos.embedding_service import ChronosEmbeddingService
+        from src.chronos.transcript_processor import TranscriptProcessor
+        from src.chronos.ingest_service import ChronosIngestService
+        from src.chronos.graph_service import ChronosGraphExtractor
 
-    def test_app_module_import(self):
-        """Verify gui.app module can be imported."""
-        from gui.app import PlaudBlenderApp
+        assert ChronosQdrantClient is not None
+        assert ChronosEmbeddingService is not None
 
-        assert PlaudBlenderApp is not None
+    def test_processing_import(self):
+        """Verify processing package can be imported."""
+        import src.processing
+        import src.processing.engine
+        import src.processing.indexer
 
-    def test_app_has_required_methods(self):
-        """Verify PlaudBlenderApp has expected action methods."""
-        from gui.app import PlaudBlenderApp
+        assert src.processing is not None
 
-        required_methods = [
-            "run",
-            "switch_view",
-        ]
+    def test_plaud_client_import(self):
+        """Verify Plaud client can be imported."""
+        from src.plaud_client import PlaudClient
 
-        for method in required_methods:
-            assert hasattr(PlaudBlenderApp, method), f"Missing method: {method}"
+        assert PlaudClient is not None
 
+    def test_plaud_oauth_import(self):
+        """Verify Plaud OAuth can be imported."""
+        from src.plaud_oauth import PlaudOAuthClient
 
-# ===========================================================================
-# Services Registration Tests
-# ===========================================================================
+        assert PlaudOAuthClient is not None
 
+    def test_utils_import(self):
+        """Verify utils can be imported."""
+        import src.utils
+        import src.utils.logger
 
-class TestServicesInit:
-    """Tests for gui/services/__init__.py exports."""
-
-    def test_services_package_import(self):
-        """Verify services package can be imported."""
-        import gui.services
-
-        assert gui.services is not None
-
-    def test_clients_import(self):
-        """Verify clients can be imported."""
-        from gui.services.clients import get_plaud_client, get_pinecone_client
-
-        assert get_plaud_client is not None
-        assert get_pinecone_client is not None
+        assert src.utils is not None
 
 
 # ===========================================================================
@@ -233,50 +182,15 @@ class TestServicesInit:
 class TestFullModuleTree:
     """Tests that verify the full module tree is importable."""
 
-    def test_full_gui_import_tree(self):
-        """Verify entire gui package can be imported."""
-        # Core
+    def test_core_imports(self):
+        """Verify core packages can be imported."""
+        # GUI (minimal)
         import gui
-        import gui.app
-        import gui.state
-        import gui.theme
-
-        # Components
         import gui.components
         import gui.components.stat_card
         import gui.components.status_bar
 
-        # Views
-        import gui.views
-        import gui.views.base
-        import gui.views.dashboard
-        import gui.views.transcripts
-        import gui.views.search
-        import gui.views.timeline
-        import gui.views.settings
-        import gui.views.logs
-
-        # Services
-        import gui.services
-        import gui.services.clients
-        import gui.services.embedding_service
-        import gui.services.search_service
-        import gui.services.settings_service
-        import gui.services.timeline_service
-        import gui.services.transcripts_service
-        import gui.services.stats_service
-
-        # Utils
-        import gui.utils
-        import gui.utils.async_tasks
-        import gui.utils.tooltips
-        import gui.utils.logging
-
-        assert True  # All imports succeeded
-
-    def test_full_src_import_tree(self):
-        """Verify entire src package can be imported."""
-        # Core
+        # Src core
         import src
         import src.config
 
@@ -289,28 +203,23 @@ class TestFullModuleTree:
         # Models
         import src.models
         import src.models.schemas
+        import src.models.chronos_schemas
 
-        # Processing
+        # Processing (legacy, minimal)
         import src.processing
         import src.processing.engine
         import src.processing.indexer
-        import src.processing.query_router
-        import src.processing.rrf_fusion
-        import src.processing.thought_signatures
-        import src.processing.conflict_detection
-        import src.processing.colpali_ingestion
 
-        # AI
-        import src.ai
-        import src.ai.embeddings
-        import src.ai.providers
+        # Chronos (main pipeline)
+        import src.chronos
+        import src.chronos.qdrant_client
+        import src.chronos.embedding_service
+        import src.chronos.transcript_processor
+        import src.chronos.ingest_service
 
         # Utils
         import src.utils
         import src.utils.logger
-
-        # Top-level modules
-        import src.notion_sync
 
         assert True  # All imports succeeded
 

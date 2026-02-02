@@ -94,7 +94,7 @@ def render_webhook_events() -> None:
             )
 
         # Refresh button
-        if st.button("🔄 Refresh Events", use_container_width=False):
+        if st.button("🔄 Refresh Events", width="content"):
             st.rerun()
 
         # Get events
@@ -134,7 +134,7 @@ def render_webhook_events() -> None:
         with bulk_cols[0]:
             if st.button(
                 "✅ Mark All Pending as Processed",
-                use_container_width=True,
+                width="stretch",
                 disabled=pending == 0,
             ):
                 for e in events:
@@ -148,7 +148,7 @@ def render_webhook_events() -> None:
         with bulk_cols[1]:
             if st.button(
                 "⚡ Process All Pending",
-                use_container_width=True,
+                width="stretch",
                 disabled=pending == 0,
             ):
                 _process_pending_events(session, events)
@@ -190,7 +190,7 @@ def render_webhook_events() -> None:
                     if st.button(
                         "✅ Mark Processed",
                         key=f"processed_{event_id}",
-                        use_container_width=True,
+                        width="stretch",
                         disabled=event.processing_status == "processed",
                     ):
                         mark_webhook_event_processed(
@@ -202,7 +202,7 @@ def render_webhook_events() -> None:
                     if st.button(
                         "❌ Mark Failed",
                         key=f"failed_{event_id}",
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         mark_webhook_event_processed(session, event_id, status="failed")
                         st.rerun()
@@ -211,7 +211,7 @@ def render_webhook_events() -> None:
                     if st.button(
                         "🔄 Replay to Pipeline",
                         key=f"replay_{event_id}",
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         _replay_event_to_pipeline(event)
 
@@ -219,7 +219,7 @@ def render_webhook_events() -> None:
                     if st.button(
                         "🗑️ Delete",
                         key=f"delete_{event_id}",
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         # Would need a delete function
                         st.warning("Delete not implemented yet")
@@ -359,7 +359,7 @@ def render_webhook_config() -> None:
                     if st.button(
                         "🔔 Ping",
                         key=f"ping_{webhook_id}",
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         if admin.ping_webhook(webhook_id):
                             st.success("Ping sent successfully!")
@@ -370,7 +370,7 @@ def render_webhook_config() -> None:
                     if st.button(
                         "🗑️ Delete",
                         key=f"delete_wh_{webhook_id}",
-                        use_container_width=True,
+                        width="stretch",
                     ):
                         if admin.delete_webhook(webhook_id):
                             st.success("Webhook deleted")

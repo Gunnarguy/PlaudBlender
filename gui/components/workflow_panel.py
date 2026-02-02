@@ -163,7 +163,7 @@ def render_workflow_submit() -> None:
             if st.button(
                 "🚀 Submit Workflow",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 disabled=not file_id,
             ):
                 _submit_workflow(
@@ -304,7 +304,7 @@ def render_workflow_monitor() -> None:
         return
 
     # Refresh button
-    if st.button("🔄 Refresh All", use_container_width=False):
+    if st.button("🔄 Refresh All", width="content"):
         _refresh_all_workflows()
 
     # Display active workflows
@@ -329,14 +329,14 @@ def render_workflow_monitor() -> None:
                 if st.button(
                     "🔄 Refresh",
                     key=f"refresh_{workflow_id}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     _refresh_workflow(workflow_id)
             with btn_cols[1]:
                 if st.button(
                     "📥 Get Results",
                     key=f"results_{workflow_id}",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=info.get("status") != "SUCCESS",
                 ):
                     _get_workflow_results(workflow_id)
@@ -344,7 +344,7 @@ def render_workflow_monitor() -> None:
                 if st.button(
                     "🗑️ Remove",
                     key=f"remove_{workflow_id}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     del st.session_state.active_workflows[workflow_id]
                     st.rerun()

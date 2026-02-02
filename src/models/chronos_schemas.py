@@ -9,7 +9,7 @@ These schemas define the "event contract" for the Chronos pipeline:
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
-from pydantic import BaseModel, Field, field_validator, computed_field
+from pydantic import BaseModel, Field, field_validator, computed_field, model_validator
 
 
 class DayOfWeek(str, Enum):
@@ -194,7 +194,18 @@ class GeminiEventOutput(BaseModel):
     processing_metadata: Optional[dict] = Field(
         None, description="Gemini's internal metadata"
     )
-    total_events: int = Field(..., ge=0, description="Total events extracted")
+    total_events: Optional[int] = Field(
+        None,
+        ge=0,
+        description="Total events extracted (computed from events if missing)",
+    )
+
+    @model_validator(mode="after")
+    def compute_total_events(self) -> "GeminiEventOutput":
+        """Compute total_events from events list if not provided by Gemini."""
+        if self.total_events is None:
+            self.total_events = len(self.events)
+        return self
 
     @field_validator("events")
     @classmethod

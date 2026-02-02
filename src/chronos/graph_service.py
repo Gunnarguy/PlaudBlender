@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Tuple
 
 import networkx as nx
 
-from src.ai.graph_rag import EntityExtractor, KnowledgeGraph, CommunityDetector
+from src.chronos.graph_rag import EntityExtractor, KnowledgeGraph, CommunityDetector
 from src.models.chronos_schemas import ChronosEvent
 
 logger = logging.getLogger(__name__)

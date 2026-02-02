@@ -1,5 +1,11 @@
 """
 Plaud OAuth Client - Handles OAuth 2.0 authentication flow with Plaud API
+
+Provides bulletproof authentication that:
+- Proactively refreshes tokens 30 mins before expiry
+- Validates tokens before use
+- Automatically re-authenticates when needed
+- Never throws unexpected exceptions
 """
 
 import os
@@ -21,6 +27,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+
+class AuthenticationRequired(Exception):
+    """Raised when authentication/re-authentication is required."""
+
+    pass
+
+
+class PlaudAuthError(Exception):
+    """Base exception for Plaud authentication errors."""
+
+    pass
+
 
 # Plaud OAuth Configuration
 # Auth is on app.plaud.ai, API is on platform.plaud.ai
@@ -260,6 +279,69 @@ class PlaudOAuthClient:
         logger.info("🔄 Refreshed Plaud access token")
         return token_data
 
+    def _validate_token(self) -> bool:
+        """
+        Validate the current token by making a lightweight API call.
+
+        Returns:
+            True if token is valid, False otherwise
+        """
+        if not self._access_token:
+            return False
+
+        try:
+            response = requests.get(
+                f"{PLAUD_API_BASE}/users/current",
+                headers={
+                    "Authorization": f"Bearer {self._access_token}",
+                    "Accept": "application/json",
+                },
+                timeout=10,
+            )
+            return response.status_code == 200
+        except Exception as e:
+            logger.debug(f"Token validation failed: {e}")
+            return False
+
+    def ensure_valid_token(self) -> str:
+        """
+        Ensure we have a valid token, refreshing or re-authenticating as needed.
+
+        This is the bulletproof method - it will ALWAYS return a valid token
+        or raise an exception with clear instructions.
+
+        Returns:
+            Valid access token string
+        """
+        # Step 1: Check if we have a token that isn't expired
+        if self._access_token and self._token_expiry:
+            # Proactive refresh: refresh 30 mins before expiry
+            if datetime.now() < self._token_expiry - timedelta(minutes=30):
+                # Token should be valid, but verify it
+                if self._validate_token():
+                    return self._access_token
+                else:
+                    logger.warning("Token failed validation, attempting refresh...")
+
+        # Step 2: Try to refresh if we have a refresh token
+        if self._refresh_token:
+            try:
+                logger.info("Refreshing access token...")
+                self.refresh_access_token()
+                if self._validate_token():
+                    return self._access_token
+                else:
+                    logger.warning("Refreshed token failed validation")
+            except Exception as e:
+                logger.warning(f"Token refresh failed: {e}")
+
+        # Step 3: Clear invalid tokens and require re-authentication
+        self._clear_tokens()
+        raise AuthenticationRequired(
+            "Authentication required. Run: python plaud_setup.py\n"
+            "Or call: client.oauth.authenticate_interactive()"
+        )
+
     def get_access_token(self) -> str:
         """
         Get a valid access token, refreshing if necessary.
@@ -267,9 +349,9 @@ class PlaudOAuthClient:
         Returns:
             Valid access token string
         """
-        # Check if we need to refresh
+        # Check if we need to refresh (30 mins before expiry for safety)
         if self._token_expiry and datetime.now() >= self._token_expiry - timedelta(
-            minutes=5
+            minutes=30
         ):
             logger.info("Token expired or expiring soon, refreshing...")
             try:
@@ -285,17 +367,51 @@ class PlaudOAuthClient:
 
     @property
     def is_authenticated(self) -> bool:
-        """Check if we have valid authentication."""
+        """
+        Check if we have valid authentication.
+
+        This does a lightweight check without network calls.
+        For full validation, use ensure_valid_token().
+        """
         if not self._access_token:
             return False
         if self._token_expiry and datetime.now() >= self._token_expiry:
-            # Try to refresh
+            # Token expired - try refresh
             try:
                 self.refresh_access_token()
                 return True
-            except:
+            except Exception:
                 return False
         return True
+
+    @property
+    def token_status(self) -> dict:
+        """
+        Get detailed token status for diagnostics.
+
+        Returns:
+            Dict with authentication status details
+        """
+        now = datetime.now()
+        status = {
+            "has_access_token": bool(self._access_token),
+            "has_refresh_token": bool(self._refresh_token),
+            "is_authenticated": self.is_authenticated,
+            "token_valid": False,
+            "expires_at": None,
+            "expires_in_minutes": None,
+            "needs_refresh": False,
+        }
+
+        if self._token_expiry:
+            status["expires_at"] = self._token_expiry.isoformat()
+            status["expires_in_minutes"] = (
+                self._token_expiry - now
+            ).total_seconds() / 60
+            status["needs_refresh"] = now >= self._token_expiry - timedelta(minutes=30)
+            status["token_valid"] = now < self._token_expiry
+
+        return status
 
     def _open_browser_chrome_first(self, url: str):
         """Try Chrome first (better localhost handling), then fall back to default."""

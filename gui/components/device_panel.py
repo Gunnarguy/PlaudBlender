@@ -185,7 +185,7 @@ def render_device_recordings(manager: PlaudDeviceManager, device: PlaudDevice) -
                 if st.button(
                     "⬇️ Sync to Chronos",
                     key=f"sync_{rec.id}",
-                    use_container_width=True,
+                    width="stretch",
                     help="Download this recording and add to Chronos pipeline",
                 ):
                     st.session_state[f"sync_recording_{rec.id}"] = True
@@ -256,7 +256,7 @@ def render_device_panel() -> None:
         st.divider()
         st.subheader("All Devices")
 
-        if st.button("🔄 Refresh Devices", use_container_width=False):
+        if st.button("🔄 Refresh Devices", width="content"):
             st.rerun()
 
         with st.spinner("Loading devices..."):
@@ -317,14 +317,14 @@ def render_device_panel() -> None:
             with action_cols[0]:
                 if st.button(
                     "🔄 Refresh Status",
-                    use_container_width=True,
+                    width="stretch",
                     key="refresh_device",
                 ):
                     st.rerun()
             with action_cols[1]:
                 if st.button(
                     "📊 Full Status JSON",
-                    use_container_width=True,
+                    width="stretch",
                     key="show_status",
                 ):
                     status = manager.get_device_status(selected_device.id)
@@ -332,7 +332,7 @@ def render_device_panel() -> None:
             with action_cols[2]:
                 if st.button(
                     "📼 View Recordings",
-                    use_container_width=True,
+                    width="stretch",
                     key="view_recordings",
                 ):
                     st.session_state.show_device_recordings = selected_device.id
