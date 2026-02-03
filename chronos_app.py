@@ -281,6 +281,157 @@ def format_event_card(event: Dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# DYNAMIC DATA UTILITIES — Auto-adapt to YOUR data
+# ---------------------------------------------------------------------------
+
+
+def string_to_color(s: str, saturation: float = 0.65, lightness: float = 0.55) -> str:
+    """Generate a consistent HSL color from any string.
+
+    Same string always produces same color. Great for dynamic categories.
+    """
+    import hashlib
+
+    # Hash the string to get a consistent number
+    hash_bytes = hashlib.md5(s.encode()).digest()
+    hue = int.from_bytes(hash_bytes[:2], "big") % 360
+
+    # Convert HSL to hex
+    import colorsys
+
+    r, g, b = colorsys.hls_to_rgb(hue / 360, lightness, saturation)
+    return f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+
+
+def get_dynamic_category_colors(categories: List[str]) -> Dict[str, str]:
+    """Generate consistent colors for any list of categories."""
+    return {cat: string_to_color(cat) for cat in categories}
+
+
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def get_unique_values_from_qdrant(field: str) -> List[str]:
+    """Get all unique values for a payload field from Qdrant using faceting.
+
+    This dynamically discovers what categories, days, speakers, etc. exist.
+    """
+    try:
+        qdrant = get_qdrant_client()
+
+        # Use faceting API for efficient unique value retrieval
+        from qdrant_client.models import FacetRequest
+
+        result = qdrant.client.facet(
+            collection_name=qdrant.collection_name,
+            key=field,
+            limit=1000,  # Get up to 1000 unique values
+        )
+
+        return sorted([hit.value for hit in result.hits if hit.value])
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=60)
+def get_all_unique_categories() -> List[str]:
+    """Get all unique categories from Qdrant."""
+    cats = get_unique_values_from_qdrant("category")
+    return cats if cats else ["unknown"]
+
+
+@st.cache_data(ttl=60)
+def get_all_unique_days() -> List[str]:
+    """Get all unique days of week from Qdrant."""
+    days = get_unique_values_from_qdrant("day_of_week")
+    # Sort by weekday order
+    day_order = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ]
+    return (
+        sorted(days, key=lambda d: day_order.index(d) if d in day_order else 99)
+        if days
+        else day_order
+    )
+
+
+@st.cache_data(ttl=60)
+def get_all_unique_speakers() -> List[str]:
+    """Get all unique speakers from Qdrant."""
+    speakers = get_unique_values_from_qdrant("speaker")
+    return speakers if speakers else ["self_talk"]
+
+
+@st.cache_data(ttl=60)
+def get_all_unique_hours() -> tuple:
+    """Get min/max hours that have data."""
+    try:
+        qdrant = get_qdrant_client()
+        from qdrant_client.models import FacetRequest
+
+        result = qdrant.client.facet(
+            collection_name=qdrant.collection_name,
+            key="hour_of_day",
+            limit=24,
+        )
+
+        hours = [hit.value for hit in result.hits if hit.value is not None]
+        if hours:
+            return (min(hours), max(hours))
+    except Exception:
+        pass
+    return (0, 23)
+
+
+@st.cache_data(ttl=30)
+def get_collection_field_stats() -> Dict[str, Any]:
+    """Get comprehensive stats about all payload fields in the collection.
+
+    Returns counts for each unique value in each indexed field.
+    """
+    stats = {
+        "categories": {},
+        "days": {},
+        "hours": {},
+        "speakers": {},
+        "total_points": 0,
+    }
+
+    try:
+        qdrant = get_qdrant_client()
+        collection_info = qdrant.get_stats()
+        stats["total_points"] = collection_info.get("points_count", 0)
+
+        # Get category distribution
+        from qdrant_client.models import FacetRequest
+
+        for field, key in [
+            ("categories", "category"),
+            ("days", "day_of_week"),
+            ("hours", "hour_of_day"),
+            ("speakers", "speaker"),
+        ]:
+            try:
+                result = qdrant.client.facet(
+                    collection_name=qdrant.collection_name,
+                    key=key,
+                    limit=1000,
+                )
+                stats[field] = {hit.value: hit.count for hit in result.hits}
+            except Exception:
+                pass
+
+    except Exception:
+        pass
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # PAGE: HOME
 # ---------------------------------------------------------------------------
 
@@ -519,25 +670,59 @@ def page_search(settings, status: Dict[str, Any]):
 
 
 def page_library(settings, status: Dict[str, Any]):
-    """Browse and manage all recordings."""
+    """
+    📚 ULTIMATE Recording Library — EVERYTHING exposed.
+
+    Features:
+    - Full transcript viewer with word count, search highlighting
+    - All SQLite metadata fields visible
+    - Extracted events with full Qdrant payloads
+    - Vector similarity exploration
+    - Processing actions with real-time feedback
+    """
     st.header("📚 Recording Library")
+    st.markdown(
+        '<p class="subtitle">Complete access to your recordings, transcripts, and extracted events</p>',
+        unsafe_allow_html=True,
+    )
 
     init_db()
     session = SessionLocal()
 
+    # Initialize Qdrant client for vector operations
+    qdrant_client = None
+    if status["qdrant"]:
+        try:
+            qdrant_client = ChronosQdrantClient()
+        except Exception:
+            pass
+
     try:
-        # Filters
-        filter_cols = st.columns([1, 1, 2])
+        # ═══════════════════════════════════════════════════════════════
+        # FILTERS — All the controls
+        # ═══════════════════════════════════════════════════════════════
+        st.markdown("### 🎛️ Filters")
+        filter_cols = st.columns([1, 1, 1, 2])
+
         with filter_cols[0]:
             status_filter = st.multiselect(
-                "Status",
+                "Processing Status",
                 ["pending", "processing", "completed", "failed"],
-                default=["pending", "completed"],
+                default=["pending", "completed", "failed"],
             )
         with filter_cols[1]:
-            days_back = st.number_input("Days back", 1, 365, 30)
+            days_back = st.number_input("Days back", 1, 365, 90)
         with filter_cols[2]:
-            search_q = st.text_input("Search", placeholder="title or ID...")
+            sort_by = st.selectbox(
+                "Sort by",
+                ["created_at", "duration_seconds", "title"],
+                index=0,
+            )
+        with filter_cols[3]:
+            search_q = st.text_input(
+                "🔍 Search",
+                placeholder="Search title, ID, or transcript content...",
+            )
 
         # Query
         q = session.query(ChronosRecordingDB)
@@ -551,15 +736,53 @@ def page_library(settings, status: Dict[str, Any]):
             q = q.filter(
                 (ChronosRecordingDB.recording_id.ilike(like))
                 | (ChronosRecordingDB.title.ilike(like))
+                | (ChronosRecordingDB.transcript.ilike(like))
             )
 
-        recs = q.order_by(ChronosRecordingDB.created_at.desc()).limit(200).all()
+        # Apply sorting
+        if sort_by == "created_at":
+            q = q.order_by(ChronosRecordingDB.created_at.desc())
+        elif sort_by == "duration_seconds":
+            q = q.order_by(ChronosRecordingDB.duration_seconds.desc())
+        else:
+            q = q.order_by(ChronosRecordingDB.title.asc())
+
+        recs = q.limit(200).all()
 
         if not recs:
-            st.info("No recordings found. Go to Pipeline to fetch from Plaud.")
+            st.info("No recordings found. Go to **Pipeline** to fetch from Plaud.")
             return
 
-        # Display as table
+        # ═══════════════════════════════════════════════════════════════
+        # SUMMARY STATS
+        # ═══════════════════════════════════════════════════════════════
+        stat_cols = st.columns(6)
+        pending = sum(1 for r in recs if r.processing_status == "pending")
+        completed = sum(1 for r in recs if r.processing_status == "completed")
+        failed = sum(1 for r in recs if r.processing_status == "failed")
+        with_transcript = sum(1 for r in recs if r.transcript)
+        total_duration = sum(r.duration_seconds or 0 for r in recs)
+        total_events = sum(
+            session.query(ChronosEventDB).filter_by(recording_id=r.recording_id).count()
+            for r in recs
+        )
+
+        stat_cols[0].metric("📊 Total", len(recs))
+        stat_cols[1].metric("⏳ Pending", pending)
+        stat_cols[2].metric("✅ Completed", completed)
+        stat_cols[3].metric("❌ Failed", failed)
+        stat_cols[4].metric("📝 With Transcript", with_transcript)
+        stat_cols[5].metric(
+            "⏱️ Total Duration",
+            f"{total_duration // 3600}h {(total_duration % 3600) // 60}m",
+        )
+
+        # ═══════════════════════════════════════════════════════════════
+        # RECORDINGS TABLE — Full data
+        # ═══════════════════════════════════════════════════════════════
+        st.markdown("---")
+        st.markdown("### 📋 Recordings")
+
         rows = []
         for r in recs:
             event_count = (
@@ -567,142 +790,498 @@ def page_library(settings, status: Dict[str, Any]):
                 .filter_by(recording_id=r.recording_id)
                 .count()
             )
+            transcript_len = len(r.transcript) if r.transcript else 0
+            word_count = len(r.transcript.split()) if r.transcript else 0
+
             rows.append(
                 {
-                    "ID": (
-                        r.recording_id[:16] + "..."
-                        if len(r.recording_id) > 16
-                        else r.recording_id
-                    ),
+                    "ID": r.recording_id,
                     "Title": r.title or "—",
                     "Created": (
                         r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—"
                     ),
                     "Duration": (
-                        f"{r.duration_seconds // 60}m" if r.duration_seconds else "—"
+                        f"{r.duration_seconds // 60}m {r.duration_seconds % 60}s"
+                        if r.duration_seconds
+                        else "—"
                     ),
                     "Status": r.processing_status,
                     "Events": event_count,
-                    "Transcript": "✓" if r.transcript else "—",
+                    "Transcript": f"{word_count:,} words" if transcript_len else "—",
+                    "Device": r.device_id[:8] if r.device_id else "—",
+                    "Processed": (
+                        r.processed_at.strftime("%m-%d %H:%M")
+                        if r.processed_at
+                        else "—"
+                    ),
                 }
             )
 
-        st.dataframe(rows, width="stretch", hide_index=True)
+        st.dataframe(rows, width="stretch", hide_index=True, height=300)
 
-        # Detail view
+        # ═══════════════════════════════════════════════════════════════
+        # RECORDING DETAIL — Deep dive
+        # ═══════════════════════════════════════════════════════════════
         st.markdown("---")
-        st.subheader("Recording Detail")
+        st.markdown("### 🔍 Recording Detail")
 
         options = [
-            f"{r.title or r.recording_id[:20]} ({r.processing_status})" for r in recs
+            f"{r.title or r.recording_id[:24]}... ({r.processing_status})" for r in recs
         ]
         selected_idx = st.selectbox(
-            "Select recording", range(len(options)), format_func=lambda i: options[i]
+            "Select recording to explore",
+            range(len(options)),
+            format_func=lambda i: options[i],
         )
 
         if selected_idx is not None:
             rec = recs[selected_idx]
 
-            # Metadata
-            meta_cols = st.columns(3)
-            with meta_cols[0]:
-                st.markdown(f"**ID:** `{rec.recording_id}`")
-                st.markdown(f"**Status:** {rec.processing_status}")
-            with meta_cols[1]:
-                st.markdown(f"**Created:** {rec.created_at}")
-                st.markdown(f"**Duration:** {rec.duration_seconds}s")
-            with meta_cols[2]:
-                st.markdown(f"**Device:** {rec.device_id or 'Unknown'}")
-                if rec.error_message:
-                    st.error(f"Error: {rec.error_message}")
+            # TABS for organization
+            tab_meta, tab_transcript, tab_events, tab_qdrant, tab_actions = st.tabs(
+                ["📋 Metadata", "📝 Transcript", "🎯 Events", "🔮 Qdrant", "⚡ Actions"]
+            )
 
-            # Actions
-            action_cols = st.columns(4)
-            with action_cols[0]:
-                if st.button(
-                    "🧠 Process",
-                    width="stretch",
-                    disabled=not status["gemini"],
-                ):
-                    code = run_pipeline_command(
-                        [
-                            "--process",
-                            "--recording-id",
-                            rec.recording_id,
-                            "--limit",
-                            "1",
-                        ],
-                        f"Processing {rec.recording_id[:16]}...",
-                    )
-                    if code == 0:
-                        st.success("Done!")
-                        st.rerun()
-            with action_cols[1]:
-                if st.button(
-                    "📤 Index", width="stretch", disabled=not status["gemini"]
-                ):
-                    code = run_pipeline_command(
-                        [
-                            "--index",
-                            "--recording-id",
-                            rec.recording_id,
-                            "--limit",
-                            "50",
-                        ],
-                        f"Indexing {rec.recording_id[:16]}...",
-                    )
-                    if code == 0:
-                        st.success("Done!")
-                        st.rerun()
-            with action_cols[2]:
-                if st.button(
-                    "🔄 Force Reprocess",
-                    width="stretch",
-                    disabled=not status["gemini"],
-                ):
-                    code = run_pipeline_command(
-                        [
-                            "--process",
-                            "--recording-id",
-                            rec.recording_id,
-                            "--force",
-                            "--limit",
-                            "1",
-                        ],
-                        f"Force reprocessing...",
-                    )
-                    if code == 0:
-                        st.success("Done!")
-                        st.rerun()
-            with action_cols[3]:
-                if st.button(
-                    "📝 Fetch Transcript",
-                    width="stretch",
-                    disabled=not status["plaud"],
-                ):
-                    try:
-                        client = PlaudClient()
-                        file_details = client.get_recording(rec.recording_id)
-                        # Extract transcript from source_list
-                        import json
+            # ─────────────────────────────────────────────────────────────
+            # TAB: Metadata — ALL fields
+            # ─────────────────────────────────────────────────────────────
+            with tab_meta:
+                st.markdown("#### Complete Recording Metadata")
 
-                        for source in file_details.get("source_list", []):
-                            if source.get("data_type") == "transaction":
-                                segments = json.loads(source.get("data_content", "[]"))
-                                transcript = " ".join(
-                                    s.get("content", "") for s in segments
-                                )
-                                if transcript.strip():
-                                    set_chronos_recording_transcript(
-                                        session, rec.recording_id, transcript
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.markdown("**Identifiers**")
+                    st.code(f"recording_id: {rec.recording_id}")
+                    st.code(f"device_id: {rec.device_id or 'None'}")
+                    st.code(f"checksum: {rec.checksum or 'None'}")
+
+                with col2:
+                    st.markdown("**Timestamps**")
+                    st.code(f"created_at: {rec.created_at}")
+                    st.code(f"ingested_at: {rec.ingested_at}")
+                    st.code(f"processed_at: {rec.processed_at or 'Not processed'}")
+                    st.code(
+                        f"transcript_cached_at: {rec.transcript_cached_at or 'None'}"
+                    )
+
+                with col3:
+                    st.markdown("**Processing**")
+                    st.code(f"status: {rec.processing_status}")
+                    st.code(f"source: {rec.source}")
+                    st.code(f"duration_seconds: {rec.duration_seconds}")
+                    if rec.error_message:
+                        st.error(f"Error: {rec.error_message}")
+
+                st.markdown("**File Paths**")
+                st.code(f"local_audio_path: {rec.local_audio_path}")
+
+                # Raw JSON dump
+                with st.expander("📦 Raw SQLite Row (JSON)", expanded=False):
+                    raw_data = {
+                        "recording_id": rec.recording_id,
+                        "title": rec.title,
+                        "created_at": str(rec.created_at),
+                        "duration_seconds": rec.duration_seconds,
+                        "local_audio_path": rec.local_audio_path,
+                        "source": rec.source,
+                        "device_id": rec.device_id,
+                        "checksum": rec.checksum,
+                        "processing_status": rec.processing_status,
+                        "error_message": rec.error_message,
+                        "processed_at": (
+                            str(rec.processed_at) if rec.processed_at else None
+                        ),
+                        "ingested_at": str(rec.ingested_at),
+                        "transcript_length": (
+                            len(rec.transcript) if rec.transcript else 0
+                        ),
+                    }
+                    st.json(raw_data)
+
+            # ─────────────────────────────────────────────────────────────
+            # TAB: Transcript — Full text with stats
+            # ─────────────────────────────────────────────────────────────
+            with tab_transcript:
+                if rec.transcript:
+                    transcript = rec.transcript
+                    words = transcript.split()
+                    chars = len(transcript)
+
+                    # Stats row
+                    ts_cols = st.columns(5)
+                    ts_cols[0].metric("📝 Characters", f"{chars:,}")
+                    ts_cols[1].metric("📖 Words", f"{len(words):,}")
+                    ts_cols[2].metric("📄 Paragraphs", transcript.count("\n\n") + 1)
+                    ts_cols[3].metric("⏱️ Est. Speaking Time", f"{len(words) // 150}m")
+                    ts_cols[4].metric(
+                        "💾 Cached",
+                        (
+                            rec.transcript_cached_at.strftime("%Y-%m-%d")
+                            if rec.transcript_cached_at
+                            else "—"
+                        ),
+                    )
+
+                    # Search within transcript
+                    search_in_transcript = st.text_input(
+                        "🔍 Search in transcript",
+                        placeholder="Find text...",
+                        key="transcript_search",
+                    )
+
+                    if search_in_transcript:
+                        # Highlight matches
+                        import re
+
+                        pattern = re.compile(
+                            re.escape(search_in_transcript), re.IGNORECASE
+                        )
+                        matches = list(pattern.finditer(transcript))
+                        st.info(
+                            f"Found **{len(matches)}** matches for '{search_in_transcript}'"
+                        )
+
+                        # Show context around matches
+                        for i, match in enumerate(matches[:10]):
+                            start = max(0, match.start() - 100)
+                            end = min(len(transcript), match.end() + 100)
+                            context = transcript[start:end]
+                            # Highlight the match
+                            highlighted = pattern.sub(
+                                f"**🔸{search_in_transcript}🔸**",
+                                context,
+                            )
+                            st.markdown(f"**Match {i+1}:** ...{highlighted}...")
+
+                    # Full transcript display
+                    st.markdown("#### Full Transcript")
+                    st.text_area(
+                        "Transcript content",
+                        transcript,
+                        height=400,
+                        label_visibility="collapsed",
+                    )
+
+                    # Download button
+                    st.download_button(
+                        "📥 Download Transcript (.txt)",
+                        transcript,
+                        file_name=f"{rec.recording_id[:16]}_transcript.txt",
+                        mime="text/plain",
+                    )
+                else:
+                    st.warning("No transcript cached for this recording.")
+                    st.markdown(
+                        "Click **Fetch Transcript** in the Actions tab to retrieve it from Plaud."
+                    )
+
+            # ─────────────────────────────────────────────────────────────
+            # TAB: Events — All extracted events with full details
+            # ─────────────────────────────────────────────────────────────
+            with tab_events:
+                events = (
+                    session.query(ChronosEventDB)
+                    .filter_by(recording_id=rec.recording_id)
+                    .order_by(ChronosEventDB.start_ts.asc())
+                    .all()
+                )
+
+                if events:
+                    st.markdown(f"#### {len(events)} Extracted Events")
+
+                    # Event summary stats
+                    ev_cols = st.columns(5)
+                    categories = Counter(e.category for e in events)
+                    sentiments = [
+                        e.sentiment for e in events if e.sentiment is not None
+                    ]
+                    avg_sentiment = (
+                        sum(sentiments) / len(sentiments) if sentiments else 0
+                    )
+
+                    ev_cols[0].metric("🎯 Total Events", len(events))
+                    ev_cols[1].metric("📁 Categories", len(categories))
+                    ev_cols[2].metric("💭 Avg Sentiment", f"{avg_sentiment:.2f}")
+                    ev_cols[3].metric(
+                        "🔑 Keywords", sum(len(e.keywords or []) for e in events)
+                    )
+                    ev_cols[4].metric(
+                        "⏱️ Total Duration",
+                        f"{sum((e.end_ts - e.start_ts).total_seconds() for e in events):.0f}s",
+                    )
+
+                    # Category breakdown
+                    with st.expander("📊 Category Distribution", expanded=True):
+                        for cat, count in categories.most_common():
+                            pct = count / len(events) * 100
+                            st.progress(pct / 100, text=f"{cat}: {count} ({pct:.1f}%)")
+
+                    # Event list with full details
+                    st.markdown("#### Event Details")
+
+                    for i, e in enumerate(events):
+                        with st.expander(
+                            f"🎯 Event {i+1}: {e.clean_text[:60]}...",
+                            expanded=i == 0,
+                        ):
+                            detail_cols = st.columns([2, 1])
+
+                            with detail_cols[0]:
+                                st.markdown(f"**Clean Text:**\n{e.clean_text}")
+                                if e.raw_transcript_snippet:
+                                    st.markdown("**Raw Snippet:**")
+                                    st.code(e.raw_transcript_snippet[:500])
+                                if e.gemini_reasoning:
+                                    st.markdown("**Gemini Reasoning:**")
+                                    st.info(e.gemini_reasoning)
+
+                            with detail_cols[1]:
+                                st.markdown("**Metadata:**")
+                                st.code(f"event_id: {e.event_id}")
+                                st.code(f"category: {e.category}")
+                                st.code(f"speaker: {e.speaker}")
+                                st.code(f"sentiment: {e.sentiment}")
+                                st.code(f"day_of_week: {e.day_of_week}")
+                                st.code(f"hour_of_day: {e.hour_of_day}")
+                                st.code(f"start_ts: {e.start_ts}")
+                                st.code(f"end_ts: {e.end_ts}")
+                                if e.keywords:
+                                    st.markdown(
+                                        f"**Keywords:** {', '.join(e.keywords)}"
                                     )
-                                    st.success(f"Cached {len(transcript):,} chars")
-                                    st.rerun()
-                                    break
+                                if e.qdrant_point_id:
+                                    st.code(f"qdrant_point_id: {e.qdrant_point_id}")
+                else:
+                    st.info("No events extracted yet. Process this recording first.")
+
+            # ─────────────────────────────────────────────────────────────
+            # TAB: Qdrant — Vector store exploration
+            # ─────────────────────────────────────────────────────────────
+            with tab_qdrant:
+                if not qdrant_client:
+                    st.warning("Qdrant not connected. Start Qdrant to explore vectors.")
+                else:
+                    st.markdown("#### Qdrant Vector Storage")
+
+                    # Get events for this recording from Qdrant
+                    try:
+                        from qdrant_client.models import (
+                            Filter,
+                            FieldCondition,
+                            MatchValue,
+                        )
+
+                        points, _ = qdrant_client.client.scroll(
+                            collection_name=qdrant_client.collection_name,
+                            scroll_filter=Filter(
+                                must=[
+                                    FieldCondition(
+                                        key="recording_id",
+                                        match=MatchValue(value=rec.recording_id),
+                                    )
+                                ]
+                            ),
+                            limit=100,
+                            with_vectors=True,
+                            with_payload=True,
+                        )
+
+                        if points:
+                            st.success(
+                                f"Found **{len(points)}** vectors in Qdrant for this recording"
+                            )
+
+                            # Vector stats
+                            vec_cols = st.columns(4)
+                            vec_cols[0].metric("🔢 Vectors", len(points))
+                            vec_cols[1].metric(
+                                "📐 Dimensions",
+                                len(points[0].vector) if points[0].vector else 0,
+                            )
+                            vec_cols[2].metric(
+                                "📊 Avg Vector Norm",
+                                f"{sum(sum(v**2 for v in p.vector)**0.5 for p in points if p.vector) / len(points):.2f}",
+                            )
+                            vec_cols[3].metric(
+                                "🏷️ Payload Fields",
+                                (
+                                    len(points[0].payload.keys())
+                                    if points[0].payload
+                                    else 0
+                                ),
+                            )
+
+                            # Payload schema exploration
+                            st.markdown("#### Payload Schema")
+                            if points[0].payload:
+                                schema_data = {}
+                                for key, value in points[0].payload.items():
+                                    schema_data[key] = {
+                                        "type": type(value).__name__,
+                                        "example": (
+                                            str(value)[:100] if value else "None"
+                                        ),
+                                    }
+                                st.json(schema_data)
+
+                            # Full point inspection
+                            st.markdown("#### Point Inspector")
+                            point_options = [
+                                f"{p.id[:16]}... ({p.payload.get('category', '?')})"
+                                for p in points
+                            ]
+                            selected_point_idx = st.selectbox(
+                                "Select point to inspect",
+                                range(len(point_options)),
+                                format_func=lambda i: point_options[i],
+                            )
+
+                            if selected_point_idx is not None:
+                                point = points[selected_point_idx]
+
+                                pt_cols = st.columns([2, 1])
+
+                                with pt_cols[0]:
+                                    st.markdown("**Full Payload:**")
+                                    st.json(point.payload)
+
+                                with pt_cols[1]:
+                                    st.markdown("**Vector Preview (first 20 dims):**")
+                                    if point.vector:
+                                        vec_preview = point.vector[:20]
+                                        st.code(
+                                            "\n".join(
+                                                f"[{i}]: {v:.6f}"
+                                                for i, v in enumerate(vec_preview)
+                                            )
+                                        )
+                                        st.caption(
+                                            f"... and {len(point.vector) - 20} more dimensions"
+                                        )
+
+                                # Find similar vectors
+                                st.markdown("#### 🔗 Find Similar Events")
+                                if st.button(
+                                    "Search Similar Vectors", key="similar_search"
+                                ):
+                                    similar = qdrant_client.client.query_points(
+                                        collection_name=qdrant_client.collection_name,
+                                        query=point.vector,
+                                        limit=5,
+                                    ).points
+
+                                    st.markdown("**Top 5 Similar Events:**")
+                                    for sim in similar:
+                                        if sim.id != point.id:
+                                            st.markdown(
+                                                f"- **Score: {sim.score:.4f}** | "
+                                                f"{sim.payload.get('category', '?')} | "
+                                                f"{sim.payload.get('clean_text', '')[:80]}..."
+                                            )
                         else:
-                            st.warning("No transcript found in Plaud")
-                    except Exception as e:
-                        st.error(f"Failed: {e}")
+                            st.info(
+                                "No vectors found in Qdrant for this recording. Index it first."
+                            )
+                    except Exception as ex:
+                        st.error(f"Qdrant query error: {ex}")
+
+            # ─────────────────────────────────────────────────────────────
+            # TAB: Actions — Processing controls
+            # ─────────────────────────────────────────────────────────────
+            with tab_actions:
+                st.markdown("#### Processing Actions")
+
+                action_cols = st.columns(4)
+                with action_cols[0]:
+                    if st.button(
+                        "🧠 Process with Gemini",
+                        width="stretch",
+                        disabled=not status["gemini"],
+                    ):
+                        code = run_pipeline_command(
+                            [
+                                "--process",
+                                "--recording-id",
+                                rec.recording_id,
+                                "--limit",
+                                "1",
+                            ],
+                            f"Processing {rec.recording_id[:16]}...",
+                        )
+                        if code == 0:
+                            st.success("Done!")
+                            st.rerun()
+
+                with action_cols[1]:
+                    if st.button(
+                        "📤 Index to Qdrant",
+                        width="stretch",
+                        disabled=not status["gemini"],
+                    ):
+                        code = run_pipeline_command(
+                            [
+                                "--index",
+                                "--recording-id",
+                                rec.recording_id,
+                                "--limit",
+                                "50",
+                            ],
+                            f"Indexing {rec.recording_id[:16]}...",
+                        )
+                        if code == 0:
+                            st.success("Done!")
+                            st.rerun()
+
+                with action_cols[2]:
+                    if st.button(
+                        "🔄 Force Reprocess",
+                        width="stretch",
+                        disabled=not status["gemini"],
+                    ):
+                        code = run_pipeline_command(
+                            [
+                                "--process",
+                                "--recording-id",
+                                rec.recording_id,
+                                "--force",
+                                "--limit",
+                                "1",
+                            ],
+                            f"Force reprocessing...",
+                        )
+                        if code == 0:
+                            st.success("Done!")
+                            st.rerun()
+
+                with action_cols[3]:
+                    if st.button(
+                        "📝 Fetch Transcript",
+                        width="stretch",
+                        disabled=not status["plaud"],
+                    ):
+                        try:
+                            client = PlaudClient()
+                            file_details = client.get_recording(rec.recording_id)
+                            for source in file_details.get("source_list", []):
+                                if source.get("data_type") == "transaction":
+                                    segments = json.loads(
+                                        source.get("data_content", "[]")
+                                    )
+                                    transcript = " ".join(
+                                        s.get("content", "") for s in segments
+                                    )
+                                    if transcript.strip():
+                                        set_chronos_recording_transcript(
+                                            session, rec.recording_id, transcript
+                                        )
+                                        st.success(f"Cached {len(transcript):,} chars")
+                                        st.rerun()
+                                    break
+                            else:
+                                st.warning("No transcript found in Plaud")
+                        except Exception as e:
+                            st.error(f"Failed: {e}")
 
             # Show transcript if available
             if rec.transcript:
@@ -967,623 +1546,879 @@ def page_plaud(settings, status: Dict[str, Any]):
 
 
 # ---------------------------------------------------------------------------
-# PAGE: TIMELINE (Super Robust Visual Timeline)
+# PAGE: TIMELINE (ULTIMATE Qdrant-Powered Timeline)
 # ---------------------------------------------------------------------------
 
 
 def page_timeline(settings, status: Dict[str, Any]):
     """
-    Beautiful, interactive timeline that shows EVERYTHING.
+    🔮 ULTIMATE Timeline — Everything from Qdrant exposed.
 
     Features:
-    - Multi-scale timeline (zoom from months → hours)
-    - Heatmap: day-of-week × hour patterns
-    - Category color-coding
-    - Sentiment overlay
-    - Drill-down detail panel
+    - Direct Qdrant collection stats and schema
+    - Full payload field exploration
+    - Advanced filtering with all Qdrant operators
+    - Scroll API for bulk data access
+    - Faceting by any indexed field
+    - Similarity search from timeline
+    - Raw query builder
     """
-    st.header("📅 Timeline")
+    st.header("📅 Timeline & Qdrant Explorer")
     st.markdown(
-        '<p class="subtitle">Your complete cognitive timeline — zoom, filter, explore</p>',
+        '<p class="subtitle">Your complete knowledge timeline with full Qdrant access</p>',
         unsafe_allow_html=True,
     )
 
+    # Initialize connections
     init_db()
     session = SessionLocal()
 
+    qdrant_client = None
+    qdrant_stats = None
+    if status["qdrant"]:
+        try:
+            qdrant_client = ChronosQdrantClient()
+            qdrant_stats = qdrant_client.get_stats()
+        except Exception as ex:
+            st.error(f"Qdrant connection error: {ex}")
+
     try:
-        # Load all events
-        events = (
+        # ═══════════════════════════════════════════════════════════════
+        # QDRANT COLLECTION OVERVIEW
+        # ═══════════════════════════════════════════════════════════════
+        if qdrant_stats:
+            st.markdown("### 🗄️ Qdrant Collection Overview")
+
+            stat_cols = st.columns(5)
+            stat_cols[0].metric("📊 Collection", qdrant_stats["collection_name"])
+            stat_cols[1].metric("🔢 Total Points", f"{qdrant_stats['points_count']:,}")
+            stat_cols[2].metric("📐 Vectors", f"{qdrant_stats['vectors_count']:,}")
+            stat_cols[3].metric(
+                "🔍 Indexed", f"{qdrant_stats['indexed_vectors_count']:,}"
+            )
+            stat_cols[4].metric("🟢 Status", qdrant_stats["status"])
+
+            # Get collection info for schema
+            try:
+                collection_info = qdrant_client.client.get_collection(
+                    qdrant_client.collection_name
+                )
+
+                with st.expander("🔧 Collection Configuration", expanded=False):
+                    config_cols = st.columns(2)
+
+                    with config_cols[0]:
+                        st.markdown("**Vector Config:**")
+                        if hasattr(collection_info.config, "params"):
+                            params = collection_info.config.params
+                            st.code(f"size: {getattr(params, 'vectors', {})}")
+                        st.code(
+                            f"optimizer_status: {getattr(collection_info, 'optimizer_status', 'N/A')}"
+                        )
+
+                    with config_cols[1]:
+                        st.markdown("**Payload Schema (Indexed Fields):**")
+                        if (
+                            hasattr(collection_info, "payload_schema")
+                            and collection_info.payload_schema
+                        ):
+                            for (
+                                field_name,
+                                field_info,
+                            ) in collection_info.payload_schema.items():
+                                data_type = getattr(field_info, "data_type", "unknown")
+                                st.code(f"{field_name}: {data_type}")
+            except Exception:
+                pass
+
+        # ═══════════════════════════════════════════════════════════════
+        # MAIN TABS
+        # ═══════════════════════════════════════════════════════════════
+        tab_explore, tab_heatmap, tab_query, tab_facets, tab_raw = st.tabs(
+            [
+                "🔍 Explore",
+                "🔥 Heatmap",
+                "🎯 Query Builder",
+                "📊 Facets",
+                "🔧 Raw Access",
+            ]
+        )
+
+        # Load data from SQLite for filtering UI
+        events_db = (
             session.query(ChronosEventDB).order_by(ChronosEventDB.start_ts.desc()).all()
         )
-        recordings = session.query(ChronosRecordingDB).all()
+        recordings_db = session.query(ChronosRecordingDB).all()
+        rec_lookup = {r.recording_id: r for r in recordings_db}
 
-        if not events:
-            st.info(
-                "No events yet. Go to **Pipeline** to fetch and process recordings first."
-            )
-            return
+        # DYNAMIC CATEGORY COLORS — Auto-generated for ANY category
+        all_cats_in_data = sorted(set(e.category or "unknown" for e in events_db))
+        CATEGORY_COLORS = get_dynamic_category_colors(all_cats_in_data)
 
-        # Convert to dicts for processing
-        events_data = []
-        for e in events:
-            events_data.append(
-                {
-                    "event_id": e.event_id,
-                    "recording_id": e.recording_id,
-                    "start_ts": e.start_ts,
-                    "end_ts": e.end_ts,
-                    "day_of_week": e.day_of_week,
-                    "hour_of_day": e.hour_of_day,
-                    "clean_text": e.clean_text,
-                    "category": e.category or "unknown",
-                    "sentiment": e.sentiment or 0.0,
-                    "keywords": e.keywords or [],
-                    "speaker": e.speaker or "self_talk",
-                }
-            )
-
-        # Build recordings lookup
-        rec_lookup = {r.recording_id: r for r in recordings}
-
-        # --------------- FILTERS ---------------
-        st.markdown("### 🎛️ Filters")
-        filter_cols = st.columns([2, 2, 2, 1])
-
-        with filter_cols[0]:
-            # Date range
-            min_date = min(e["start_ts"].date() for e in events_data)
-            max_date = max(e["start_ts"].date() for e in events_data)
-            date_range = st.date_input(
-                "Date range",
-                value=(min_date, max_date),
-                min_value=min_date,
-                max_value=max_date,
-            )
-            if isinstance(date_range, tuple) and len(date_range) == 2:
-                start_date, end_date = date_range
+        # ─────────────────────────────────────────────────────────────────
+        # TAB: EXPLORE — Timeline with full filters
+        # ─────────────────────────────────────────────────────────────────
+        with tab_explore:
+            if not events_db:
+                st.info("No events yet. Process recordings first.")
             else:
-                start_date, end_date = min_date, max_date
+                st.markdown("### 🎛️ Filters")
 
-        with filter_cols[1]:
-            # Categories
-            all_categories = sorted(set(e["category"] for e in events_data))
-            selected_categories = st.multiselect(
-                "Categories",
-                all_categories,
-                default=all_categories,
-            )
-
-        with filter_cols[2]:
-            # Days of week
-            all_days = [
-                "Monday",
-                "Tuesday",
-                "Wednesday",
-                "Thursday",
-                "Friday",
-                "Saturday",
-                "Sunday",
-            ]
-            selected_days = st.multiselect(
-                "Days",
-                all_days,
-                default=all_days,
-            )
-
-        with filter_cols[3]:
-            # Hour range
-            hour_range = st.slider("Hours", 0, 23, (0, 23))
-
-        # Apply filters
-        filtered_events = [
-            e
-            for e in events_data
-            if (e["start_ts"].date() >= start_date and e["start_ts"].date() <= end_date)
-            and e["category"] in selected_categories
-            and e["day_of_week"] in selected_days
-            and e["hour_of_day"] >= hour_range[0]
-            and e["hour_of_day"] <= hour_range[1]
-        ]
-
-        st.markdown(
-            f"**Showing {len(filtered_events):,} of {len(events_data):,} events**"
-        )
-
-        # --------------- TABS ---------------
-        tab_timeline, tab_heatmap, tab_categories, tab_sentiment, tab_list = st.tabs(
-            ["📊 Timeline", "🔥 Heatmap", "📁 Categories", "💭 Sentiment", "📋 List"]
-        )
-
-        # Category colors
-        CATEGORY_COLORS = {
-            "work": "#4A90D9",
-            "personal": "#9B59B6",
-            "meeting": "#E67E22",
-            "deep_work": "#2ECC71",
-            "break": "#95A5A6",
-            "reflection": "#1ABC9C",
-            "idea": "#F1C40F",
-            "unknown": "#7F8C8D",
-        }
-
-        # --------------- TAB: INTERACTIVE TIMELINE ---------------
-        with tab_timeline:
-            st.markdown("#### Interactive Timeline")
-            st.markdown(
-                "*Zoom with scroll wheel, pan by dragging, click items for details*"
-            )
-
-            # Generate vis-timeline items
-            timeline_items = []
-            for i, e in enumerate(filtered_events[:500]):  # Limit for performance
-                color = CATEGORY_COLORS.get(e["category"], "#7F8C8D")
-                # Truncate text for timeline display
-                display_text = (
-                    e["clean_text"][:80] + "..."
-                    if len(e["clean_text"]) > 80
-                    else e["clean_text"]
-                )
-                timeline_items.append(
-                    {
-                        "id": i,
-                        "content": display_text.replace('"', '\\"').replace("\n", " "),
-                        "start": e["start_ts"].isoformat(),
-                        "end": (
-                            e["end_ts"].isoformat()
-                            if e["end_ts"] != e["start_ts"]
-                            else None
-                        ),
-                        "group": e["category"],
-                        "style": f"background-color: {color}; border-color: {color};",
-                        "event_id": e["event_id"],
-                    }
-                )
-
-            # Generate groups (categories)
-            groups = [
-                {
-                    "id": cat,
-                    "content": cat.replace("_", " ").title(),
-                    "style": f"color: {CATEGORY_COLORS.get(cat, '#7F8C8D')}",
-                }
-                for cat in sorted(selected_categories)
-            ]
-
-            # Build the timeline HTML
-            timeline_html = f"""
-            <link rel="stylesheet" href="app/static/lib/vis-timeline/vis-timeline-graph2d.min.css">
-            <script src="app/static/lib/vis-timeline/vis-timeline-graph2d.min.js"></script>
-            <style>
-                #timeline-container {{
-                    width: 100%;
-                    height: 500px;
-                    border: 1px solid rgba(255,255,255,0.1);
-                    border-radius: 8px;
-                    background: rgba(30, 30, 46, 0.8);
-                }}
-                .vis-item {{
-                    border-radius: 4px;
-                    font-size: 11px;
-                    padding: 2px 6px;
-                }}
-                .vis-item.vis-selected {{
-                    border-width: 2px;
-                    box-shadow: 0 0 10px rgba(255,255,255,0.3);
-                }}
-                .vis-label {{
-                    color: #cdd6f4;
-                    font-weight: 600;
-                }}
-                .vis-time-axis .vis-text {{
-                    color: #a6adc8;
-                }}
-                .vis-panel.vis-background {{
-                    background: rgba(30, 30, 46, 0.95);
-                }}
-            </style>
-            <div id="timeline-container"></div>
-            <script>
-                var items = new vis.DataSet({json.dumps(timeline_items)});
-                var groups = new vis.DataSet({json.dumps(groups)});
-                var container = document.getElementById('timeline-container');
-                var options = {{
-                    height: '500px',
-                    stack: true,
-                    showCurrentTime: true,
-                    zoomMin: 1000 * 60 * 60,  // 1 hour
-                    zoomMax: 1000 * 60 * 60 * 24 * 365,  // 1 year
-                    orientation: 'top',
-                    groupOrder: 'content'
-                }};
-                var timeline = new vis.Timeline(container, items, groups, options);
-            </script>
-            """
-
-            # Group events by date for a simple bar chart
-            from collections import defaultdict
-
-            daily_counts = defaultdict(lambda: defaultdict(int))
-            for e in filtered_events:
-                date_str = e["start_ts"].strftime("%Y-%m-%d")
-                daily_counts[date_str][e["category"]] += 1
-
-            if daily_counts:
-                import pandas as pd
-
-                # Create DataFrame for stacked bar
-                dates = sorted(daily_counts.keys())
-                chart_data = []
-                for date in dates:
-                    row = {"date": date}
-                    for cat in selected_categories:
-                        row[cat] = daily_counts[date].get(cat, 0)
-                    chart_data.append(row)
-
-                df = pd.DataFrame(chart_data)
-                df["date"] = pd.to_datetime(df["date"])
-                df = df.set_index("date")
-
-                st.bar_chart(df, width="stretch", height=400)
-
-            # Simple day-by-day event timeline
-            st.markdown("#### Daily Event Flow")
-
-            # Group by date
-            events_by_date = defaultdict(list)
-            for e in filtered_events:
-                date_str = e["start_ts"].strftime("%Y-%m-%d (%A)")
-                events_by_date[date_str].append(e)
-
-            # Show recent days with expandable details
-            for date_str in sorted(events_by_date.keys(), reverse=True)[:14]:
-                day_events = events_by_date[date_str]
-                with st.expander(
-                    f"📅 {date_str} — {len(day_events)} events", expanded=False
-                ):
-                    for e in sorted(day_events, key=lambda x: x["start_ts"]):
-                        time_str = e["start_ts"].strftime("%H:%M")
-                        cat_color = CATEGORY_COLORS.get(e["category"], "#7F8C8D")
-                        sentiment_emoji = (
-                            "😊"
-                            if e["sentiment"] > 0.3
-                            else "😐" if e["sentiment"] > -0.3 else "😔"
-                        )
-
-                        st.markdown(
-                            f"""<div style="
-                                border-left: 4px solid {cat_color};
-                                padding: 8px 12px;
-                                margin: 4px 0;
-                                background: rgba(49, 50, 68, 0.6);
-                                border-radius: 0 8px 8px 0;
-                            ">
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <span><b>{time_str}</b> · <span style="color: {cat_color}">{e['category'].replace('_', ' ').title()}</span></span>
-                                    <span>{sentiment_emoji} {e['sentiment']:.2f}</span>
-                                </div>
-                                <div style="margin-top: 6px; font-size: 0.9rem;">{e['clean_text'][:300]}{'...' if len(e['clean_text']) > 300 else ''}</div>
-                                <div style="margin-top: 4px; opacity: 0.6; font-size: 0.75rem;">
-                                    {', '.join(e['keywords'][:5]) if e['keywords'] else '—'}
-                                </div>
-                            </div>""",
-                            unsafe_allow_html=True,
-                        )
-
-        # --------------- TAB: HEATMAP ---------------
-        with tab_heatmap:
-            st.markdown("#### Activity Heatmap")
-            st.markdown("*When do you record? Discover your temporal patterns.*")
-
-            import pandas as pd
-            import numpy as np
-
-            # Build heatmap matrix: hour (0-23) × day (Mon-Sun)
-            day_order = [
-                "Monday",
-                "Tuesday",
-                "Wednesday",
-                "Thursday",
-                "Friday",
-                "Saturday",
-                "Sunday",
-            ]
-            heatmap_data = np.zeros((24, 7))
-
-            for e in filtered_events:
-                day_idx = (
-                    day_order.index(e["day_of_week"])
-                    if e["day_of_week"] in day_order
-                    else 0
-                )
-                hour_idx = e["hour_of_day"]
-                heatmap_data[hour_idx, day_idx] += 1
-
-            # Create DataFrame
-            heatmap_df = pd.DataFrame(
-                heatmap_data,
-                index=[f"{h:02d}:00" for h in range(24)],
-                columns=day_order,
-            )
-
-            # Display as heatmap using Streamlit
-            st.markdown("##### Events by Hour × Day of Week")
-
-            # Use plotly for proper heatmap
-            try:
-                import plotly.express as px
-                import plotly.graph_objects as go
-
-                fig = px.imshow(
-                    heatmap_df.values,
-                    labels=dict(x="Day of Week", y="Hour of Day", color="Event Count"),
-                    x=day_order,
-                    y=[f"{h:02d}:00" for h in range(24)],
-                    color_continuous_scale="Viridis",
-                    aspect="auto",
-                )
-                fig.update_layout(
-                    height=600,
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(color="#cdd6f4"),
-                )
-                st.plotly_chart(fig, width="stretch")
-            except ImportError:
-                # Fallback to simple table with color coding
-                st.dataframe(
-                    heatmap_df.style.background_gradient(cmap="viridis", axis=None),
-                    width="stretch",
-                )
-
-            # Summary stats
-            stat_cols = st.columns(4)
-            with stat_cols[0]:
-                busiest_hour = heatmap_data.sum(axis=1).argmax()
-                st.metric("🔥 Busiest Hour", f"{busiest_hour:02d}:00")
-            with stat_cols[1]:
-                busiest_day_idx = heatmap_data.sum(axis=0).argmax()
-                st.metric("📅 Busiest Day", day_order[busiest_day_idx])
-            with stat_cols[2]:
-                total_events = len(filtered_events)
-                total_days = len(set(e["start_ts"].date() for e in filtered_events))
-                avg_per_day = total_events / max(total_days, 1)
-                st.metric("📊 Avg Events/Day", f"{avg_per_day:.1f}")
-            with stat_cols[3]:
-                peak_count = int(heatmap_data.max())
-                st.metric("⚡ Peak Hour Count", peak_count)
-
-        # --------------- TAB: CATEGORIES ---------------
-        with tab_categories:
-            st.markdown("#### Category Distribution")
-
-            import pandas as pd
-            from collections import Counter
-
-            # Count by category
-            cat_counts = Counter(e["category"] for e in filtered_events)
-            cat_df = pd.DataFrame(
-                [
-                    {
-                        "Category": cat.replace("_", " ").title(),
-                        "Count": count,
-                        "color": CATEGORY_COLORS.get(cat, "#7F8C8D"),
-                    }
-                    for cat, count in cat_counts.most_common()
-                ]
-            )
-
-            if not cat_df.empty:
-                col1, col2 = st.columns([2, 1])
-
-                with col1:
-                    try:
-                        import plotly.express as px
-
-                        fig = px.pie(
-                            cat_df,
-                            values="Count",
-                            names="Category",
-                            color="Category",
-                            color_discrete_map={
-                                cat.replace("_", " ").title(): CATEGORY_COLORS.get(
-                                    cat, "#7F8C8D"
-                                )
-                                for cat in cat_counts.keys()
-                            },
-                            hole=0.4,
-                        )
-                        fig.update_layout(
-                            height=400,
-                            paper_bgcolor="rgba(0,0,0,0)",
-                            font=dict(color="#cdd6f4"),
-                        )
-                        st.plotly_chart(fig, width="stretch")
-                    except ImportError:
-                        st.bar_chart(cat_df.set_index("Category")["Count"])
-
-                with col2:
-                    st.markdown("##### Breakdown")
-                    for _, row in cat_df.iterrows():
-                        pct = row["Count"] / len(filtered_events) * 100
-                        st.markdown(
-                            f"**{row['Category']}**: {row['Count']} ({pct:.1f}%)"
-                        )
-
-            # Category timeline (stacked area)
-            st.markdown("##### Category Trends Over Time")
-            from collections import defaultdict
-
-            cat_by_date = defaultdict(lambda: defaultdict(int))
-            for e in filtered_events:
-                date_str = e["start_ts"].strftime("%Y-%m-%d")
-                cat_by_date[date_str][e["category"]] += 1
-
-            if cat_by_date:
-                dates = sorted(cat_by_date.keys())
-                trend_data = []
-                for date in dates:
-                    row = {"date": date}
-                    for cat in selected_categories:
-                        row[cat.replace("_", " ").title()] = cat_by_date[date].get(
-                            cat, 0
-                        )
-                    trend_data.append(row)
-
-                trend_df = pd.DataFrame(trend_data)
-                trend_df["date"] = pd.to_datetime(trend_df["date"])
-                trend_df = trend_df.set_index("date")
-
-                st.area_chart(trend_df, width="stretch", height=300)
-
-        # --------------- TAB: SENTIMENT ---------------
-        with tab_sentiment:
-            st.markdown("#### Sentiment Analysis")
-            st.markdown("*Track your emotional patterns over time*")
-
-            import pandas as pd
-
-            # Sentiment over time
-            sent_data = [
-                {
-                    "date": e["start_ts"],
-                    "sentiment": e["sentiment"],
-                    "category": e["category"],
-                    "text": e["clean_text"][:100],
-                }
-                for e in filtered_events
-                if e["sentiment"] is not None
-            ]
-
-            if sent_data:
-                sent_df = pd.DataFrame(sent_data)
-
-                # Rolling average
-                sent_df = sent_df.sort_values("date")
-                sent_df["rolling_avg"] = (
-                    sent_df["sentiment"].rolling(window=10, min_periods=1).mean()
-                )
-
-                col1, col2 = st.columns([3, 1])
-
-                with col1:
-                    st.markdown("##### Sentiment Timeline (Rolling Avg)")
-                    chart_df = sent_df.set_index("date")[["sentiment", "rolling_avg"]]
-                    st.line_chart(chart_df, width="stretch", height=300)
-
-                with col2:
-                    avg_sent = sent_df["sentiment"].mean()
-                    emoji = (
-                        "😊" if avg_sent > 0.2 else "😐" if avg_sent > -0.2 else "😔"
+                # Convert events to dicts
+                events_data = []
+                for e in events_db:
+                    events_data.append(
+                        {
+                            "event_id": e.event_id,
+                            "recording_id": e.recording_id,
+                            "start_ts": e.start_ts,
+                            "end_ts": e.end_ts,
+                            "day_of_week": e.day_of_week,
+                            "hour_of_day": e.hour_of_day,
+                            "clean_text": e.clean_text,
+                            "category": e.category or "unknown",
+                            "sentiment": e.sentiment or 0.0,
+                            "keywords": e.keywords or [],
+                            "speaker": e.speaker or "self_talk",
+                            "qdrant_point_id": e.qdrant_point_id,
+                        }
                     )
-                    st.metric("Average Sentiment", f"{emoji} {avg_sent:.2f}")
 
-                    pos_pct = (sent_df["sentiment"] > 0.2).sum() / len(sent_df) * 100
-                    st.metric("Positive Events", f"{pos_pct:.1f}%")
+                # Filter row 1 - Main filters
+                filter_cols = st.columns([2, 2, 2, 2])
 
-                    neg_pct = (sent_df["sentiment"] < -0.2).sum() / len(sent_df) * 100
-                    st.metric("Negative Events", f"{neg_pct:.1f}%")
+                with filter_cols[0]:
+                    min_date = min(e["start_ts"].date() for e in events_data)
+                    max_date = max(e["start_ts"].date() for e in events_data)
+                    date_range = st.date_input(
+                        "📅 Date Range",
+                        value=(min_date, max_date),
+                        min_value=min_date,
+                        max_value=max_date,
+                    )
+                    start_date, end_date = (
+                        date_range
+                        if isinstance(date_range, tuple) and len(date_range) == 2
+                        else (min_date, max_date)
+                    )
 
-                # Sentiment by category
-                st.markdown("##### Sentiment by Category")
-                cat_sent = (
-                    sent_df.groupby("category")["sentiment"]
-                    .agg(["mean", "count"])
-                    .reset_index()
-                )
-                cat_sent.columns = ["Category", "Avg Sentiment", "Count"]
-                cat_sent["Category"] = cat_sent["Category"].apply(
-                    lambda x: x.replace("_", " ").title()
-                )
-                st.dataframe(cat_sent, width="stretch", hide_index=True)
+                with filter_cols[1]:
+                    all_categories = sorted(set(e["category"] for e in events_data))
+                    selected_categories = st.multiselect(
+                        f"📁 Categories ({len(all_categories)})",
+                        all_categories,
+                        default=all_categories,
+                    )
 
-                # Most positive/negative
-                st.markdown("##### Extremes")
-                extremes_col1, extremes_col2 = st.columns(2)
+                with filter_cols[2]:
+                    # Dynamic days - only show days that have data
+                    all_days_in_data = sorted(
+                        set(e["day_of_week"] for e in events_data if e["day_of_week"]),
+                        key=lambda d: (
+                            [
+                                "Monday",
+                                "Tuesday",
+                                "Wednesday",
+                                "Thursday",
+                                "Friday",
+                                "Saturday",
+                                "Sunday",
+                            ].index(d)
+                            if d
+                            in [
+                                "Monday",
+                                "Tuesday",
+                                "Wednesday",
+                                "Thursday",
+                                "Friday",
+                                "Saturday",
+                                "Sunday",
+                            ]
+                            else 99
+                        ),
+                    )
+                    selected_days = st.multiselect(
+                        f"📆 Days ({len(all_days_in_data)})",
+                        all_days_in_data,
+                        default=all_days_in_data,
+                    )
 
-                with extremes_col1:
-                    st.markdown("**Most Positive Events**")
-                    top_pos = sent_df.nlargest(3, "sentiment")
-                    for _, row in top_pos.iterrows():
-                        st.success(f"😊 {row['sentiment']:.2f} — {row['text']}...")
+                with filter_cols[3]:
+                    # Dynamic speakers
+                    all_speakers_in_data = sorted(
+                        set(e["speaker"] for e in events_data if e.get("speaker"))
+                    )
+                    if all_speakers_in_data:
+                        selected_speakers = st.multiselect(
+                            f"🎤 Speakers ({len(all_speakers_in_data)})",
+                            all_speakers_in_data,
+                            default=all_speakers_in_data,
+                        )
+                    else:
+                        selected_speakers = []
 
-                with extremes_col2:
-                    st.markdown("**Most Negative Events**")
-                    top_neg = sent_df.nsmallest(3, "sentiment")
-                    for _, row in top_neg.iterrows():
-                        st.error(f"😔 {row['sentiment']:.2f} — {row['text']}...")
-            else:
-                st.info(
-                    "No sentiment data available. Process recordings to extract sentiment."
-                )
+                # Filter row 2 - Ranges
+                range_cols = st.columns([1, 1, 1])
 
-        # --------------- TAB: LIST VIEW ---------------
-        with tab_list:
-            st.markdown("#### Full Event List")
+                with range_cols[0]:
+                    # Dynamic hour range based on data
+                    min_hour = min(e["hour_of_day"] for e in events_data)
+                    max_hour = max(e["hour_of_day"] for e in events_data)
+                    hour_range = st.slider("⏰ Hours", 0, 23, (min_hour, max_hour))
 
-            import pandas as pd
+                with range_cols[1]:
+                    # Dynamic sentiment range
+                    sentiments_in_data = [
+                        e["sentiment"]
+                        for e in events_data
+                        if e["sentiment"] is not None
+                    ]
+                    if sentiments_in_data:
+                        min_sent = min(sentiments_in_data)
+                        max_sent = max(sentiments_in_data)
+                    else:
+                        min_sent, max_sent = -1.0, 1.0
+                    sentiment_range = st.slider(
+                        "💭 Sentiment", -1.0, 1.0, (min_sent, max_sent)
+                    )
 
-            # Search within events
-            search_text = st.text_input("🔍 Search events", placeholder="keyword...")
+                with range_cols[2]:
+                    # Quick stats about filter state
+                    st.markdown(f"**Data range:** {min_date} to {max_date}")
+                    st.markdown(f"**Hours with data:** {min_hour}:00 - {max_hour}:00")
 
-            display_events = filtered_events
-            if search_text:
-                display_events = [
+                # Apply filters (including speaker if available)
+                filtered_events = [
                     e
-                    for e in filtered_events
-                    if search_text.lower() in e["clean_text"].lower()
-                    or search_text.lower() in " ".join(e["keywords"]).lower()
+                    for e in events_data
+                    if (
+                        e["start_ts"].date() >= start_date
+                        and e["start_ts"].date() <= end_date
+                    )
+                    and e["category"] in selected_categories
+                    and e["day_of_week"] in selected_days
+                    and (not selected_speakers or e.get("speaker") in selected_speakers)
+                    and e["hour_of_day"] >= hour_range[0]
+                    and e["hour_of_day"] <= hour_range[1]
+                    and (e["sentiment"] or 0) >= sentiment_range[0]
+                    and (e["sentiment"] or 0) <= sentiment_range[1]
                 ]
-                st.markdown(
-                    f"*Found {len(display_events)} events matching '{search_text}'*"
-                )
-
-            # Pagination
-            events_per_page = 25
-            total_pages = max(
-                1, (len(display_events) + events_per_page - 1) // events_per_page
-            )
-            page_num = st.number_input("Page", 1, total_pages, 1)
-
-            start_idx = (page_num - 1) * events_per_page
-            end_idx = start_idx + events_per_page
-            page_events = display_events[start_idx:end_idx]
-
-            # Display as cards
-            for e in page_events:
-                cat_color = CATEGORY_COLORS.get(e["category"], "#7F8C8D")
-                time_str = e["start_ts"].strftime("%Y-%m-%d %H:%M")
-                duration = (e["end_ts"] - e["start_ts"]).total_seconds()
-
-                rec = rec_lookup.get(e["recording_id"])
-                rec_title = rec.title if rec and rec.title else e["recording_id"][:16]
 
                 st.markdown(
-                    f"""<div class="event-card">
-                        <div style="display: flex; justify-content: space-between;">
-                            <div>
-                                <span class="status-pill" style="background: {cat_color}20; border-color: {cat_color};">{e['category'].replace('_', ' ').title()}</span>
-                                <span class="muted">{time_str}</span>
-                                <span class="muted">· {duration:.0f}s</span>
-                            </div>
-                            <div>
-                                <span style="font-size: 0.8rem;">{'😊' if e['sentiment'] > 0.3 else '😐' if e['sentiment'] > -0.3 else '😔'} {e['sentiment']:.2f}</span>
-                            </div>
-                        </div>
-                        <div style="margin-top: 8px;">{e['clean_text']}</div>
-                        <div style="margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap;">
-                            {''.join(f'<span style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 12px; font-size: 0.7rem;">{kw}</span>' for kw in e['keywords'][:5])}
-                        </div>
-                        <div class="muted" style="margin-top: 6px;">
-                            📎 {rec_title}
-                        </div>
-                    </div>""",
-                    unsafe_allow_html=True,
+                    f"**Showing {len(filtered_events):,} of {len(events_data):,} events** "
+                    f"({len(all_categories)} categories, {len(all_days_in_data)} days, {len(all_speakers_in_data)} speakers)"
                 )
 
+                # Summary stats
+                if filtered_events:
+                    stat_cols = st.columns(6)
+                    categories = Counter(e["category"] for e in filtered_events)
+                    sentiments = [
+                        e["sentiment"] for e in filtered_events if e["sentiment"]
+                    ]
+                    avg_sentiment = (
+                        sum(sentiments) / len(sentiments) if sentiments else 0
+                    )
+                    total_duration = sum(
+                        (e["end_ts"] - e["start_ts"]).total_seconds()
+                        for e in filtered_events
+                    )
+
+                    stat_cols[0].metric("🎯 Events", len(filtered_events))
+                    stat_cols[1].metric("📁 Categories", len(categories))
+                    stat_cols[2].metric("💭 Avg Sentiment", f"{avg_sentiment:.2f}")
+                    stat_cols[3].metric(
+                        "🔑 Keywords", sum(len(e["keywords"]) for e in filtered_events)
+                    )
+                    stat_cols[4].metric("⏱️ Duration", f"{total_duration / 3600:.1f}h")
+                    stat_cols[5].metric(
+                        "📊 In Qdrant",
+                        sum(1 for e in filtered_events if e["qdrant_point_id"]),
+                    )
+
+                # Timeline visualization
+                st.markdown("### 📊 Daily Event Distribution")
+
+                import pandas as pd
+                from collections import defaultdict
+
+                daily_counts = defaultdict(lambda: defaultdict(int))
+                for e in filtered_events:
+                    date_str = e["start_ts"].strftime("%Y-%m-%d")
+                    daily_counts[date_str][e["category"]] += 1
+
+                if daily_counts:
+                    dates = sorted(daily_counts.keys())
+                    chart_data = []
+                    for date in dates:
+                        row = {"date": date}
+                        for cat in selected_categories:
+                            row[cat] = daily_counts[date].get(cat, 0)
+                        chart_data.append(row)
+
+                    df = pd.DataFrame(chart_data)
+                    df["date"] = pd.to_datetime(df["date"])
+                    df = df.set_index("date")
+
+                    st.bar_chart(df, height=350)
+
+                # Event list with full payload
+                st.markdown("### 📋 Event Details")
+
+                # Search within
+                search_text = st.text_input(
+                    "🔍 Search within events", placeholder="keyword..."
+                )
+
+                display_events = filtered_events
+                if search_text:
+                    display_events = [
+                        e
+                        for e in filtered_events
+                        if search_text.lower() in e["clean_text"].lower()
+                        or search_text.lower() in " ".join(e["keywords"]).lower()
+                    ]
+                    st.info(
+                        f"Found {len(display_events)} events matching '{search_text}'"
+                    )
+
+                # Pagination
+                events_per_page = 20
+                total_pages = max(
+                    1, (len(display_events) + events_per_page - 1) // events_per_page
+                )
+                page_num = st.number_input("Page", 1, total_pages, 1)
+
+                start_idx = (page_num - 1) * events_per_page
+                page_events = display_events[start_idx : start_idx + events_per_page]
+
+                for i, e in enumerate(page_events):
+                    cat_color = CATEGORY_COLORS.get(e["category"], "#7F8C8D")
+                    time_str = e["start_ts"].strftime("%Y-%m-%d %H:%M")
+                    duration = (e["end_ts"] - e["start_ts"]).total_seconds()
+                    rec = rec_lookup.get(e["recording_id"])
+                    rec_title = (
+                        rec.title if rec and rec.title else e["recording_id"][:16]
+                    )
+
+                    with st.expander(
+                        f"{time_str} | {e['category']} | {e['clean_text'][:60]}...",
+                        expanded=False,
+                    ):
+                        ev_cols = st.columns([3, 1])
+
+                        with ev_cols[0]:
+                            st.markdown(f"**Full Text:**\n{e['clean_text']}")
+                            if e["keywords"]:
+                                st.markdown(f"**Keywords:** {', '.join(e['keywords'])}")
+
+                        with ev_cols[1]:
+                            st.markdown("**Metadata:**")
+                            st.code(f"event_id: {e['event_id'][:16]}...")
+                            st.code(f"category: {e['category']}")
+                            st.code(f"speaker: {e['speaker']}")
+                            st.code(f"sentiment: {e['sentiment']:.3f}")
+                            st.code(f"day_of_week: {e['day_of_week']}")
+                            st.code(f"hour_of_day: {e['hour_of_day']}")
+                            st.code(f"duration: {duration:.0f}s")
+                            st.code(f"recording: {rec_title}")
+                            if e["qdrant_point_id"]:
+                                st.code(f"qdrant_id: {e['qdrant_point_id'][:16]}...")
+
+                st.caption(
+                    f"Page {page_num} of {total_pages} ({len(display_events)} events)"
+                )
+
+        # ─────────────────────────────────────────────────────────────────
+        # TAB: HEATMAP — Temporal patterns
+        # ─────────────────────────────────────────────────────────────────
+        with tab_heatmap:
+            if not events_db:
+                st.info("No events yet.")
+            else:
+                st.markdown("### 🔥 Activity Heatmap")
+                st.markdown("*When do you record? Discover your temporal patterns.*")
+
+                import pandas as pd
+                import numpy as np
+
+                # Use filtered_events from Explore tab if available
+                events_for_heatmap = (
+                    events_data if not "filtered_events" in dir() else events_data
+                )
+
+                # Dynamic day order based on data
+                day_order = [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ]
+                days_with_data = set(
+                    e["day_of_week"] for e in events_for_heatmap if e["day_of_week"]
+                )
+
+                heatmap_data = np.zeros((24, 7))
+
+                for e in events_for_heatmap:
+                    day_idx = (
+                        day_order.index(e["day_of_week"])
+                        if e["day_of_week"] in day_order
+                        else 0
+                    )
+                    hour_idx = e["hour_of_day"]
+                    heatmap_data[hour_idx, day_idx] += 1
+
+                # Plotly heatmap
+                try:
+                    import plotly.express as px
+
+                    fig = px.imshow(
+                        heatmap_data,
+                        labels=dict(
+                            x="Day of Week", y="Hour of Day", color="Event Count"
+                        ),
+                        x=day_order,
+                        y=[f"{h:02d}:00" for h in range(24)],
+                        color_continuous_scale="Viridis",
+                        aspect="auto",
+                    )
+                    fig.update_layout(
+                        height=600,
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        font=dict(color="#cdd6f4"),
+                    )
+                    st.plotly_chart(fig, width="stretch")
+                except ImportError:
+                    heatmap_df = pd.DataFrame(
+                        heatmap_data,
+                        index=[f"{h:02d}:00" for h in range(24)],
+                        columns=day_order,
+                    )
+                    st.dataframe(
+                        heatmap_df.style.background_gradient(cmap="viridis", axis=None)
+                    )
+
+                # Summary stats
+                stat_cols = st.columns(4)
+                busiest_hour = int(heatmap_data.sum(axis=1).argmax())
+                busiest_day_idx = int(heatmap_data.sum(axis=0).argmax())
+                total_events = len(events_for_heatmap)
+                total_days = len(set(e["start_ts"].date() for e in events_for_heatmap))
+
+                stat_cols[0].metric("🔥 Busiest Hour", f"{busiest_hour:02d}:00")
+                stat_cols[1].metric("📅 Busiest Day", day_order[busiest_day_idx])
+                stat_cols[2].metric(
+                    "📊 Avg Events/Day", f"{total_events / max(total_days, 1):.1f}"
+                )
+                stat_cols[3].metric("⚡ Peak Hour Count", int(heatmap_data.max()))
+
+        # ─────────────────────────────────────────────────────────────────
+        # TAB: QUERY BUILDER — Advanced Qdrant filtering
+        # ─────────────────────────────────────────────────────────────────
+        with tab_query:
+            st.markdown("### 🎯 Qdrant Query Builder")
+            st.markdown("*Build complex queries using Qdrant's full filter syntax*")
+
+            if not qdrant_client:
+                st.warning("Qdrant not connected.")
+            else:
+                # Get dynamic values from Qdrant
+                dynamic_categories = get_all_unique_categories()
+                dynamic_days = get_all_unique_days()
+                dynamic_speakers = get_all_unique_speakers()
+
+                # Show what's available
+                with st.expander(
+                    "📊 Available Filter Values (from your data)", expanded=False
+                ):
+                    info_cols = st.columns(4)
+                    info_cols[0].metric("Categories", len(dynamic_categories))
+                    info_cols[1].metric("Days", len(dynamic_days))
+                    info_cols[2].metric("Speakers", len(dynamic_speakers))
+                    info_cols[3].metric(
+                        "Hours",
+                        f"{get_all_unique_hours()[0]}-{get_all_unique_hours()[1]}",
+                    )
+
+                query_cols = st.columns([1, 1])
+
+                with query_cols[0]:
+                    st.markdown("**Semantic Search (optional)**")
+                    semantic_query = st.text_input(
+                        "Query text", placeholder="Find events about..."
+                    )
+
+                    st.markdown("**Category Filter**")
+                    query_categories = st.multiselect(
+                        "Categories",
+                        dynamic_categories,
+                        help=f"Found {len(dynamic_categories)} unique categories in your data",
+                    )
+
+                    st.markdown("**Day of Week Filter**")
+                    query_days = st.multiselect(
+                        "Days",
+                        dynamic_days,
+                        help=f"Found {len(dynamic_days)} unique days in your data",
+                    )
+
+                    st.markdown("**Speaker Filter**")
+                    query_speakers = st.multiselect(
+                        "Speakers",
+                        dynamic_speakers,
+                        help=f"Found {len(dynamic_speakers)} unique speakers",
+                    )
+
+                with query_cols[1]:
+                    st.markdown("**Hour Range**")
+                    min_hour, max_hour = get_all_unique_hours()
+                    query_hour_range = st.slider(
+                        "Hour range", 0, 23, (min_hour, max_hour), key="query_hours"
+                    )
+
+                    st.markdown("**Sentiment Range**")
+                    query_sentiment = st.slider(
+                        "Sentiment", -1.0, 1.0, (-1.0, 1.0), key="query_sentiment"
+                    )
+
+                    st.markdown("**Result Limit**")
+                    query_limit = st.number_input("Max results", 1, 1000, 50)
+
+                if st.button("🔍 Execute Query", type="primary"):
+                    from qdrant_client.models import (
+                        Filter,
+                        FieldCondition,
+                        MatchAny,
+                        MatchValue,
+                        Range,
+                    )
+
+                    # Build filter
+                    must_conditions = []
+
+                    if query_categories:
+                        must_conditions.append(
+                            FieldCondition(
+                                key="category", match=MatchAny(any=query_categories)
+                            )
+                        )
+
+                    if query_days:
+                        must_conditions.append(
+                            FieldCondition(
+                                key="day_of_week", match=MatchAny(any=query_days)
+                            )
+                        )
+
+                    if query_speakers:
+                        must_conditions.append(
+                            FieldCondition(
+                                key="speaker", match=MatchAny(any=query_speakers)
+                            )
+                        )
+
+                    if query_hour_range != (min_hour, max_hour):
+                        must_conditions.append(
+                            FieldCondition(
+                                key="hour_of_day",
+                                range=Range(
+                                    gte=query_hour_range[0], lte=query_hour_range[1]
+                                ),
+                            )
+                        )
+
+                    if query_sentiment != (-1.0, 1.0):
+                        must_conditions.append(
+                            FieldCondition(
+                                key="sentiment",
+                                range=Range(
+                                    gte=query_sentiment[0], lte=query_sentiment[1]
+                                ),
+                            )
+                        )
+
+                    query_filter = (
+                        Filter(must=must_conditions) if must_conditions else None
+                    )
+
+                    try:
+                        if semantic_query:
+                            # Semantic search with filter
+                            embedding_service = ChronosEmbeddingService()
+                            query_vector = embedding_service.embed_text(semantic_query)
+
+                            results = qdrant_client.client.query_points(
+                                collection_name=qdrant_client.collection_name,
+                                query=query_vector,
+                                query_filter=query_filter,
+                                limit=query_limit,
+                                with_payload=True,
+                            ).points
+                        else:
+                            # Filter-only scroll
+                            results, _ = qdrant_client.client.scroll(
+                                collection_name=qdrant_client.collection_name,
+                                scroll_filter=query_filter,
+                                limit=query_limit,
+                                with_payload=True,
+                            )
+
+                        st.success(f"Found {len(results)} results")
+
+                        # Display results
+                        for r in results:
+                            score = getattr(r, "score", None)
+                            score_txt = f" | Score: {score:.4f}" if score else ""
+
+                            with st.expander(
+                                f"{r.payload.get('category', '?')} | {r.payload.get('clean_text', '')[:60]}...{score_txt}"
+                            ):
+                                st.json(r.payload)
+
+                    except Exception as ex:
+                        st.error(f"Query error: {ex}")
+
+        # ─────────────────────────────────────────────────────────────────
+        # TAB: FACETS — Qdrant faceting (DYNAMIC)
+        # ─────────────────────────────────────────────────────────────────
+        with tab_facets:
+            st.markdown("### 📊 Field Facets (Live from Qdrant)")
             st.markdown(
-                f"*Page {page_num} of {total_pages} ({len(display_events)} events)*"
+                "*Real-time value distributions across ALL indexed payload fields*"
             )
+
+            if not qdrant_client:
+                st.warning("Qdrant not connected.")
+            else:
+                # Use the cached stats function for efficiency
+                field_stats = get_collection_field_stats()
+                total_points = field_stats["total_points"]
+
+                st.metric("📊 Total Indexed Points", f"{total_points:,}")
+                st.markdown("---")
+
+                facet_col1, facet_col2 = st.columns(2)
+
+                with facet_col1:
+                    st.markdown("#### 📁 Category Distribution")
+                    category_counts = field_stats.get("categories", {})
+                    if category_counts:
+                        cat_colors = get_dynamic_category_colors(
+                            list(category_counts.keys())
+                        )
+                        for cat, count in sorted(
+                            category_counts.items(), key=lambda x: -x[1]
+                        ):
+                            pct = count / total_points * 100 if total_points else 0
+                            color = cat_colors.get(cat, "#7F8C8D")
+                            st.markdown(
+                                f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">'
+                                f'<div style="width:12px;height:12px;background:{color};border-radius:2px;"></div>'
+                                f'<div style="flex:1;">{cat}</div>'
+                                f'<div style="opacity:0.7;">{count:,} ({pct:.1f}%)</div>'
+                                f"</div>",
+                                unsafe_allow_html=True,
+                            )
+                    else:
+                        st.info("No category data yet")
+
+                    st.markdown("---")
+                    st.markdown("#### 🎤 Speaker Distribution")
+                    speaker_counts = field_stats.get("speakers", {})
+                    if speaker_counts:
+                        for speaker, count in sorted(
+                            speaker_counts.items(), key=lambda x: -x[1]
+                        ):
+                            pct = count / total_points * 100 if total_points else 0
+                            st.markdown(f"**{speaker}**: {count:,} ({pct:.1f}%)")
+                    else:
+                        st.info("No speaker data yet")
+
+                with facet_col2:
+                    st.markdown("#### 📆 Day Distribution")
+                    day_counts = field_stats.get("days", {})
+                    if day_counts:
+                        day_order = [
+                            "Monday",
+                            "Tuesday",
+                            "Wednesday",
+                            "Thursday",
+                            "Friday",
+                            "Saturday",
+                            "Sunday",
+                        ]
+                        # Sort by weekday order
+                        sorted_days = sorted(
+                            day_counts.items(),
+                            key=lambda x: (
+                                day_order.index(x[0]) if x[0] in day_order else 99
+                            ),
+                        )
+                        for day, count in sorted_days:
+                            pct = count / total_points * 100 if total_points else 0
+                            st.progress(
+                                pct / 100, text=f"{day}: {count:,} ({pct:.1f}%)"
+                            )
+                    else:
+                        st.info("No day data yet")
+
+                    st.markdown("---")
+                    st.markdown("#### ⏰ Hour Distribution")
+                    hour_counts = field_stats.get("hours", {})
+                    if hour_counts:
+                        import pandas as pd
+
+                        hour_df = pd.DataFrame(
+                            [
+                                {"hour": f"{h:02d}:00", "count": hour_counts.get(h, 0)}
+                                for h in range(24)
+                            ]
+                        )
+                        st.bar_chart(hour_df.set_index("hour"), height=200)
+                    else:
+                        st.info("No hour data yet")
+
+                # Refresh button
+                st.markdown("---")
+                if st.button("🔄 Refresh Facets"):
+                    get_collection_field_stats.clear()
+                    st.rerun()
+
+        # ─────────────────────────────────────────────────────────────────
+        # TAB: RAW ACCESS — Direct Qdrant operations
+        # ─────────────────────────────────────────────────────────────────
+        with tab_raw:
+            st.markdown("### 🔧 Raw Qdrant Access")
+            st.warning("⚠️ Advanced — use with caution")
+
+            if not qdrant_client:
+                st.error("Qdrant not connected.")
+            else:
+                raw_tabs = st.tabs(
+                    ["📥 Scroll", "🔍 Get Point", "🔢 Count", "📊 Random Sample"]
+                )
+
+                with raw_tabs[0]:
+                    st.markdown("**Scroll through all points**")
+                    scroll_limit = st.number_input(
+                        "Limit", 1, 1000, 10, key="scroll_limit"
+                    )
+
+                    if st.button("Execute Scroll"):
+                        points, next_offset = qdrant_client.client.scroll(
+                            collection_name=qdrant_client.collection_name,
+                            limit=scroll_limit,
+                            with_payload=True,
+                            with_vectors=False,
+                        )
+                        st.success(f"Retrieved {len(points)} points")
+
+                        for p in points:
+                            with st.expander(f"Point: {p.id}"):
+                                st.json(p.payload)
+
+                with raw_tabs[1]:
+                    st.markdown("**Get point by ID**")
+                    point_id = st.text_input("Point ID (UUID)")
+
+                    if st.button("Get Point") and point_id:
+                        try:
+                            points = qdrant_client.client.retrieve(
+                                collection_name=qdrant_client.collection_name,
+                                ids=[point_id],
+                                with_payload=True,
+                                with_vectors=True,
+                            )
+                            if points:
+                                st.json(
+                                    {
+                                        "id": str(points[0].id),
+                                        "payload": points[0].payload,
+                                        "vector_dims": (
+                                            len(points[0].vector)
+                                            if points[0].vector
+                                            else 0
+                                        ),
+                                    }
+                                )
+                            else:
+                                st.warning("Point not found")
+                        except Exception as ex:
+                            st.error(f"Error: {ex}")
+
+                with raw_tabs[2]:
+                    st.markdown("**Count points with filter**")
+                    count_category = st.selectbox(
+                        "Category",
+                        [
+                            "",
+                            "work",
+                            "personal",
+                            "meeting",
+                            "deep_work",
+                            "break",
+                            "reflection",
+                            "idea",
+                            "unknown",
+                        ],
+                        key="count_cat",
+                    )
+
+                    if st.button("Count"):
+                        from qdrant_client.models import (
+                            Filter,
+                            FieldCondition,
+                            MatchValue,
+                        )
+
+                        count_filter = None
+                        if count_category:
+                            count_filter = Filter(
+                                must=[
+                                    FieldCondition(
+                                        key="category",
+                                        match=MatchValue(value=count_category),
+                                    )
+                                ]
+                            )
+
+                        result = qdrant_client.client.count(
+                            collection_name=qdrant_client.collection_name,
+                            count_filter=count_filter,
+                            exact=True,
+                        )
+                        st.metric("Count", result.count)
+
+                with raw_tabs[3]:
+                    st.markdown("**Random sample**")
+                    sample_size = st.number_input(
+                        "Sample size", 1, 100, 5, key="sample_size"
+                    )
+
+                    if st.button("Get Random Sample"):
+                        try:
+                            # Use random query
+                            from qdrant_client.models import SampleQuery
+
+                            results = qdrant_client.client.query_points(
+                                collection_name=qdrant_client.collection_name,
+                                query=SampleQuery(sample="random"),
+                                limit=sample_size,
+                                with_payload=True,
+                            ).points
+
+                            st.success(f"Got {len(results)} random points")
+                            for r in results:
+                                st.markdown(
+                                    f"**{r.payload.get('category')}**: {r.payload.get('clean_text', '')[:100]}..."
+                                )
+                        except Exception as ex:
+                            st.error(f"Error: {ex}")
 
     except Exception as ex:
         st.error(f"Error loading timeline: {ex}")
