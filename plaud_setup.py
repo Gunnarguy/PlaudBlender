@@ -82,18 +82,13 @@ PLAUD_CLIENT_ID=your_client_id_here
 PLAUD_CLIENT_SECRET=your_client_secret_here
 PLAUD_REDIRECT_URI=http://localhost:8080/callback
 
-# === AI / SEARCH (Optional, enables most 'knowledge graph' features) ===
+# === AI / SEARCH (Required for processing features) ===
 # Google Gemini - https://ai.google.dev/
 GEMINI_API_KEY=your_gemini_key_here
 
 # Qdrant Vector Database - https://qdrant.tech/
 QDRANT_URL=http://localhost:6333
 # QDRANT_API_KEY=  # Only needed for Qdrant Cloud
-
-# OpenAI Responses (optional; enables in-app Chat + MCP server)
-OPENAI_API_KEY=your_openai_key_here
-OPENAI_DEFAULT_MODEL=gpt-4.1
-# OPENAI_BASE_URL=https://api.openai.com/v1
 
 # Notion (optional; enables direct Notion sync features)
 # NOTION_TOKEN=

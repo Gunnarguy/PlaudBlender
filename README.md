@@ -183,7 +183,7 @@ python scripts/chronos_pipeline.py --preflight
 python -m scripts.mcp_server
 ```
 
-Requires `OPENAI_API_KEY` in `.env`.
+Requires `GEMINI_API_KEY` in `.env`.
 
 ---
 

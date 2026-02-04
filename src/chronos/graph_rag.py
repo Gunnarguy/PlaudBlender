@@ -40,44 +40,6 @@ class _CompletionResult:
     text: str
 
 
-class _OpenAIResponsesLLM:
-    """Tiny wrapper that exposes a llama_index-like .complete(prompt).text API.
-
-    We use this as a fallback when Gemini/llama_index isn't available.
-    """
-
-    def __init__(self, model: str, api_key: str, base_url: Optional[str] = None):
-        try:
-            from openai import OpenAI
-        except Exception as e:  # pragma: no cover
-            raise ImportError(
-                "openai package not installed; required for OpenAI GraphRAG fallback"
-            ) from e
-
-        self._client = OpenAI(api_key=api_key, base_url=base_url)
-        self._model = model
-
-    def complete(self, prompt: str) -> _CompletionResult:
-        # Responses API returns output_text in newer SDKs.
-        resp = self._client.responses.create(
-            model=self._model,
-            input=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-        )
-
-        text = getattr(resp, "output_text", None)
-        if not text:
-            parts = []
-            for item in getattr(resp, "output", []) or []:
-                if getattr(item, "type", None) == "message":
-                    for content in getattr(item, "content", []) or []:
-                        if getattr(content, "type", None) == "output_text":
-                            parts.append(content.text)
-            text = "\n".join(parts)
-
-        return _CompletionResult(text=(text or "").strip())
-
-
 class EntityType(str, Enum):
     """Types of entities to extract from transcripts."""
 
@@ -310,34 +272,22 @@ Return ONLY the JSON object, no other text."""
                 api_key = os.getenv("GEMINI_API_KEY")
                 if not api_key:
                     raise ValueError("GEMINI_API_KEY required for entity extraction")
+                # Use latest Gemini 3 Flash (free tier) for entity extraction
+                model_name = os.getenv(
+                    "CHRONOS_CLEANING_MODEL", "gemini-3-flash-preview"
+                )
                 self.llm = Gemini(
-                    model="models/gemini-2.0-flash-exp",
+                    model=f"models/{model_name}",
                     api_key=api_key,
                     temperature=0.1,  # Low temp for structured extraction
                 )
             except ImportError:
-                # Fallback to OpenAI if available so the GUI doesn't look "dead".
+                # llama_index.llms.gemini not available - set to None
+                # (this shouldn't happen with current requirements.txt)
                 logger.warning(
-                    "llama_index.llms.gemini not available; falling back to OpenAI if configured"
+                    "llama_index.llms.gemini not available; entity extraction disabled"
                 )
-
-                api_key = os.getenv("OPENAI_API_KEY")
-                if api_key:
-                    model = os.getenv("OPENAI_GRAPH_MODEL") or os.getenv(
-                        "OPENAI_DEFAULT_MODEL", "gpt-4.1-mini"
-                    )
-                    base_url = os.getenv("OPENAI_BASE_URL")
-                    try:
-                        self.llm = _OpenAIResponsesLLM(
-                            model=model,
-                            api_key=api_key,
-                            base_url=base_url,
-                        )
-                    except Exception as e:  # pylint: disable=broad-except
-                        logger.warning(f"OpenAI fallback unavailable: {e}")
-                        self.llm = None
-                else:
-                    self.llm = None
+                self.llm = None
         else:
             self.llm = llm
 
@@ -886,7 +836,11 @@ Respond in JSON:
             api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
             if api_key:
                 genai.configure(api_key=api_key)
-                self._llm = genai.GenerativeModel("gemini-1.5-flash")
+                # Use latest Gemini 3 Flash (free tier) for community summarization
+                model_name = os.getenv(
+                    "CHRONOS_CLEANING_MODEL", "gemini-3-flash-preview"
+                )
+                self._llm = genai.GenerativeModel(model_name)
         return self._llm
 
     def detect_communities(self, graph: KnowledgeGraph) -> List[Community]:

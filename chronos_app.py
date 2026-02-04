@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -467,10 +468,6 @@ class RecordingSession:
         h = self.total_duration_seconds // 3600
         m = (self.total_duration_seconds % 3600) // 60
         return f"{h}h {m}m"
-
-
-# Import dataclass at top - adding here for the decorator
-from dataclasses import dataclass
 
 
 def detect_sessions(
@@ -2032,16 +2029,62 @@ def page_plaud(settings, status: Dict[str, Any]):
 
     # Check if we have any Plaud config (OAuth or API token)
     if not status["plaud"]:
-        st.error("Plaud not configured. Run `python plaud_setup.py` first.")
-        st.info(
-            "After setup, you'll be able to:\n"
-            "- Auto-detect devices when plugged in via USB\n"
-            "- Monitor device battery, storage, and sync status\n"
-            "- Automatically sync recordings to Chronos"
+        st.error("Plaud not configured.")
+
+        st.markdown(
+            """
+        ### 🔐 Setup Required
+
+        You need to configure Plaud OAuth to fetch recordings.
+
+        **Option 1: Click the button below** (opens browser for OAuth)
+        """
+        )
+
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            if st.button("🔐 Authenticate with Plaud", type="primary", width="stretch"):
+                try:
+                    from src.plaud_oauth import PlaudOAuthClient
+
+                    oauth = PlaudOAuthClient()
+                    st.info("🌐 Opening browser for authentication...")
+                    st.warning(
+                        "After authenticating in the browser, come back here and refresh the page."
+                    )
+
+                    # Run in a subprocess so it doesn't block Streamlit
+                    import threading
+
+                    def run_auth():
+                        try:
+                            oauth.authenticate_interactive()
+                        except Exception as e:
+                            print(f"Auth error: {e}")
+
+                    thread = threading.Thread(target=run_auth, daemon=True)
+                    thread.start()
+
+                except Exception as e:
+                    st.error(f"Failed to start OAuth: {e}")
+                    st.code(str(e))
+
+        st.markdown(
+            """
+        **Option 2: Run from terminal**
+        ```bash
+        python plaud_setup.py
+        ```
+
+        After setup, you'll be able to:
+        - Auto-detect devices when plugged in via USB
+        - Monitor device battery, storage, and sync status
+        - Automatically sync recordings to Chronos
+        """
         )
         return
 
-    # Connection check
+    # Connection check - also handle token refresh
     try:
         client = PlaudClient()
         user = client.get_user_info()
@@ -2050,6 +2093,28 @@ def page_plaud(settings, status: Dict[str, Any]):
         )
     except Exception as e:
         st.warning(f"API connection issue: {e}")
+
+        # Offer re-authentication
+        if st.button("🔄 Re-authenticate with Plaud"):
+            try:
+                from src.plaud_oauth import PlaudOAuthClient
+                import threading
+
+                oauth = PlaudOAuthClient()
+                st.info("🌐 Opening browser for re-authentication...")
+
+                def run_auth():
+                    try:
+                        oauth.authenticate_interactive()
+                    except Exception as ex:
+                        print(f"Auth error: {ex}")
+
+                thread = threading.Thread(target=run_auth, daemon=True)
+                thread.start()
+                st.warning("After authenticating, refresh this page.")
+            except Exception as ex:
+                st.error(f"Failed: {ex}")
+
         st.info("USB detection and local features will still work.")
         user = None
 
