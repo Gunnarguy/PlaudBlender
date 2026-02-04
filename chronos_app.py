@@ -432,6 +432,193 @@ def get_collection_field_stats() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# SESSION DETECTION — Group split recordings into logical sessions
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class RecordingSession:
+    """A logical session grouping multiple recordings.
+
+    When Plaud splits long recordings (e.g., 5hr + 1.5hr chunks),
+    we detect and group them here.
+    """
+
+    session_id: str
+    recordings: List[Any]  # List of ChronosRecordingDB objects
+    device_id: Optional[str]
+    start_time: datetime
+    end_time: datetime
+    total_duration_seconds: int
+    recording_count: int
+
+    @property
+    def date_str(self) -> str:
+        return self.start_time.strftime("%Y-%m-%d")
+
+    @property
+    def time_range_str(self) -> str:
+        start = self.start_time.strftime("%H:%M")
+        end = self.end_time.strftime("%H:%M")
+        return f"{start} → {end}"
+
+    @property
+    def duration_str(self) -> str:
+        h = self.total_duration_seconds // 3600
+        m = (self.total_duration_seconds % 3600) // 60
+        return f"{h}h {m}m"
+
+
+# Import dataclass at top - adding here for the decorator
+from dataclasses import dataclass
+
+
+def detect_sessions(
+    recordings: List[Any],
+    gap_threshold_minutes: int = 15,
+) -> List[RecordingSession]:
+    """Detect recording sessions by grouping recordings with small time gaps.
+
+    Algorithm:
+    1. Group by device_id (or "unknown" if None)
+    2. Sort each group by created_at
+    3. If gap between end of rec A and start of rec B < threshold, same session
+    4. Handle Plaud's 5-hour auto-split (typical gap is 0-5 minutes)
+
+    Args:
+        recordings: List of ChronosRecordingDB objects
+        gap_threshold_minutes: Max gap to consider same session (default 15 min)
+
+    Returns:
+        List of RecordingSession objects, sorted by start_time desc
+    """
+    if not recordings:
+        return []
+
+    # Group recordings by device
+    by_device: Dict[str, List[Any]] = defaultdict(list)
+    for rec in recordings:
+        device_key = rec.device_id or "unknown"
+        by_device[device_key].append(rec)
+
+    sessions: List[RecordingSession] = []
+
+    for device_id, device_recs in by_device.items():
+        # Sort by created_at (recording start time)
+        sorted_recs = sorted(device_recs, key=lambda r: r.created_at or datetime.min)
+
+        current_session: List[Any] = []
+
+        for rec in sorted_recs:
+            if not current_session:
+                # Start new session
+                current_session = [rec]
+            else:
+                # Check gap from previous recording's END to this one's START
+                prev_rec = current_session[-1]
+                prev_end = prev_rec.created_at + timedelta(
+                    seconds=prev_rec.duration_seconds or 0
+                )
+                curr_start = rec.created_at
+
+                gap_minutes = (curr_start - prev_end).total_seconds() / 60
+
+                if gap_minutes <= gap_threshold_minutes and gap_minutes >= -5:
+                    # Same session (allow small overlap due to timestamp precision)
+                    current_session.append(rec)
+                else:
+                    # New session - save current one first
+                    sessions.append(_build_session(current_session, device_id))
+                    current_session = [rec]
+
+        # Don't forget the last session
+        if current_session:
+            sessions.append(_build_session(current_session, device_id))
+
+    # Sort sessions by start time descending (most recent first)
+    sessions.sort(key=lambda s: s.start_time, reverse=True)
+
+    return sessions
+
+
+def _build_session(recordings: List[Any], device_id: str) -> RecordingSession:
+    """Build a RecordingSession from a list of grouped recordings."""
+    sorted_recs = sorted(recordings, key=lambda r: r.created_at or datetime.min)
+
+    start_time = sorted_recs[0].created_at
+    last_rec = sorted_recs[-1]
+    end_time = last_rec.created_at + timedelta(seconds=last_rec.duration_seconds or 0)
+
+    total_duration = sum(r.duration_seconds or 0 for r in recordings)
+
+    # Generate session ID from first recording ID + date
+    session_id = (
+        f"session_{sorted_recs[0].recording_id[:8]}_{start_time.strftime('%Y%m%d')}"
+    )
+
+    return RecordingSession(
+        session_id=session_id,
+        recordings=sorted_recs,
+        device_id=device_id if device_id != "unknown" else None,
+        start_time=start_time,
+        end_time=end_time,
+        total_duration_seconds=total_duration,
+        recording_count=len(recordings),
+    )
+
+
+@st.cache_data(ttl=30)
+def get_session_events(recording_ids: tuple) -> List[Dict[str, Any]]:
+    """Get all events from Qdrant for a list of recording IDs.
+
+    Uses tuple for recording_ids because lists aren't hashable (caching).
+    """
+    try:
+        qdrant = get_qdrant_client()
+        from qdrant_client.models import Filter, FieldCondition, MatchAny
+
+        points, _ = qdrant.client.scroll(
+            collection_name=qdrant.collection_name,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="recording_id",
+                        match=MatchAny(any=list(recording_ids)),
+                    )
+                ]
+            ),
+            limit=10000,
+            with_payload=True,
+        )
+
+        # Convert to dicts and sort by start_ts
+        events = []
+        for p in points:
+            events.append({"id": str(p.id), "payload": p.payload})
+
+        events.sort(
+            key=lambda e: e["payload"].get("start_ts", "") if e["payload"] else ""
+        )
+        return events
+
+    except Exception:
+        return []
+
+
+def get_all_unique_sessions() -> List[str]:
+    """Get unique session IDs from existing recordings."""
+    try:
+        init_db()
+        session = SessionLocal()
+        recordings = session.query(ChronosRecordingDB).all()
+        sessions = detect_sessions(recordings)
+        session.close()
+        return [s.session_id for s in sessions]
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
 # PAGE: HOME
 # ---------------------------------------------------------------------------
 
@@ -679,6 +866,7 @@ def page_library(settings, status: Dict[str, Any]):
     - Extracted events with full Qdrant payloads
     - Vector similarity exploration
     - Processing actions with real-time feedback
+    - SESSION GROUPING: Auto-detect split recordings as unified sessions
     """
     st.header("📚 Recording Library")
     st.markdown(
@@ -699,612 +887,1000 @@ def page_library(settings, status: Dict[str, Any]):
 
     try:
         # ═══════════════════════════════════════════════════════════════
-        # FILTERS — All the controls
+        # VIEW MODE TOGGLE — Recordings vs Sessions
         # ═══════════════════════════════════════════════════════════════
-        st.markdown("### 🎛️ Filters")
-        filter_cols = st.columns([1, 1, 1, 2])
-
-        with filter_cols[0]:
-            status_filter = st.multiselect(
-                "Processing Status",
-                ["pending", "processing", "completed", "failed"],
-                default=["pending", "completed", "failed"],
-            )
-        with filter_cols[1]:
-            days_back = st.number_input("Days back", 1, 365, 90)
-        with filter_cols[2]:
-            sort_by = st.selectbox(
-                "Sort by",
-                ["created_at", "duration_seconds", "title"],
-                index=0,
-            )
-        with filter_cols[3]:
-            search_q = st.text_input(
-                "🔍 Search",
-                placeholder="Search title, ID, or transcript content...",
+        view_col1, view_col2, view_col3 = st.columns([2, 1, 2])
+        with view_col2:
+            view_mode = st.radio(
+                "View Mode",
+                ["📁 Recordings", "🗂️ Sessions"],
+                horizontal=True,
+                help="Sessions group split recordings (5hr chunks) from the same device",
             )
 
-        # Query
-        q = session.query(ChronosRecordingDB)
-        if status_filter:
-            q = q.filter(ChronosRecordingDB.processing_status.in_(status_filter))
-        if days_back:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
-            q = q.filter(ChronosRecordingDB.created_at >= cutoff.replace(tzinfo=None))
-        if search_q:
-            like = f"%{search_q}%"
-            q = q.filter(
-                (ChronosRecordingDB.recording_id.ilike(like))
-                | (ChronosRecordingDB.title.ilike(like))
-                | (ChronosRecordingDB.transcript.ilike(like))
-            )
-
-        # Apply sorting
-        if sort_by == "created_at":
-            q = q.order_by(ChronosRecordingDB.created_at.desc())
-        elif sort_by == "duration_seconds":
-            q = q.order_by(ChronosRecordingDB.duration_seconds.desc())
+        if view_mode == "🗂️ Sessions":
+            _render_session_view(session, qdrant_client, status)
         else:
-            q = q.order_by(ChronosRecordingDB.title.asc())
+            _render_recording_view(session, qdrant_client, status)
 
-        recs = q.limit(200).all()
+    finally:
+        session.close()
 
-        if not recs:
-            st.info("No recordings found. Go to **Pipeline** to fetch from Plaud.")
-            return
 
-        # ═══════════════════════════════════════════════════════════════
-        # SUMMARY STATS
-        # ═══════════════════════════════════════════════════════════════
-        stat_cols = st.columns(6)
-        pending = sum(1 for r in recs if r.processing_status == "pending")
-        completed = sum(1 for r in recs if r.processing_status == "completed")
-        failed = sum(1 for r in recs if r.processing_status == "failed")
-        with_transcript = sum(1 for r in recs if r.transcript)
-        total_duration = sum(r.duration_seconds or 0 for r in recs)
-        total_events = sum(
-            session.query(ChronosEventDB).filter_by(recording_id=r.recording_id).count()
-            for r in recs
+def _render_session_view(db_session, qdrant_client, status: Dict[str, Any]):
+    """Render the session-based view of recordings."""
+
+    # ═══════════════════════════════════════════════════════════════
+    # SESSION FILTERS
+    # ═══════════════════════════════════════════════════════════════
+    st.markdown("### 🗂️ Session View")
+    st.info(
+        "**Sessions** group recordings from the same device with small time gaps. "
+        "Perfect for full-day recordings that Plaud splits into 5-hour chunks."
+    )
+
+    filter_cols = st.columns([1, 1, 1])
+    with filter_cols[0]:
+        days_back = st.number_input("Days back", 1, 365, 90, key="session_days_back")
+    with filter_cols[1]:
+        gap_threshold = st.slider(
+            "Gap threshold (minutes)",
+            1,
+            60,
+            15,
+            help="Max gap between recordings to consider same session",
+        )
+    with filter_cols[2]:
+        min_recordings = st.number_input(
+            "Min recordings per session",
+            1,
+            10,
+            1,
+            help="Filter to sessions with at least this many recordings",
         )
 
-        stat_cols[0].metric("📊 Total", len(recs))
-        stat_cols[1].metric("⏳ Pending", pending)
-        stat_cols[2].metric("✅ Completed", completed)
-        stat_cols[3].metric("❌ Failed", failed)
-        stat_cols[4].metric("📝 With Transcript", with_transcript)
-        stat_cols[5].metric(
-            "⏱️ Total Duration",
-            f"{total_duration // 3600}h {(total_duration % 3600) // 60}m",
+    # Get all recordings
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+    recordings = (
+        db_session.query(ChronosRecordingDB)
+        .filter(ChronosRecordingDB.created_at >= cutoff.replace(tzinfo=None))
+        .all()
+    )
+
+    if not recordings:
+        st.info("No recordings found in this time range.")
+        return
+
+    # Detect sessions
+    sessions = detect_sessions(recordings, gap_threshold_minutes=gap_threshold)
+
+    # Filter by min recordings
+    sessions = [s for s in sessions if s.recording_count >= min_recordings]
+
+    if not sessions:
+        st.info("No sessions found with current filters. Try adjusting the threshold.")
+        return
+
+    # ═══════════════════════════════════════════════════════════════
+    # SESSION SUMMARY STATS
+    # ═══════════════════════════════════════════════════════════════
+    stat_cols = st.columns(6)
+    total_recs = sum(s.recording_count for s in sessions)
+    total_duration = sum(s.total_duration_seconds for s in sessions)
+    multi_chunk = sum(1 for s in sessions if s.recording_count > 1)
+    avg_duration = total_duration // len(sessions) if sessions else 0
+
+    stat_cols[0].metric("🗂️ Sessions", len(sessions))
+    stat_cols[1].metric("📁 Recordings", total_recs)
+    stat_cols[2].metric(
+        "🔗 Multi-chunk", multi_chunk, help="Sessions with >1 recording"
+    )
+    stat_cols[3].metric(
+        "⏱️ Total Duration",
+        f"{total_duration // 3600}h {(total_duration % 3600) // 60}m",
+    )
+    stat_cols[4].metric(
+        "📊 Avg Duration", f"{avg_duration // 3600}h {(avg_duration % 3600) // 60}m"
+    )
+    stat_cols[5].metric(
+        "📅 Date Range",
+        (
+            f"{sessions[-1].date_str} → {sessions[0].date_str}"
+            if len(sessions) > 1
+            else sessions[0].date_str
+        ),
+    )
+
+    # ═══════════════════════════════════════════════════════════════
+    # SESSION LIST
+    # ═══════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("### 📋 Sessions")
+
+    # Sessions table
+    rows = []
+    for s in sessions:
+        recording_statuses = Counter(r.processing_status for r in s.recordings)
+        status_str = ", ".join(f"{v}×{k}" for k, v in recording_statuses.items())
+
+        rows.append(
+            {
+                "Date": s.date_str,
+                "Time": s.time_range_str,
+                "Duration": s.duration_str,
+                "Recordings": s.recording_count,
+                "Device": s.device_id[:8] if s.device_id else "—",
+                "Status": status_str,
+            }
         )
 
-        # ═══════════════════════════════════════════════════════════════
-        # RECORDINGS TABLE — Full data
-        # ═══════════════════════════════════════════════════════════════
-        st.markdown("---")
-        st.markdown("### 📋 Recordings")
+    st.dataframe(rows, width="stretch", hide_index=True, height=250)
 
-        rows = []
-        for r in recs:
-            event_count = (
-                session.query(ChronosEventDB)
-                .filter_by(recording_id=r.recording_id)
-                .count()
+    # ═══════════════════════════════════════════════════════════════
+    # SESSION DETAIL
+    # ═══════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("### 🔍 Session Detail")
+
+    options = [
+        f"{s.date_str} | {s.time_range_str} | {s.duration_str} ({s.recording_count} recs)"
+        for s in sessions
+    ]
+    selected_idx = st.selectbox(
+        "Select session to explore",
+        range(len(options)),
+        format_func=lambda i: options[i],
+        key="session_selector",
+    )
+
+    if selected_idx is not None:
+        selected_session = sessions[selected_idx]
+
+        # Session tabs
+        tab_overview, tab_recordings, tab_transcript, tab_events, tab_timeline = (
+            st.tabs(
+                [
+                    "📊 Overview",
+                    "📁 Recordings",
+                    "📝 Combined Transcript",
+                    "🎯 Events",
+                    "⏱️ Timeline",
+                ]
             )
-            transcript_len = len(r.transcript) if r.transcript else 0
-            word_count = len(r.transcript.split()) if r.transcript else 0
-
-            rows.append(
-                {
-                    "ID": r.recording_id,
-                    "Title": r.title or "—",
-                    "Created": (
-                        r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—"
-                    ),
-                    "Duration": (
-                        f"{r.duration_seconds // 60}m {r.duration_seconds % 60}s"
-                        if r.duration_seconds
-                        else "—"
-                    ),
-                    "Status": r.processing_status,
-                    "Events": event_count,
-                    "Transcript": f"{word_count:,} words" if transcript_len else "—",
-                    "Device": r.device_id[:8] if r.device_id else "—",
-                    "Processed": (
-                        r.processed_at.strftime("%m-%d %H:%M")
-                        if r.processed_at
-                        else "—"
-                    ),
-                }
-            )
-
-        st.dataframe(rows, width="stretch", hide_index=True, height=300)
-
-        # ═══════════════════════════════════════════════════════════════
-        # RECORDING DETAIL — Deep dive
-        # ═══════════════════════════════════════════════════════════════
-        st.markdown("---")
-        st.markdown("### 🔍 Recording Detail")
-
-        options = [
-            f"{r.title or r.recording_id[:24]}... ({r.processing_status})" for r in recs
-        ]
-        selected_idx = st.selectbox(
-            "Select recording to explore",
-            range(len(options)),
-            format_func=lambda i: options[i],
         )
 
-        if selected_idx is not None:
-            rec = recs[selected_idx]
+        # ─────────────────────────────────────────────────────────────
+        # TAB: Overview
+        # ─────────────────────────────────────────────────────────────
+        with tab_overview:
+            st.markdown("#### Session Summary")
 
-            # TABS for organization
-            tab_meta, tab_transcript, tab_events, tab_qdrant, tab_actions = st.tabs(
-                ["📋 Metadata", "📝 Transcript", "🎯 Events", "🔮 Qdrant", "⚡ Actions"]
-            )
+            col1, col2 = st.columns(2)
 
-            # ─────────────────────────────────────────────────────────────
-            # TAB: Metadata — ALL fields
-            # ─────────────────────────────────────────────────────────────
-            with tab_meta:
-                st.markdown("#### Complete Recording Metadata")
+            with col1:
+                st.markdown("**Session Info**")
+                st.code(f"session_id: {selected_session.session_id}")
+                st.code(f"device_id: {selected_session.device_id or 'Unknown'}")
+                st.code(f"date: {selected_session.date_str}")
+                st.code(f"time_range: {selected_session.time_range_str}")
+                st.code(f"total_duration: {selected_session.duration_str}")
+                st.code(f"recording_count: {selected_session.recording_count}")
 
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    st.markdown("**Identifiers**")
-                    st.code(f"recording_id: {rec.recording_id}")
-                    st.code(f"device_id: {rec.device_id or 'None'}")
-                    st.code(f"checksum: {rec.checksum or 'None'}")
-
-                with col2:
-                    st.markdown("**Timestamps**")
-                    st.code(f"created_at: {rec.created_at}")
-                    st.code(f"ingested_at: {rec.ingested_at}")
-                    st.code(f"processed_at: {rec.processed_at or 'Not processed'}")
-                    st.code(
-                        f"transcript_cached_at: {rec.transcript_cached_at or 'None'}"
-                    )
-
-                with col3:
-                    st.markdown("**Processing**")
-                    st.code(f"status: {rec.processing_status}")
-                    st.code(f"source: {rec.source}")
-                    st.code(f"duration_seconds: {rec.duration_seconds}")
-                    if rec.error_message:
-                        st.error(f"Error: {rec.error_message}")
-
-                st.markdown("**File Paths**")
-                st.code(f"local_audio_path: {rec.local_audio_path}")
-
-                # Raw JSON dump
-                with st.expander("📦 Raw SQLite Row (JSON)", expanded=False):
-                    raw_data = {
-                        "recording_id": rec.recording_id,
-                        "title": rec.title,
-                        "created_at": str(rec.created_at),
-                        "duration_seconds": rec.duration_seconds,
-                        "local_audio_path": rec.local_audio_path,
-                        "source": rec.source,
-                        "device_id": rec.device_id,
-                        "checksum": rec.checksum,
-                        "processing_status": rec.processing_status,
-                        "error_message": rec.error_message,
-                        "processed_at": (
-                            str(rec.processed_at) if rec.processed_at else None
-                        ),
-                        "ingested_at": str(rec.ingested_at),
-                        "transcript_length": (
-                            len(rec.transcript) if rec.transcript else 0
-                        ),
-                    }
-                    st.json(raw_data)
-
-            # ─────────────────────────────────────────────────────────────
-            # TAB: Transcript — Full text with stats
-            # ─────────────────────────────────────────────────────────────
-            with tab_transcript:
-                if rec.transcript:
-                    transcript = rec.transcript
-                    words = transcript.split()
-                    chars = len(transcript)
-
-                    # Stats row
-                    ts_cols = st.columns(5)
-                    ts_cols[0].metric("📝 Characters", f"{chars:,}")
-                    ts_cols[1].metric("📖 Words", f"{len(words):,}")
-                    ts_cols[2].metric("📄 Paragraphs", transcript.count("\n\n") + 1)
-                    ts_cols[3].metric("⏱️ Est. Speaking Time", f"{len(words) // 150}m")
-                    ts_cols[4].metric(
-                        "💾 Cached",
-                        (
-                            rec.transcript_cached_at.strftime("%Y-%m-%d")
-                            if rec.transcript_cached_at
-                            else "—"
-                        ),
-                    )
-
-                    # Search within transcript
-                    search_in_transcript = st.text_input(
-                        "🔍 Search in transcript",
-                        placeholder="Find text...",
-                        key="transcript_search",
-                    )
-
-                    if search_in_transcript:
-                        # Highlight matches
-                        import re
-
-                        pattern = re.compile(
-                            re.escape(search_in_transcript), re.IGNORECASE
-                        )
-                        matches = list(pattern.finditer(transcript))
-                        st.info(
-                            f"Found **{len(matches)}** matches for '{search_in_transcript}'"
-                        )
-
-                        # Show context around matches
-                        for i, match in enumerate(matches[:10]):
-                            start = max(0, match.start() - 100)
-                            end = min(len(transcript), match.end() + 100)
-                            context = transcript[start:end]
-                            # Highlight the match
-                            highlighted = pattern.sub(
-                                f"**🔸{search_in_transcript}🔸**",
-                                context,
-                            )
-                            st.markdown(f"**Match {i+1}:** ...{highlighted}...")
-
-                    # Full transcript display
-                    st.markdown("#### Full Transcript")
-                    st.text_area(
-                        "Transcript content",
-                        transcript,
-                        height=400,
-                        label_visibility="collapsed",
-                    )
-
-                    # Download button
-                    st.download_button(
-                        "📥 Download Transcript (.txt)",
-                        transcript,
-                        file_name=f"{rec.recording_id[:16]}_transcript.txt",
-                        mime="text/plain",
-                    )
-                else:
-                    st.warning("No transcript cached for this recording.")
+            with col2:
+                st.markdown("**Recording Breakdown**")
+                for i, rec in enumerate(selected_session.recordings, 1):
+                    dur = rec.duration_seconds or 0
                     st.markdown(
-                        "Click **Fetch Transcript** in the Actions tab to retrieve it from Plaud."
+                        f"**{i}.** `{rec.recording_id[:16]}...` — "
+                        f"{dur // 3600}h {(dur % 3600) // 60}m — "
+                        f"*{rec.processing_status}*"
                     )
 
-            # ─────────────────────────────────────────────────────────────
-            # TAB: Events — All extracted events with full details
-            # ─────────────────────────────────────────────────────────────
-            with tab_events:
-                events = (
-                    session.query(ChronosEventDB)
-                    .filter_by(recording_id=rec.recording_id)
-                    .order_by(ChronosEventDB.start_ts.asc())
-                    .all()
+            # Processing status
+            statuses = Counter(r.processing_status for r in selected_session.recordings)
+            st.markdown("**Processing Status**")
+            for status_name, count in statuses.items():
+                pct = count / len(selected_session.recordings) * 100
+                color = (
+                    "status-ok"
+                    if status_name == "completed"
+                    else "status-warn" if status_name == "pending" else "status-error"
+                )
+                st.markdown(
+                    f'<span class="status-pill {color}">{status_name}</span> {count} ({pct:.0f}%)',
+                    unsafe_allow_html=True,
                 )
 
-                if events:
-                    st.markdown(f"#### {len(events)} Extracted Events")
+        # ─────────────────────────────────────────────────────────────
+        # TAB: Recordings
+        # ─────────────────────────────────────────────────────────────
+        with tab_recordings:
+            st.markdown("#### Recordings in This Session")
 
-                    # Event summary stats
-                    ev_cols = st.columns(5)
-                    categories = Counter(e.category for e in events)
-                    sentiments = [
-                        e.sentiment for e in events if e.sentiment is not None
-                    ]
-                    avg_sentiment = (
-                        sum(sentiments) / len(sentiments) if sentiments else 0
+            for i, rec in enumerate(selected_session.recordings, 1):
+                with st.expander(
+                    f"📁 Recording {i}: {rec.title or rec.recording_id[:24]}",
+                    expanded=(i == 1),
+                ):
+                    r_cols = st.columns([2, 1])
+
+                    with r_cols[0]:
+                        st.code(f"recording_id: {rec.recording_id}")
+                        st.code(f"title: {rec.title or 'Untitled'}")
+                        st.code(f"created_at: {rec.created_at}")
+                        st.code(
+                            f"duration: {rec.duration_seconds // 60}m {rec.duration_seconds % 60}s"
+                        )
+                        if rec.transcript:
+                            words = len(rec.transcript.split())
+                            st.code(f"transcript: {words:,} words")
+
+                    with r_cols[1]:
+                        st.code(f"status: {rec.processing_status}")
+                        st.code(
+                            f"device: {rec.device_id[:8] if rec.device_id else 'Unknown'}"
+                        )
+                        st.code(f"source: {rec.source}")
+                        if rec.processed_at:
+                            st.code(
+                                f"processed: {rec.processed_at.strftime('%Y-%m-%d %H:%M')}"
+                            )
+
+        # ─────────────────────────────────────────────────────────────
+        # TAB: Combined Transcript
+        # ─────────────────────────────────────────────────────────────
+        with tab_transcript:
+            st.markdown("#### Combined Session Transcript")
+
+            all_transcripts = []
+            total_words = 0
+
+            for rec in selected_session.recordings:
+                if rec.transcript:
+                    all_transcripts.append(
+                        f"\n{'='*60}\n"
+                        f"📁 RECORDING: {rec.title or rec.recording_id[:24]}\n"
+                        f"⏱️ {rec.duration_seconds // 60}m {rec.duration_seconds % 60}s | "
+                        f"🕐 {rec.created_at.strftime('%H:%M') if rec.created_at else 'Unknown'}\n"
+                        f"{'='*60}\n\n"
+                        f"{rec.transcript}"
                     )
+                    total_words += len(rec.transcript.split())
 
-                    ev_cols[0].metric("🎯 Total Events", len(events))
-                    ev_cols[1].metric("📁 Categories", len(categories))
-                    ev_cols[2].metric("💭 Avg Sentiment", f"{avg_sentiment:.2f}")
-                    ev_cols[3].metric(
-                        "🔑 Keywords", sum(len(e.keywords or []) for e in events)
+            if all_transcripts:
+                combined = "\n\n".join(all_transcripts)
+
+                # Stats
+                stat_cols = st.columns(4)
+                stat_cols[0].metric("📝 Total Words", f"{total_words:,}")
+                stat_cols[1].metric("📁 Recordings", len(all_transcripts))
+                stat_cols[2].metric("📄 Characters", f"{len(combined):,}")
+                stat_cols[3].metric("⏱️ Est. Speaking", f"{total_words // 150}m")
+
+                # Search
+                search_q = st.text_input(
+                    "🔍 Search in combined transcript",
+                    placeholder="Find text across all recordings...",
+                    key="session_transcript_search",
+                )
+
+                if search_q:
+                    import re
+
+                    pattern = re.compile(re.escape(search_q), re.IGNORECASE)
+                    matches = list(pattern.finditer(combined))
+                    st.info(f"Found **{len(matches)}** matches")
+
+                # Display
+                st.text_area(
+                    "Combined transcript",
+                    combined,
+                    height=400,
+                    label_visibility="collapsed",
+                )
+
+                st.download_button(
+                    "📥 Download Combined Transcript",
+                    combined,
+                    file_name=f"{selected_session.session_id}_transcript.txt",
+                    mime="text/plain",
+                )
+            else:
+                st.warning("No transcripts available for this session.")
+
+        # ─────────────────────────────────────────────────────────────
+        # TAB: Events
+        # ─────────────────────────────────────────────────────────────
+        with tab_events:
+            st.markdown("#### All Events in Session")
+
+            recording_ids = tuple(r.recording_id for r in selected_session.recordings)
+            events = get_session_events(recording_ids)
+
+            if events:
+                # Event stats
+                categories = Counter(
+                    e["payload"].get("category", "unknown") for e in events
+                )
+                sentiments = [
+                    e["payload"].get("sentiment", 0)
+                    for e in events
+                    if e["payload"].get("sentiment") is not None
+                ]
+
+                stat_cols = st.columns(5)
+                stat_cols[0].metric("🎯 Total Events", len(events))
+                stat_cols[1].metric("📁 Categories", len(categories))
+                stat_cols[2].metric(
+                    "💭 Avg Sentiment",
+                    f"{sum(sentiments)/len(sentiments):.2f}" if sentiments else "—",
+                )
+                stat_cols[3].metric("📁 Recordings", len(recording_ids))
+                stat_cols[4].metric("⏱️ Session Duration", selected_session.duration_str)
+
+                # Category breakdown
+                with st.expander("📊 Category Distribution", expanded=True):
+                    cat_colors = get_dynamic_category_colors(list(categories.keys()))
+                    for cat, count in categories.most_common():
+                        pct = count / len(events) * 100
+                        st.progress(pct / 100, text=f"{cat}: {count} ({pct:.1f}%)")
+
+                # Event list
+                for i, e in enumerate(events[:50]):  # Limit to 50 for performance
+                    payload = e.get("payload", {})
+                    with st.expander(
+                        f"🎯 {i+1}. {payload.get('category', 'event')} — {payload.get('clean_text', '')[:50]}...",
+                        expanded=(i < 3),
+                    ):
+                        st.markdown(format_event_card(e), unsafe_allow_html=True)
+                        st.code(f"recording_id: {payload.get('recording_id', '')}")
+
+                if len(events) > 50:
+                    st.info(
+                        f"Showing 50 of {len(events)} events. Use search to find specific content."
                     )
-                    ev_cols[4].metric(
-                        "⏱️ Total Duration",
-                        f"{sum((e.end_ts - e.start_ts).total_seconds() for e in events):.0f}s",
-                    )
+            else:
+                st.info("No events found. Process recordings first.")
 
-                    # Category breakdown
-                    with st.expander("📊 Category Distribution", expanded=True):
-                        for cat, count in categories.most_common():
-                            pct = count / len(events) * 100
-                            st.progress(pct / 100, text=f"{cat}: {count} ({pct:.1f}%)")
+        # ─────────────────────────────────────────────────────────────
+        # TAB: Timeline
+        # ─────────────────────────────────────────────────────────────
+        with tab_timeline:
+            st.markdown("#### Session Timeline")
 
-                    # Event list with full details
-                    st.markdown("#### Event Details")
+            recording_ids = tuple(r.recording_id for r in selected_session.recordings)
+            events = get_session_events(recording_ids)
 
-                    for i, e in enumerate(events):
-                        with st.expander(
-                            f"🎯 Event {i+1}: {e.clean_text[:60]}...",
-                            expanded=i == 0,
-                        ):
-                            detail_cols = st.columns([2, 1])
+            if events:
+                # Build timeline data
+                import plotly.express as px
+                import pandas as pd
 
-                            with detail_cols[0]:
-                                st.markdown(f"**Clean Text:**\n{e.clean_text}")
-                                if e.raw_transcript_snippet:
-                                    st.markdown("**Raw Snippet:**")
-                                    st.code(e.raw_transcript_snippet[:500])
-                                if e.gemini_reasoning:
-                                    st.markdown("**Gemini Reasoning:**")
-                                    st.info(e.gemini_reasoning)
+                timeline_data = []
+                for e in events:
+                    payload = e.get("payload", {})
+                    start_ts = payload.get("start_ts", "")
+                    category = payload.get("category", "unknown")
 
-                            with detail_cols[1]:
-                                st.markdown("**Metadata:**")
-                                st.code(f"event_id: {e.event_id}")
-                                st.code(f"category: {e.category}")
-                                st.code(f"speaker: {e.speaker}")
-                                st.code(f"sentiment: {e.sentiment}")
-                                st.code(f"day_of_week: {e.day_of_week}")
-                                st.code(f"hour_of_day: {e.hour_of_day}")
-                                st.code(f"start_ts: {e.start_ts}")
-                                st.code(f"end_ts: {e.end_ts}")
-                                if e.keywords:
-                                    st.markdown(
-                                        f"**Keywords:** {', '.join(e.keywords)}"
-                                    )
-                                if e.qdrant_point_id:
-                                    st.code(f"qdrant_point_id: {e.qdrant_point_id}")
-                else:
-                    st.info("No events extracted yet. Process this recording first.")
-
-            # ─────────────────────────────────────────────────────────────
-            # TAB: Qdrant — Vector store exploration
-            # ─────────────────────────────────────────────────────────────
-            with tab_qdrant:
-                if not qdrant_client:
-                    st.warning("Qdrant not connected. Start Qdrant to explore vectors.")
-                else:
-                    st.markdown("#### Qdrant Vector Storage")
-
-                    # Get events for this recording from Qdrant
-                    try:
-                        from qdrant_client.models import (
-                            Filter,
-                            FieldCondition,
-                            MatchValue,
-                        )
-
-                        points, _ = qdrant_client.client.scroll(
-                            collection_name=qdrant_client.collection_name,
-                            scroll_filter=Filter(
-                                must=[
-                                    FieldCondition(
-                                        key="recording_id",
-                                        match=MatchValue(value=rec.recording_id),
-                                    )
-                                ]
-                            ),
-                            limit=100,
-                            with_vectors=True,
-                            with_payload=True,
-                        )
-
-                        if points:
-                            st.success(
-                                f"Found **{len(points)}** vectors in Qdrant for this recording"
-                            )
-
-                            # Vector stats
-                            vec_cols = st.columns(4)
-                            vec_cols[0].metric("🔢 Vectors", len(points))
-                            vec_cols[1].metric(
-                                "📐 Dimensions",
-                                len(points[0].vector) if points[0].vector else 0,
-                            )
-                            vec_cols[2].metric(
-                                "📊 Avg Vector Norm",
-                                f"{sum(sum(v**2 for v in p.vector)**0.5 for p in points if p.vector) / len(points):.2f}",
-                            )
-                            vec_cols[3].metric(
-                                "🏷️ Payload Fields",
-                                (
-                                    len(points[0].payload.keys())
-                                    if points[0].payload
-                                    else 0
-                                ),
-                            )
-
-                            # Payload schema exploration
-                            st.markdown("#### Payload Schema")
-                            if points[0].payload:
-                                schema_data = {}
-                                for key, value in points[0].payload.items():
-                                    schema_data[key] = {
-                                        "type": type(value).__name__,
-                                        "example": (
-                                            str(value)[:100] if value else "None"
-                                        ),
-                                    }
-                                st.json(schema_data)
-
-                            # Full point inspection
-                            st.markdown("#### Point Inspector")
-                            point_options = [
-                                f"{p.id[:16]}... ({p.payload.get('category', '?')})"
-                                for p in points
-                            ]
-                            selected_point_idx = st.selectbox(
-                                "Select point to inspect",
-                                range(len(point_options)),
-                                format_func=lambda i: point_options[i],
-                            )
-
-                            if selected_point_idx is not None:
-                                point = points[selected_point_idx]
-
-                                pt_cols = st.columns([2, 1])
-
-                                with pt_cols[0]:
-                                    st.markdown("**Full Payload:**")
-                                    st.json(point.payload)
-
-                                with pt_cols[1]:
-                                    st.markdown("**Vector Preview (first 20 dims):**")
-                                    if point.vector:
-                                        vec_preview = point.vector[:20]
-                                        st.code(
-                                            "\n".join(
-                                                f"[{i}]: {v:.6f}"
-                                                for i, v in enumerate(vec_preview)
-                                            )
-                                        )
-                                        st.caption(
-                                            f"... and {len(point.vector) - 20} more dimensions"
-                                        )
-
-                                # Find similar vectors
-                                st.markdown("#### 🔗 Find Similar Events")
-                                if st.button(
-                                    "Search Similar Vectors", key="similar_search"
-                                ):
-                                    similar = qdrant_client.client.query_points(
-                                        collection_name=qdrant_client.collection_name,
-                                        query=point.vector,
-                                        limit=5,
-                                    ).points
-
-                                    st.markdown("**Top 5 Similar Events:**")
-                                    for sim in similar:
-                                        if sim.id != point.id:
-                                            st.markdown(
-                                                f"- **Score: {sim.score:.4f}** | "
-                                                f"{sim.payload.get('category', '?')} | "
-                                                f"{sim.payload.get('clean_text', '')[:80]}..."
-                                            )
-                        else:
-                            st.info(
-                                "No vectors found in Qdrant for this recording. Index it first."
-                            )
-                    except Exception as ex:
-                        st.error(f"Qdrant query error: {ex}")
-
-            # ─────────────────────────────────────────────────────────────
-            # TAB: Actions — Processing controls
-            # ─────────────────────────────────────────────────────────────
-            with tab_actions:
-                st.markdown("#### Processing Actions")
-
-                action_cols = st.columns(4)
-                with action_cols[0]:
-                    if st.button(
-                        "🧠 Process with Gemini",
-                        width="stretch",
-                        disabled=not status["gemini"],
-                    ):
-                        code = run_pipeline_command(
-                            [
-                                "--process",
-                                "--recording-id",
-                                rec.recording_id,
-                                "--limit",
-                                "1",
-                            ],
-                            f"Processing {rec.recording_id[:16]}...",
-                        )
-                        if code == 0:
-                            st.success("Done!")
-                            st.rerun()
-
-                with action_cols[1]:
-                    if st.button(
-                        "📤 Index to Qdrant",
-                        width="stretch",
-                        disabled=not status["gemini"],
-                    ):
-                        code = run_pipeline_command(
-                            [
-                                "--index",
-                                "--recording-id",
-                                rec.recording_id,
-                                "--limit",
-                                "50",
-                            ],
-                            f"Indexing {rec.recording_id[:16]}...",
-                        )
-                        if code == 0:
-                            st.success("Done!")
-                            st.rerun()
-
-                with action_cols[2]:
-                    if st.button(
-                        "🔄 Force Reprocess",
-                        width="stretch",
-                        disabled=not status["gemini"],
-                    ):
-                        code = run_pipeline_command(
-                            [
-                                "--process",
-                                "--recording-id",
-                                rec.recording_id,
-                                "--force",
-                                "--limit",
-                                "1",
-                            ],
-                            f"Force reprocessing...",
-                        )
-                        if code == 0:
-                            st.success("Done!")
-                            st.rerun()
-
-                with action_cols[3]:
-                    if st.button(
-                        "📝 Fetch Transcript",
-                        width="stretch",
-                        disabled=not status["plaud"],
-                    ):
+                    if start_ts:
                         try:
-                            client = PlaudClient()
-                            file_details = client.get_recording(rec.recording_id)
-                            for source in file_details.get("source_list", []):
-                                if source.get("data_type") == "transaction":
-                                    segments = json.loads(
-                                        source.get("data_content", "[]")
-                                    )
-                                    transcript = " ".join(
-                                        s.get("content", "") for s in segments
-                                    )
-                                    if transcript.strip():
-                                        set_chronos_recording_transcript(
-                                            session, rec.recording_id, transcript
-                                        )
-                                        st.success(f"Cached {len(transcript):,} chars")
-                                        st.rerun()
-                                    break
-                            else:
-                                st.warning("No transcript found in Plaud")
-                        except Exception as e:
-                            st.error(f"Failed: {e}")
+                            ts = datetime.fromisoformat(start_ts.replace("Z", "+00:00"))
+                            timeline_data.append(
+                                {
+                                    "time": ts,
+                                    "category": category,
+                                    "text": payload.get("clean_text", "")[:100],
+                                    "hour": ts.hour,
+                                    "minute": ts.minute,
+                                }
+                            )
+                        except Exception:
+                            pass
 
-            # Show transcript if available
+                if timeline_data:
+                    df = pd.DataFrame(timeline_data)
+
+                    # Events over time
+                    st.markdown("##### Events by Hour")
+                    hour_counts = df.groupby("hour").size().reset_index(name="count")
+                    fig = px.bar(
+                        hour_counts,
+                        x="hour",
+                        y="count",
+                        title=f"Event Distribution Across {selected_session.duration_str}",
+                        labels={"hour": "Hour of Day", "count": "Events"},
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    # Category breakdown by hour
+                    st.markdown("##### Categories by Hour")
+                    cat_hour = (
+                        df.groupby(["hour", "category"])
+                        .size()
+                        .reset_index(name="count")
+                    )
+                    fig2 = px.bar(
+                        cat_hour,
+                        x="hour",
+                        y="count",
+                        color="category",
+                        title="Category Distribution by Hour",
+                        barmode="stack",
+                    )
+                    st.plotly_chart(fig2, use_container_width=True)
+                else:
+                    st.info("No timeline data available.")
+            else:
+                st.info("No events to display on timeline.")
+
+
+def _render_recording_view(db_session, qdrant_client, status: Dict[str, Any]):
+    """Render the traditional recording-by-recording view."""
+
+    # ═══════════════════════════════════════════════════════════════
+    # FILTERS — All the controls
+    # ═══════════════════════════════════════════════════════════════
+    st.markdown("### 🎛️ Filters")
+    filter_cols = st.columns([1, 1, 1, 2])
+
+    with filter_cols[0]:
+        status_filter = st.multiselect(
+            "Processing Status",
+            ["pending", "processing", "completed", "failed"],
+            default=["pending", "completed", "failed"],
+        )
+    with filter_cols[1]:
+        days_back = st.number_input("Days back", 1, 365, 90, key="rec_days_back")
+    with filter_cols[2]:
+        sort_by = st.selectbox(
+            "Sort by",
+            ["created_at", "duration_seconds", "title"],
+            index=0,
+        )
+    with filter_cols[3]:
+        search_q = st.text_input(
+            "🔍 Search",
+            placeholder="Search title, ID, or transcript content...",
+        )
+
+    # Query
+    q = db_session.query(ChronosRecordingDB)
+    if status_filter:
+        q = q.filter(ChronosRecordingDB.processing_status.in_(status_filter))
+    if days_back:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+        q = q.filter(ChronosRecordingDB.created_at >= cutoff.replace(tzinfo=None))
+    if search_q:
+        like = f"%{search_q}%"
+        q = q.filter(
+            (ChronosRecordingDB.recording_id.ilike(like))
+            | (ChronosRecordingDB.title.ilike(like))
+            | (ChronosRecordingDB.transcript.ilike(like))
+        )
+
+    # Apply sorting
+    if sort_by == "created_at":
+        q = q.order_by(ChronosRecordingDB.created_at.desc())
+    elif sort_by == "duration_seconds":
+        q = q.order_by(ChronosRecordingDB.duration_seconds.desc())
+    else:
+        q = q.order_by(ChronosRecordingDB.title.asc())
+
+    recs = q.limit(200).all()
+
+    if not recs:
+        st.info("No recordings found. Go to **Pipeline** to fetch from Plaud.")
+        return
+
+    # ═══════════════════════════════════════════════════════════════
+    # SUMMARY STATS
+    # ═══════════════════════════════════════════════════════════════
+    stat_cols = st.columns(6)
+    pending = sum(1 for r in recs if r.processing_status == "pending")
+    completed = sum(1 for r in recs if r.processing_status == "completed")
+    failed = sum(1 for r in recs if r.processing_status == "failed")
+    with_transcript = sum(1 for r in recs if r.transcript)
+    total_duration = sum(r.duration_seconds or 0 for r in recs)
+    total_events = sum(
+        db_session.query(ChronosEventDB).filter_by(recording_id=r.recording_id).count()
+        for r in recs
+    )
+
+    stat_cols[0].metric("📊 Total", len(recs))
+    stat_cols[1].metric("⏳ Pending", pending)
+    stat_cols[2].metric("✅ Completed", completed)
+    stat_cols[3].metric("❌ Failed", failed)
+    stat_cols[4].metric("📝 With Transcript", with_transcript)
+    stat_cols[5].metric(
+        "⏱️ Total Duration",
+        f"{total_duration // 3600}h {(total_duration % 3600) // 60}m",
+    )
+
+    # ═══════════════════════════════════════════════════════════════
+    # RECORDINGS TABLE — Full data
+    # ═══════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("### 📋 Recordings")
+
+    rows = []
+    for r in recs:
+        event_count = (
+            db_session.query(ChronosEventDB)
+            .filter_by(recording_id=r.recording_id)
+            .count()
+        )
+        transcript_len = len(r.transcript) if r.transcript else 0
+        word_count = len(r.transcript.split()) if r.transcript else 0
+
+        rows.append(
+            {
+                "ID": r.recording_id,
+                "Title": r.title or "—",
+                "Created": (
+                    r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "—"
+                ),
+                "Duration": (
+                    f"{r.duration_seconds // 60}m {r.duration_seconds % 60}s"
+                    if r.duration_seconds
+                    else "—"
+                ),
+                "Status": r.processing_status,
+                "Events": event_count,
+                "Transcript": f"{word_count:,} words" if transcript_len else "—",
+                "Device": r.device_id[:8] if r.device_id else "—",
+                "Processed": (
+                    r.processed_at.strftime("%m-%d %H:%M") if r.processed_at else "—"
+                ),
+            }
+        )
+
+    st.dataframe(rows, width="stretch", hide_index=True, height=300)
+
+    # ═══════════════════════════════════════════════════════════════
+    # RECORDING DETAIL — Deep dive
+    # ═══════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("### 🔍 Recording Detail")
+
+    options = [
+        f"{r.title or r.recording_id[:24]}... ({r.processing_status})" for r in recs
+    ]
+    selected_idx = st.selectbox(
+        "Select recording to explore",
+        range(len(options)),
+        format_func=lambda i: options[i],
+        key="rec_selector",
+    )
+
+    if selected_idx is not None:
+        rec = recs[selected_idx]
+
+        # TABS for organization
+        tab_meta, tab_transcript, tab_events, tab_qdrant, tab_actions = st.tabs(
+            ["📋 Metadata", "📝 Transcript", "🎯 Events", "🔮 Qdrant", "⚡ Actions"]
+        )
+
+        # ─────────────────────────────────────────────────────────────
+        # TAB: Metadata — ALL fields
+        # ─────────────────────────────────────────────────────────────
+        with tab_meta:
+            st.markdown("#### Complete Recording Metadata")
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.markdown("**Identifiers**")
+                st.code(f"recording_id: {rec.recording_id}")
+                st.code(f"device_id: {rec.device_id or 'None'}")
+                st.code(f"checksum: {rec.checksum or 'None'}")
+
+            with col2:
+                st.markdown("**Timestamps**")
+                st.code(f"created_at: {rec.created_at}")
+                st.code(f"ingested_at: {rec.ingested_at}")
+                st.code(f"processed_at: {rec.processed_at or 'Not processed'}")
+                st.code(f"transcript_cached_at: {rec.transcript_cached_at or 'None'}")
+
+            with col3:
+                st.markdown("**Processing**")
+                st.code(f"status: {rec.processing_status}")
+                st.code(f"source: {rec.source}")
+                st.code(f"duration_seconds: {rec.duration_seconds}")
+                if rec.error_message:
+                    st.error(f"Error: {rec.error_message}")
+
+            st.markdown("**File Paths**")
+            st.code(f"local_audio_path: {rec.local_audio_path}")
+
+            # Raw JSON dump
+            with st.expander("📦 Raw SQLite Row (JSON)", expanded=False):
+                raw_data = {
+                    "recording_id": rec.recording_id,
+                    "title": rec.title,
+                    "created_at": str(rec.created_at),
+                    "duration_seconds": rec.duration_seconds,
+                    "local_audio_path": rec.local_audio_path,
+                    "source": rec.source,
+                    "device_id": rec.device_id,
+                    "checksum": rec.checksum,
+                    "processing_status": rec.processing_status,
+                    "error_message": rec.error_message,
+                    "processed_at": (
+                        str(rec.processed_at) if rec.processed_at else None
+                    ),
+                    "ingested_at": str(rec.ingested_at),
+                    "transcript_length": (len(rec.transcript) if rec.transcript else 0),
+                }
+                st.json(raw_data)
+
+        # ─────────────────────────────────────────────────────────────
+        # TAB: Transcript — Full text with stats
+        # ─────────────────────────────────────────────────────────────
+        with tab_transcript:
             if rec.transcript:
-                with st.expander("📜 Transcript", expanded=False):
-                    st.text_area("Content", rec.transcript, height=200)
+                transcript = rec.transcript
+                words = transcript.split()
+                chars = len(transcript)
 
-            # Show events
+                # Stats row
+                ts_cols = st.columns(5)
+                ts_cols[0].metric("📝 Characters", f"{chars:,}")
+                ts_cols[1].metric("📖 Words", f"{len(words):,}")
+                ts_cols[2].metric("📄 Paragraphs", transcript.count("\n\n") + 1)
+                ts_cols[3].metric("⏱️ Est. Speaking Time", f"{len(words) // 150}m")
+                ts_cols[4].metric(
+                    "💾 Cached",
+                    (
+                        rec.transcript_cached_at.strftime("%Y-%m-%d")
+                        if rec.transcript_cached_at
+                        else "—"
+                    ),
+                )
+
+                # Search within transcript
+                search_in_transcript = st.text_input(
+                    "🔍 Search in transcript",
+                    placeholder="Find text...",
+                    key="transcript_search",
+                )
+
+                if search_in_transcript:
+                    # Highlight matches
+                    import re
+
+                    pattern = re.compile(re.escape(search_in_transcript), re.IGNORECASE)
+                    matches = list(pattern.finditer(transcript))
+                    st.info(
+                        f"Found **{len(matches)}** matches for '{search_in_transcript}'"
+                    )
+
+                    # Show context around matches
+                    for i, match in enumerate(matches[:10]):
+                        start = max(0, match.start() - 100)
+                        end = min(len(transcript), match.end() + 100)
+                        context = transcript[start:end]
+                        # Highlight the match
+                        highlighted = pattern.sub(
+                            f"**🔸{search_in_transcript}🔸**",
+                            context,
+                        )
+                        st.markdown(f"**Match {i+1}:** ...{highlighted}...")
+
+                # Full transcript display
+                st.markdown("#### Full Transcript")
+                st.text_area(
+                    "Transcript content",
+                    transcript,
+                    height=400,
+                    label_visibility="collapsed",
+                )
+
+                # Download button
+                st.download_button(
+                    "📥 Download Transcript (.txt)",
+                    transcript,
+                    file_name=f"{rec.recording_id[:16]}_transcript.txt",
+                    mime="text/plain",
+                )
+            else:
+                st.warning("No transcript cached for this recording.")
+                st.markdown(
+                    "Click **Fetch Transcript** in the Actions tab to retrieve it from Plaud."
+                )
+
+        # ─────────────────────────────────────────────────────────────
+        # TAB: Events — All extracted events with full details
+        # ─────────────────────────────────────────────────────────────
+        with tab_events:
             events = (
-                session.query(ChronosEventDB)
+                db_session.query(ChronosEventDB)
                 .filter_by(recording_id=rec.recording_id)
                 .order_by(ChronosEventDB.start_ts.asc())
                 .all()
             )
 
             if events:
-                with st.expander(f"🎯 Events ({len(events)})", expanded=True):
-                    for e in events[:20]:
-                        st.markdown(
-                            f"**{e.category}** ({e.start_ts.strftime('%H:%M')}) — {e.clean_text[:200]}..."
+                st.markdown(f"#### {len(events)} Extracted Events")
+
+                # Event summary stats
+                ev_cols = st.columns(5)
+                categories = Counter(e.category for e in events)
+                sentiments = [e.sentiment for e in events if e.sentiment is not None]
+                avg_sentiment = sum(sentiments) / len(sentiments) if sentiments else 0
+
+                ev_cols[0].metric("🎯 Total Events", len(events))
+                ev_cols[1].metric("📁 Categories", len(categories))
+                ev_cols[2].metric("💭 Avg Sentiment", f"{avg_sentiment:.2f}")
+                ev_cols[3].metric(
+                    "🔑 Keywords", sum(len(e.keywords or []) for e in events)
+                )
+                ev_cols[4].metric(
+                    "⏱️ Total Duration",
+                    f"{sum((e.end_ts - e.start_ts).total_seconds() for e in events):.0f}s",
+                )
+
+                # Category breakdown
+                with st.expander("📊 Category Distribution", expanded=True):
+                    for cat, count in categories.most_common():
+                        pct = count / len(events) * 100
+                        st.progress(pct / 100, text=f"{cat}: {count} ({pct:.1f}%)")
+
+                # Event list with full details
+                st.markdown("#### Event Details")
+
+                for i, e in enumerate(events):
+                    with st.expander(
+                        f"🎯 Event {i+1}: {e.clean_text[:60]}...",
+                        expanded=i == 0,
+                    ):
+                        detail_cols = st.columns([2, 1])
+
+                        with detail_cols[0]:
+                            st.markdown(f"**Clean Text:**\n{e.clean_text}")
+                            if e.raw_transcript_snippet:
+                                st.markdown("**Raw Snippet:**")
+                                st.code(e.raw_transcript_snippet[:500])
+                            if e.gemini_reasoning:
+                                st.markdown("**Gemini Reasoning:**")
+                                st.info(e.gemini_reasoning)
+
+                        with detail_cols[1]:
+                            st.markdown("**Metadata:**")
+                            st.code(f"event_id: {e.event_id}")
+                            st.code(f"category: {e.category}")
+                            st.code(f"speaker: {e.speaker}")
+                            st.code(f"sentiment: {e.sentiment}")
+                            st.code(f"day_of_week: {e.day_of_week}")
+                            st.code(f"hour_of_day: {e.hour_of_day}")
+                            st.code(f"start_ts: {e.start_ts}")
+                            st.code(f"end_ts: {e.end_ts}")
+                            if e.keywords:
+                                st.markdown(f"**Keywords:** {', '.join(e.keywords)}")
+                            if e.qdrant_point_id:
+                                st.code(f"qdrant_point_id: {e.qdrant_point_id}")
+            else:
+                st.info("No events extracted yet. Process this recording first.")
+
+        # ─────────────────────────────────────────────────────────────
+        # TAB: Qdrant — Vector store exploration
+        # ─────────────────────────────────────────────────────────────
+        with tab_qdrant:
+            if not qdrant_client:
+                st.warning("Qdrant not connected. Start Qdrant to explore vectors.")
+            else:
+                st.markdown("#### Qdrant Vector Storage")
+
+                # Get events for this recording from Qdrant
+                try:
+                    from qdrant_client.models import (
+                        Filter,
+                        FieldCondition,
+                        MatchValue,
+                    )
+
+                    points, _ = qdrant_client.client.scroll(
+                        collection_name=qdrant_client.collection_name,
+                        scroll_filter=Filter(
+                            must=[
+                                FieldCondition(
+                                    key="recording_id",
+                                    match=MatchValue(value=rec.recording_id),
+                                )
+                            ]
+                        ),
+                        limit=100,
+                        with_vectors=True,
+                        with_payload=True,
+                    )
+
+                    if points:
+                        st.success(
+                            f"Found **{len(points)}** vectors in Qdrant for this recording"
                         )
 
-    finally:
-        session.close()
+                        # Vector stats
+                        vec_cols = st.columns(4)
+                        vec_cols[0].metric("🔢 Vectors", len(points))
+                        vec_cols[1].metric(
+                            "📐 Dimensions",
+                            len(points[0].vector) if points[0].vector else 0,
+                        )
+                        vec_cols[2].metric(
+                            "📊 Avg Vector Norm",
+                            f"{sum(sum(v**2 for v in p.vector)**0.5 for p in points if p.vector) / len(points):.2f}",
+                        )
+                        vec_cols[3].metric(
+                            "🏷️ Payload Fields",
+                            (len(points[0].payload.keys()) if points[0].payload else 0),
+                        )
+
+                        # Payload schema exploration
+                        st.markdown("#### Payload Schema")
+                        if points[0].payload:
+                            schema_data = {}
+                            for key, value in points[0].payload.items():
+                                schema_data[key] = {
+                                    "type": type(value).__name__,
+                                    "example": (str(value)[:100] if value else "None"),
+                                }
+                            st.json(schema_data)
+
+                        # Full point inspection
+                        st.markdown("#### Point Inspector")
+                        point_options = [
+                            f"{p.id[:16]}... ({p.payload.get('category', '?')})"
+                            for p in points
+                        ]
+                        selected_point_idx = st.selectbox(
+                            "Select point to inspect",
+                            range(len(point_options)),
+                            format_func=lambda i: point_options[i],
+                            key="point_selector",
+                        )
+
+                        if selected_point_idx is not None:
+                            point = points[selected_point_idx]
+
+                            pt_cols = st.columns([2, 1])
+
+                            with pt_cols[0]:
+                                st.markdown("**Full Payload:**")
+                                st.json(point.payload)
+
+                            with pt_cols[1]:
+                                st.markdown("**Vector Preview (first 20 dims):**")
+                                if point.vector:
+                                    vec_preview = point.vector[:20]
+                                    st.code(
+                                        "\n".join(
+                                            f"[{i}]: {v:.6f}"
+                                            for i, v in enumerate(vec_preview)
+                                        )
+                                    )
+                                    st.caption(
+                                        f"... and {len(point.vector) - 20} more dimensions"
+                                    )
+
+                            # Find similar vectors
+                            st.markdown("#### 🔗 Find Similar Events")
+                            if st.button(
+                                "Search Similar Vectors", key="similar_search"
+                            ):
+                                similar = qdrant_client.client.query_points(
+                                    collection_name=qdrant_client.collection_name,
+                                    query=point.vector,
+                                    limit=5,
+                                ).points
+
+                                st.markdown("**Top 5 Similar Events:**")
+                                for sim in similar:
+                                    if sim.id != point.id:
+                                        st.markdown(
+                                            f"- **Score: {sim.score:.4f}** | "
+                                            f"{sim.payload.get('category', '?')} | "
+                                            f"{sim.payload.get('clean_text', '')[:80]}..."
+                                        )
+                    else:
+                        st.info(
+                            "No vectors found in Qdrant for this recording. Index it first."
+                        )
+                except Exception as ex:
+                    st.error(f"Qdrant query error: {ex}")
+
+        # ─────────────────────────────────────────────────────────────
+        # TAB: Actions — Processing controls
+        # ─────────────────────────────────────────────────────────────
+        with tab_actions:
+            st.markdown("#### Processing Actions")
+
+            action_cols = st.columns(4)
+            with action_cols[0]:
+                if st.button(
+                    "🧠 Process with Gemini",
+                    width="stretch",
+                    disabled=not status["gemini"],
+                ):
+                    code = run_pipeline_command(
+                        [
+                            "--process",
+                            "--recording-id",
+                            rec.recording_id,
+                            "--limit",
+                            "1",
+                        ],
+                        f"Processing {rec.recording_id[:16]}...",
+                    )
+                    if code == 0:
+                        st.success("Done!")
+                        st.rerun()
+
+            with action_cols[1]:
+                if st.button(
+                    "📤 Index to Qdrant",
+                    width="stretch",
+                    disabled=not status["gemini"],
+                ):
+                    code = run_pipeline_command(
+                        [
+                            "--index",
+                            "--recording-id",
+                            rec.recording_id,
+                            "--limit",
+                            "50",
+                        ],
+                        f"Indexing {rec.recording_id[:16]}...",
+                    )
+                    if code == 0:
+                        st.success("Done!")
+                        st.rerun()
+
+            with action_cols[2]:
+                if st.button(
+                    "🔄 Force Reprocess",
+                    width="stretch",
+                    disabled=not status["gemini"],
+                ):
+                    code = run_pipeline_command(
+                        [
+                            "--process",
+                            "--recording-id",
+                            rec.recording_id,
+                            "--force",
+                            "--limit",
+                            "1",
+                        ],
+                        f"Force reprocessing...",
+                    )
+                    if code == 0:
+                        st.success("Done!")
+                        st.rerun()
+
+            with action_cols[3]:
+                if st.button(
+                    "📝 Fetch Transcript",
+                    width="stretch",
+                    disabled=not status["plaud"],
+                ):
+                    try:
+                        client = PlaudClient()
+                        file_details = client.get_recording(rec.recording_id)
+                        for source in file_details.get("source_list", []):
+                            if source.get("data_type") == "transaction":
+                                segments = json.loads(source.get("data_content", "[]"))
+                                transcript = " ".join(
+                                    s.get("content", "") for s in segments
+                                )
+                                if transcript.strip():
+                                    set_chronos_recording_transcript(
+                                        db_session, rec.recording_id, transcript
+                                    )
+                                    st.success(f"Cached {len(transcript):,} chars")
+                                    st.rerun()
+                                break
+                        else:
+                            st.warning("No transcript found in Plaud")
+                    except Exception as e:
+                        st.error(f"Failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -1651,6 +2227,13 @@ def page_timeline(settings, status: Dict[str, Any]):
         recordings_db = session.query(ChronosRecordingDB).all()
         rec_lookup = {r.recording_id: r for r in recordings_db}
 
+        # Detect sessions for filtering
+        detected_sessions = detect_sessions(recordings_db, gap_threshold_minutes=15)
+        session_lookup = {}  # recording_id -> session_id
+        for sess in detected_sessions:
+            for rec in sess.recordings:
+                session_lookup[rec.recording_id] = sess
+
         # DYNAMIC CATEGORY COLORS — Auto-generated for ANY category
         all_cats_in_data = sorted(set(e.category or "unknown" for e in events_db))
         CATEGORY_COLORS = get_dynamic_category_colors(all_cats_in_data)
@@ -1664,9 +2247,10 @@ def page_timeline(settings, status: Dict[str, Any]):
             else:
                 st.markdown("### 🎛️ Filters")
 
-                # Convert events to dicts
+                # Convert events to dicts with session info
                 events_data = []
                 for e in events_db:
+                    sess = session_lookup.get(e.recording_id)
                     events_data.append(
                         {
                             "event_id": e.event_id,
@@ -1681,8 +2265,51 @@ def page_timeline(settings, status: Dict[str, Any]):
                             "keywords": e.keywords or [],
                             "speaker": e.speaker or "self_talk",
                             "qdrant_point_id": e.qdrant_point_id,
+                            "session_id": sess.session_id if sess else None,
+                            "session_date": sess.date_str if sess else None,
                         }
                     )
+
+                # Session filter toggle
+                session_filter_enabled = st.checkbox(
+                    "🗂️ Filter by Session",
+                    value=False,
+                    help="Group recordings by session (for split recordings)",
+                )
+
+                if session_filter_enabled and detected_sessions:
+                    session_options = [
+                        f"{s.date_str} | {s.time_range_str} | {s.duration_str} ({s.recording_count} recs)"
+                        for s in detected_sessions
+                    ]
+                    selected_session_idx = st.selectbox(
+                        "Select Session",
+                        range(len(session_options)),
+                        format_func=lambda i: session_options[i],
+                        key="timeline_session_selector",
+                    )
+                    selected_session = detected_sessions[selected_session_idx]
+                    session_recording_ids = {
+                        r.recording_id for r in selected_session.recordings
+                    }
+
+                    # Filter events to selected session
+                    events_data = [
+                        e
+                        for e in events_data
+                        if e["recording_id"] in session_recording_ids
+                    ]
+
+                    st.success(
+                        f"📌 Viewing session: **{selected_session.date_str}** | "
+                        f"{selected_session.duration_str} | "
+                        f"{selected_session.recording_count} recordings | "
+                        f"{len(events_data)} events"
+                    )
+
+                if not events_data:
+                    st.info("No events match the current filters.")
+                    return
 
                 # Filter row 1 - Main filters
                 filter_cols = st.columns([2, 2, 2, 2])
