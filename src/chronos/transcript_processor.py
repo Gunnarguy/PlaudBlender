@@ -136,6 +136,7 @@ BROKEN_JSON:
         recording_id: str,
         max_retries: int = 3,
         verbose: bool = True,
+        recording_date: str = "",
     ) -> Optional[GeminiEventOutput]:
         """Process transcript text through Gemini (modified for text input).
 
@@ -149,7 +150,7 @@ BROKEN_JSON:
             GeminiEventOutput with extracted events
         """
         # Build prompt (same as audio version)
-        prompt = self.engine._build_prompt(recording_id)
+        prompt = self.engine._build_prompt(recording_id, recording_date)
 
         # Combine prompt with transcript
         full_prompt = f"""{prompt}
@@ -482,8 +483,21 @@ Extract events from this transcript following the schema exactly."""
                 )
                 return False
 
-            # Process through Gemini
-            output = self.process_transcript_text(transcript_text, rec.recording_id)
+            # Process through Gemini — pass real recording date for temporal anchoring
+            recording_date = ""
+            if rec.created_at:
+                try:
+                    from datetime import datetime as dt_cls
+
+                    if isinstance(rec.created_at, str):
+                        recording_date = rec.created_at[:10]
+                    else:
+                        recording_date = rec.created_at.strftime("%Y-%m-%d")
+                except Exception:
+                    pass
+            output = self.process_transcript_text(
+                transcript_text, rec.recording_id, recording_date=recording_date
+            )
 
             if not output or not output.events:
                 logger.warning(f"No events extracted for {rec.recording_id}")

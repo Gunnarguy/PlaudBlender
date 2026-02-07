@@ -48,10 +48,14 @@ python plaud_setup.py
 ### 3. Launch Chronos
 
 ```bash
-streamlit run chronos_app.py
+# NEW: Glorious Dash UI with Knowledge Graph
+python -m app.main
+
+# Legacy Streamlit UI (deprecated)
+# streamlit run archive/chronos_app_streamlit.py
 ```
 
-Open http://localhost:8501 and click **Fetch New Recordings** to get started!
+Open http://localhost:8050 to explore your knowledge graph!
 
 ---
 
@@ -80,8 +84,8 @@ Open http://localhost:8501 and click **Fetch New Recordings** to get started!
 
 ## 📖 UI Pages
 
-| Page           | What it does                                          |
-| -------------- | ----------------------------------------------------- |
+| Page            | What it does                                          |
+| --------------- | ----------------------------------------------------- |
 | **🏠 Home**     | Quick status, metrics, one-click actions              |
 | **🔍 Search**   | Semantic + temporal search with filters               |
 | **📚 Library**  | Browse all recordings, view events, manage processing |

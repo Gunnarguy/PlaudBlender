@@ -6,11 +6,11 @@
 
 | What            | Where                                                                          |
 | --------------- | ------------------------------------------------------------------------------ |
-| **Full docs**   | `docs/PROJECT_GUIDE.md` — architecture, structure, and roadmap                 |
-| **MVP spec**    | `docs/chronos-mvp.md` — complete Chronos system architecture                   |
-| **Entry point** | `streamlit run chronos_app.py` — launches the Streamlit UI                     |
-| **Pipeline**    | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph |
-| **Tests**       | `python -m pytest tests/` — 57 tests, run before committing                    |
+| **Full docs**   | `docs/PROJECT_GUIDE.md` — architecture, structure, and roadmap                  |
+| **MVP spec**    | `docs/chronos-mvp.md` — complete Chronos system architecture                    |
+| **Entry point** | `python scripts/launch_app.py` — Dash v2 UI on port 8050                        |
+| **Pipeline**    | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph  |
+| **Tests**       | `python -m pytest tests/` — 74 tests, run before committing                     |
 
 ## What This Project Does
 
@@ -19,32 +19,41 @@
 - Fetches transcripts from Plaud API (OAuth) and stores locally
 - Processes through Gemini AI for cognitive cleaning (removes filler, extracts events)
 - Indexes to Qdrant with temporal metadata (day-of-week, hour, category)
-- Provides Streamlit UI with semantic search and temporal filtering
+- Provides **Dash UI with interactive Knowledge Graph** (Cytoscape)
 - Full Plaud integration: devices, workflows, webhooks
 
-## UI Pages (Simplified)
+## UI Layout (Dash v2 — `app_v2/`)
 
-| Page            | Purpose                                               |
-| --------------- | ----------------------------------------------------- |
-| **🏠 Home**     | Quick status, metrics, one-click actions              |
-| **🔍 Search**   | Semantic + temporal search with filters               |
-| **📚 Library**  | Browse all recordings, view events, manage processing |
-| **⚡ Pipeline** | 3-step Fetch → Process → Index workflow               |
-| **📱 Plaud**    | Device management, workflows, webhooks (tabs)         |
-| **⚙️ Settings** | Configuration, diagnostics, logs                      |
+| View          | Purpose                                                              |
+| ------------- | -------------------------------------------------------------------- |
+| **Days**      | Date-grouped event timeline, click recording → detail panel          |
+| **Topics**    | Events grouped by category (work, meeting, personal, etc.)           |
+| **Search**    | Semantic search with category/date filters                           |
+| **Graph**     | Interactive Cytoscape knowledge graph, 6 layouts, node click details |
+| **Stats**     | 8 stat cards, sentiment chart, productivity insights                 |
+| **Sync**      | Pipeline dashboard: status counts, Full Sync, Reset Stuck            |
+| **Settings**  | Real connectivity checks for Plaud, Gemini, Qdrant                   |
 
 ## Project Structure
 
 ```
-chronos_app.py          → Main Streamlit UI (6 pages, single navigation)
-plaud_setup.py          → Setup wizard + OAuth
-scripts/                → CLI tools (chronos_pipeline.py, mcp_server.py)
-src/chronos/            → Core engine (ingest, process, embed, search)
+app_v2/                 → MAIN Dash v2 UI (14 callbacks)
+  main.py               → Run with: python scripts/launch_app.py
+  layout.py             → 3-column layout (sidebar | content | detail)
+  assets/style.css      → ~2700 lines dark theme CSS
+  components/           → sidebar, day_view, search, graph, stats, topics, recording_detail
+  callbacks/            → navigation, search, day_view, graph
+  services/data_service.py → Data access layer (~1000 lines)
+scripts/                → CLI tools
+  chronos_pipeline.py   → Full pipeline runner (~688 lines)
+  launch_app.py         → App launcher
+  fix_recordings.py     → Diagnose + repair stuck recordings
+  index_unindexed.py    → Batch index events to Qdrant
+src/chronos/            → Core engine (ingest, process, embed, search, graph)
 src/plaud_*.py          → Plaud API clients
-src/database/           → SQLite models & repositories
+src/database/           → SQLAlchemy models & repositories
 src/models/             → Pydantic schemas
-gui/components/         → Reusable UI panels (devices, workflows, webhooks)
-tests/                  → Pytest suite (57 tests)
+tests/                  → Pytest suite (74 tests)
 docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 ```
 
@@ -80,3 +89,4 @@ docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 - Don't import from `archive/` — that's retired code
 - Don't reference Pinecone — we're 100% Qdrant now
 - Don't scatter `load_dotenv()` — use `src/config.py`
+- Don't use `ChronosRecording.status` — the field is `processing_status`
