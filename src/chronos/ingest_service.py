@@ -214,6 +214,7 @@ class ChronosIngestService:
             upsert_chronos_recording(
                 session=self.db,
                 recording_id=recording_id,
+                title=None,
                 created_at=created_at,
                 duration_seconds=duration_ms // 1000,
                 local_audio_path=local_path,
@@ -286,7 +287,7 @@ class ChronosIngestService:
             # Parse timestamp
             try:
                 created_at = datetime.fromisoformat(
-                    created_at_str.replace("Z", "+00:00")
+                    (created_at_str or "").replace("Z", "+00:00")
                 )
             except Exception as e:
                 logger.error(f"Invalid timestamp for {recording_id}: {e}")
@@ -324,14 +325,15 @@ class ChronosIngestService:
             bool: True if checksum matches
         """
         rec = get_chronos_recording(self.db, recording_id)
-        if not rec or not rec.checksum:
+        if not rec or not rec.checksum:  # type: ignore[truthy-bool]
             return False
 
-        if not os.path.exists(rec.local_audio_path):
-            logger.error(f"Audio file missing: {rec.local_audio_path}")
+        audio_path = str(rec.local_audio_path)
+        if not os.path.exists(audio_path):
+            logger.error(f"Audio file missing: {audio_path}")
             return False
 
-        actual_checksum = self._compute_checksum(rec.local_audio_path)
+        actual_checksum = self._compute_checksum(audio_path)
         if actual_checksum != rec.checksum:
             logger.error(f"Checksum mismatch for {recording_id}")
             return False

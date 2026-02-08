@@ -2,13 +2,20 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Run: Chronos UI (Streamlit)",
+      "label": "Run: Chronos UI (Dash)",
       "type": "shell",
       "command": "${workspaceFolder}/venv/bin/python",
-      "args": ["-m", "streamlit", "run", "chronos_app.py"],
+      "args": ["scripts/launch_app.py"],
       "problemMatcher": [],
       "isBackground": true,
       "group": "build"
+    },
+    {
+      "label": "Run: Full Pipeline",
+      "type": "shell",
+      "command": "${workspaceFolder}/venv/bin/python",
+      "args": ["scripts/chronos_pipeline.py", "--full"],
+      "problemMatcher": []
     },
     {
       "label": "Test: pytest (quick)",
@@ -32,6 +39,14 @@
       "command": "${workspaceFolder}/venv/bin/python",
       "args": ["-m", "scripts.mcp_server"],
       "problemMatcher": []
+    },
+    {
+      "label": "Run: Auto-Sync",
+      "type": "shell",
+      "command": "${workspaceFolder}/venv/bin/python",
+      "args": ["scripts/auto_sync.py"],
+      "problemMatcher": [],
+      "isBackground": true
     }
   ]
 }

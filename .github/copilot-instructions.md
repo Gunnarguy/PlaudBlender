@@ -10,7 +10,7 @@
 | **MVP spec**    | `docs/chronos-mvp.md` — complete Chronos system architecture                   |
 | **Entry point** | `python scripts/launch_app.py` — Dash v2 UI on port 8050                       |
 | **Pipeline**    | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph |
-| **Tests**       | `python -m pytest tests/` — 99 tests, run before committing                    |
+| **Tests**       | `python -m pytest tests/` — 90 tests, run before committing                    |
 
 ## What This Project Does
 
@@ -57,7 +57,7 @@ src/chronos/            → Core engine (ingest, process, embed, search, graph)
 src/plaud_*.py          → Plaud API clients + webhook + USB watcher
 src/database/           → SQLAlchemy models & repositories
 src/models/             → Pydantic schemas
-tests/                  → Pytest suite (99 tests)
+tests/                  → Pytest suite (90 tests)
 docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 ```
 

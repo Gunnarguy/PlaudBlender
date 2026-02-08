@@ -44,7 +44,7 @@ class PlaudClient:
     Uses bulletproof authentication that automatically handles token refresh.
     """
 
-    def __init__(self, oauth_client: PlaudOAuthClient = None):
+    def __init__(self, oauth_client: PlaudOAuthClient | None = None):
         """
         Initialize the Plaud API client.
 
@@ -197,14 +197,22 @@ class PlaudClient:
         total_duration = sum(r.get('duration', 0) for r in recordings) / 1000  # ms to sec
 
         return {
-            'total_count': len(recordings),
-            'total_duration_seconds': total_duration,
-            'total_duration_hours': total_duration / 3600,
-            'avg_duration_minutes': (total_duration / len(recordings) / 60) if recordings else 0,
-            'date_range': {
-                'earliest': min((r.get('start_at') for r in recordings if r.get('start_at')), default=None),
-                'latest': max((r.get('start_at') for r in recordings if r.get('start_at')), default=None)
-            }
+            "total_count": len(recordings),
+            "total_duration_seconds": total_duration,
+            "total_duration_hours": total_duration / 3600,
+            "avg_duration_minutes": (
+                (total_duration / len(recordings) / 60) if recordings else 0
+            ),
+            "date_range": {
+                "earliest": min(
+                    (r["start_at"] for r in recordings if r.get("start_at")),
+                    default=None,
+                ),
+                "latest": max(
+                    (r["start_at"] for r in recordings if r.get("start_at")),
+                    default=None,
+                ),
+            },
         }
 
     def list_recordings(

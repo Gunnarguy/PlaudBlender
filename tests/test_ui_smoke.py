@@ -1,6 +1,7 @@
 """
 UI Component Smoke Tests.
 Tests that core modules can be imported and instantiated.
+Covers Dash v2 app (app_v2/) and core src packages.
 """
 
 import pytest
@@ -14,85 +15,55 @@ if ROOT not in sys.path:
 
 
 # ===========================================================================
-# GUI Package Tests
+# Dash v2 App Tests
 # ===========================================================================
 
 
-class TestGUIPackage:
-    """Tests for gui package (now minimal)."""
+class TestDashApp:
+    """Tests for app_v2/ Dash application."""
 
-    def test_gui_import(self):
-        """Verify gui package can be imported."""
-        import gui
+    def test_layout_import(self):
+        """Verify layout module can be imported."""
+        from app_v2 import layout
 
-        assert gui is not None
+        assert layout is not None
+        assert hasattr(layout, "create_layout")
 
-    def test_app_state_import(self):
-        """Verify AppState can be imported from gui."""
-        from gui import AppState
+    def test_components_import(self):
+        """Verify all component modules can be imported."""
+        from app_v2.components import sidebar
+        from app_v2.components import day_view
+        from app_v2.components import search
+        from app_v2.components import graph
+        from app_v2.components import stats
+        from app_v2.components import topics
+        from app_v2.components import recording_detail
 
-        assert AppState is not None
+        assert sidebar is not None
+        assert day_view is not None
+        assert search is not None
+        assert graph is not None
+        assert stats is not None
+        assert topics is not None
+        assert recording_detail is not None
 
-    def test_app_state_instantiation(self):
-        """Verify AppState can be instantiated."""
-        from gui import AppState
+    def test_callbacks_import(self):
+        """Verify all callback modules can be imported."""
+        from app_v2.callbacks import navigation
+        from app_v2.callbacks import search as search_cb
+        from app_v2.callbacks import day_view as dv_cb
+        from app_v2.callbacks import graph as graph_cb
 
-        state = AppState()
-        assert state is not None
-        assert hasattr(state, "current_view")
+        assert navigation is not None
+        assert search_cb is not None
+        assert dv_cb is not None
+        assert graph_cb is not None
 
-    def test_plaudblender_app_import(self):
-        """Verify PlaudBlenderApp can be imported."""
-        from gui import PlaudBlenderApp
+    def test_data_service_import(self):
+        """Verify data service can be imported."""
+        from app_v2.services.data_service import ChronosDataService
 
-        assert PlaudBlenderApp is not None
-
-    def test_plaudblender_app_methods(self):
-        """Verify PlaudBlenderApp has required methods."""
-        from gui import PlaudBlenderApp
-
-        app = PlaudBlenderApp()
-        assert hasattr(app, "run")
-        assert hasattr(app, "switch_view")
-
-
-# ===========================================================================
-# Component Tests
-# ===========================================================================
-
-
-class TestComponents:
-    """Tests for gui/components/."""
-
-    def test_stat_card_import(self):
-        """Verify StatCard can be imported."""
-        from gui.components.stat_card import StatCard
-
-        assert StatCard is not None
-
-    def test_status_bar_import(self):
-        """Verify StatusBar can be imported."""
-        from gui.components.status_bar import StatusBar
-
-        assert StatusBar is not None
-
-    def test_device_panel_import(self):
-        """Verify device_panel can be imported."""
-        from gui.components.device_panel import render_device_panel
-
-        assert render_device_panel is not None
-
-    def test_workflow_panel_import(self):
-        """Verify workflow_panel can be imported."""
-        from gui.components.workflow_panel import render_workflow_panel
-
-        assert render_workflow_panel is not None
-
-    def test_webhook_panel_import(self):
-        """Verify webhook_panel can be imported."""
-        from gui.components.webhook_panel import render_webhook_panel
-
-        assert render_webhook_panel is not None
+        assert ChronosDataService is not None
 
 
 # ===========================================================================
@@ -184,11 +155,10 @@ class TestFullModuleTree:
 
     def test_core_imports(self):
         """Verify core packages can be imported."""
-        # GUI (minimal)
-        import gui
-        import gui.components
-        import gui.components.stat_card
-        import gui.components.status_bar
+        # Dash v2 UI
+        from app_v2 import layout
+        from app_v2.components import sidebar, day_view, search, graph, stats, topics
+        from app_v2.services.data_service import ChronosDataService
 
         # Src core
         import src

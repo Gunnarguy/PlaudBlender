@@ -14,5 +14,5 @@ addopts = "-v --tb=short"
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
-include = ["src", "gui", "scripts", "tests"]
+include = ["src", "app_v2", "scripts", "tests"]
 exclude = ["**/__pycache__", "lib", "data"]

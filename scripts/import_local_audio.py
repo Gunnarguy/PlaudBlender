@@ -108,7 +108,7 @@ def process_audio_file(
 
     # Check if already processed
     existing = get_chronos_recording(session, recording_id)
-    if existing and existing.processing_status == "completed" and not force:
+    if existing and existing.processing_status == "completed" and not force:  # type: ignore[truthy-bool]
         logger.info(f"⏭️ Already processed: {audio_path.name}")
         return True
 

@@ -206,7 +206,7 @@ class PlaudWorkflowClient:
         workflow_id = response.get("id") or response.get("workflow_id")
 
         logger.info(f"✅ Workflow submitted: {workflow_id}")
-        return workflow_id
+        return workflow_id  # type: ignore[return-value]
 
     def get_workflow_status(self, workflow_id: str) -> Dict[str, Any]:
         """

@@ -501,7 +501,9 @@ def register_navigation_callbacks(app):
                         proc_failed = 0
                         for rec in pending:
                             try:
-                                ok = processor.process_recording_id(rec.recording_id)
+                                ok = processor.process_recording_id(
+                                    str(rec.recording_id)
+                                )
                                 if ok:
                                     processed += 1
                                 else:
@@ -529,7 +531,7 @@ def register_navigation_callbacks(app):
                         unindexed = all_events
 
                         if unindexed:
-                            texts = [e.clean_text for e in unindexed]
+                            texts = [str(e.clean_text) for e in unindexed]
                             vectors = embedder.embed_batch(texts)
 
                             from src.models.chronos_schemas import ChronosEvent as CE
@@ -538,22 +540,22 @@ def register_navigation_callbacks(app):
                             for event, vector in zip(unindexed, vectors):
                                 try:
                                     schema_event = CE(
-                                        event_id=event.event_id,
-                                        recording_id=event.recording_id,
-                                        start_ts=event.start_ts,
-                                        end_ts=event.end_ts,
-                                        day_of_week=event.day_of_week,
-                                        hour_of_day=event.hour_of_day,
-                                        clean_text=event.clean_text,
-                                        category=event.category,
-                                        sentiment=event.sentiment or 0.0,
-                                        keywords=event.keywords or [],
-                                        speaker=event.speaker or "unknown",
-                                        raw_transcript_snippet=event.raw_transcript_snippet,
-                                        gemini_reasoning=event.gemini_reasoning,
+                                        event_id=str(event.event_id),
+                                        recording_id=str(event.recording_id),
+                                        start_ts=event.start_ts,  # type: ignore[arg-type]
+                                        end_ts=event.end_ts,  # type: ignore[arg-type]
+                                        day_of_week=str(event.day_of_week),  # type: ignore[arg-type]
+                                        hour_of_day=int(event.hour_of_day),  # type: ignore[arg-type]
+                                        clean_text=str(event.clean_text),
+                                        category=str(event.category),  # type: ignore[arg-type]
+                                        sentiment=float(event.sentiment or 0.0),  # type: ignore[arg-type]
+                                        keywords=list(event.keywords or []),  # type: ignore[arg-type]
+                                        speaker=str(event.speaker or "unknown"),  # type: ignore[arg-type]
+                                        raw_transcript_snippet=str(event.raw_transcript_snippet) if event.raw_transcript_snippet else None,  # type: ignore[truthy-bool]
+                                        gemini_reasoning=str(event.gemini_reasoning) if event.gemini_reasoning else None,  # type: ignore[truthy-bool]
                                     )
                                     point_id = qdrant.upsert_event(schema_event, vector)
-                                    event.qdrant_point_id = point_id
+                                    event.qdrant_point_id = point_id  # type: ignore[assignment]
                                     db.commit()
                                     indexed += 1
                                 except Exception as e:

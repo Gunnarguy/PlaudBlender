@@ -78,7 +78,7 @@ class ChronosEmbeddingService:
 
             result = self.client.models.embed_content(
                 model=self.model_name,
-                contents=batch,
+                contents=batch,  # type: ignore[arg-type]
                 config=types.EmbedContentConfig(
                     task_type=task_type,
                     output_dimensionality=self.output_dim,

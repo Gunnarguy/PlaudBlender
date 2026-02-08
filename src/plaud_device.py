@@ -249,7 +249,7 @@ class PlaudDeviceManager:
             resp.raise_for_status()
             data = resp.json()
             # Devices may be under 'devices' or root list
-            devices_data = data.get("devices") if isinstance(data, dict) else data
+            devices_data: list[dict[str, Any]] = data.get("devices", []) if isinstance(data, dict) else data  # type: ignore[assignment]
             if devices_data is None and isinstance(data, list):
                 devices_data = data
             if not devices_data:

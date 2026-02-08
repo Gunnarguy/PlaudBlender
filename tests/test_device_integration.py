@@ -348,43 +348,5 @@ class TestWebhookEventTypes:
             ), f"Missing event type: {type_name}"
 
 
-class TestDeviceIntegrationPanel:
-    """Tests for the device integration UI panel."""
-
-    def test_import(self):
-        """Test panel can be imported."""
-        from gui.components.device_integration import (
-            render_device_integration,
-            render_usb_devices_section,
-            render_auto_sync_section,
-        )
-
-        assert render_device_integration is not None
-        assert render_usb_devices_section is not None
-
-    def test_helper_functions(self):
-        """Test helper functions."""
-        from gui.components.device_integration import (
-            _battery_emoji,
-            _device_type_emoji,
-            _state_emoji,
-        )
-        from src.plaud_device import DeviceType, DeviceState
-
-        # Battery emoji
-        assert _battery_emoji(100) == "🔋"
-        assert _battery_emoji(50) == "🔋"
-        assert _battery_emoji(10) == "🪫"
-
-        # Device type emoji
-        assert _device_type_emoji(DeviceType.NOTE) == "📓"
-        assert _device_type_emoji(DeviceType.NOTE_PIN) == "📌"
-
-        # State emoji
-        assert _state_emoji(DeviceState.IDLE) == "💤"
-        assert _state_emoji(DeviceState.RECORDING) == "🔴"
-        assert _state_emoji(DeviceState.SYNCING) == "🔄"
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

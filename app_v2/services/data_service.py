@@ -105,7 +105,7 @@ class RecordingSummary:
         """Get the most common category."""
         if not self.categories:
             return "unknown"
-        return max(self.categories, key=self.categories.get)
+        return max(self.categories, key=lambda k: self.categories[k])
 
 
 @dataclass
@@ -287,7 +287,7 @@ class ChronosDataService:
                     break
 
                 for point in points:
-                    event = Event.from_qdrant(point.id, point.payload or {})
+                    event = Event.from_qdrant(str(point.id), point.payload or {})
                     events.append(event)
 
                 if offset is None:
@@ -631,9 +631,9 @@ class ChronosDataService:
 
         # Handle dict wrapper or raw NetworkX graph
         if isinstance(data, dict) and "graph" in data:
-            graph = data["graph"]
+            graph: nx.Graph = data["graph"]  # type: ignore[assignment]
         elif hasattr(data, "nodes"):
-            graph = data
+            graph = data  # type: ignore[assignment]
         else:
             logger.warning(f"Unknown graph format: {type(data)}")
             return self._build_graph_from_events()
@@ -824,7 +824,7 @@ class ChronosDataService:
                 )
                 search_results = []
                 for hit in results.points:
-                    event = Event.from_qdrant(hit.id, hit.payload or {})
+                    event = Event.from_qdrant(str(hit.id), hit.payload or {})
                     search_results.append(SearchResult(event=event, score=hit.score))
                 return search_results
 
@@ -913,9 +913,11 @@ class ChronosDataService:
         longest_rec_min = max(recording_durations.values(), default=0) / 60
 
         most_productive_day = (
-            max(by_day_of_week, key=by_day_of_week.get) if by_day_of_week else ""
+            max(by_day_of_week, key=lambda k: by_day_of_week[k])
+            if by_day_of_week
+            else ""
         )
-        most_productive_hour = max(by_hour, key=by_hour.get) if by_hour else 0
+        most_productive_hour = max(by_hour, key=lambda k: by_hour[k]) if by_hour else 0
 
         # Pipeline completion rate
         pipeline_rate = 0.0
@@ -959,8 +961,8 @@ class ChronosDataService:
             db = SessionLocal()
             try:
                 rec = get_chronos_recording(db, recording_id)
-                if rec and rec.transcript:
-                    return rec.transcript
+                if rec and rec.transcript:  # type: ignore[truthy-bool]
+                    return str(rec.transcript)
             finally:
                 db.close()
         except Exception as e:
@@ -1002,7 +1004,7 @@ class ChronosDataService:
                     )
                 )
                 db.commit()
-                return result.rowcount
+                return result.rowcount  # type: ignore[attr-defined]
             finally:
                 db.close()
         except Exception as e:

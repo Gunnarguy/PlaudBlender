@@ -329,7 +329,7 @@ class PlaudOAuthClient:
                 logger.info("Refreshing access token...")
                 self.refresh_access_token()
                 if self._validate_token():
-                    return self._access_token
+                    return self._access_token  # type: ignore[return-value]
                 else:
                     logger.warning("Refreshed token failed validation")
             except Exception as e:

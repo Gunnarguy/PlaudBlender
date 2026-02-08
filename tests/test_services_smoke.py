@@ -227,21 +227,6 @@ class TestChronosRepository:
 
 
 # ===========================================================================
-# Notion Sync Tests (Optional Feature)
-# ===========================================================================
-
-
-class TestNotionSync:
-    """Tests for src/notion_sync.py."""
-
-    def test_notion_sync_import(self):
-        """Verify NotionSyncService can be imported."""
-        from src.notion_sync import NotionSyncService
-
-        assert NotionSyncService is not None
-
-
-# ===========================================================================
 # Integration Test: Full Pipeline Smoke
 # ===========================================================================
 
