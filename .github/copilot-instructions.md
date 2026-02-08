@@ -6,11 +6,11 @@
 
 | What            | Where                                                                          |
 | --------------- | ------------------------------------------------------------------------------ |
-| **Full docs**   | `docs/PROJECT_GUIDE.md` — architecture, structure, and roadmap                  |
-| **MVP spec**    | `docs/chronos-mvp.md` — complete Chronos system architecture                    |
-| **Entry point** | `python scripts/launch_app.py` — Dash v2 UI on port 8050                        |
-| **Pipeline**    | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph  |
-| **Tests**       | `python -m pytest tests/` — 74 tests, run before committing                     |
+| **Full docs**   | `docs/PROJECT_GUIDE.md` — architecture, structure, and roadmap                 |
+| **MVP spec**    | `docs/chronos-mvp.md` — complete Chronos system architecture                   |
+| **Entry point** | `python scripts/launch_app.py` — Dash v2 UI on port 8050                       |
+| **Pipeline**    | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph |
+| **Tests**       | `python -m pytest tests/` — 74 tests, run before committing                    |
 
 ## What This Project Does
 
@@ -24,15 +24,15 @@
 
 ## UI Layout (Dash v2 — `app_v2/`)
 
-| View          | Purpose                                                              |
-| ------------- | -------------------------------------------------------------------- |
-| **Days**      | Date-grouped event timeline, click recording → detail panel          |
-| **Topics**    | Events grouped by category (work, meeting, personal, etc.)           |
-| **Search**    | Semantic search with category/date filters                           |
-| **Graph**     | Interactive Cytoscape knowledge graph, 6 layouts, node click details |
-| **Stats**     | 8 stat cards, sentiment chart, productivity insights                 |
-| **Sync**      | Pipeline dashboard: status counts, Full Sync, Reset Stuck            |
-| **Settings**  | Real connectivity checks for Plaud, Gemini, Qdrant                   |
+| View         | Purpose                                                              |
+| ------------ | -------------------------------------------------------------------- |
+| **Days**     | Date-grouped event timeline, click recording → detail panel          |
+| **Topics**   | Events grouped by category (work, meeting, personal, etc.)           |
+| **Search**   | Semantic search with category/date filters                           |
+| **Graph**    | Interactive Cytoscape knowledge graph, 6 layouts, node click details |
+| **Stats**    | 8 stat cards, sentiment chart, productivity insights                 |
+| **Sync**     | Pipeline dashboard: status counts, Full Sync, Reset Stuck            |
+| **Settings** | Real connectivity checks for Plaud, Gemini, Qdrant                   |
 
 ## Project Structure
 
