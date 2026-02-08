@@ -4,77 +4,93 @@
 
 ## Quick Orientation
 
-| What            | Where                                                                              |
-| --------------- | ---------------------------------------------------------------------------------- |
-| **Full docs**   | `docs/PROJECT_GUIDE.md` — read this first for architecture, structure, and roadmap |
-| **MVP spec**    | `docs/chronos-mvp.md` — complete Chronos system architecture                       |
-| **Entry point** | `streamlit run chronos_app.py` — launches the Streamlit UI                         |
-| **Pipeline**    | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph     |
-| **Tests**       | `python -m pytest tests/` — 57 tests, run before committing                        |
+| What            | Where                                                                          |
+| --------------- | ------------------------------------------------------------------------------ |
+| **Full docs**   | `docs/PROJECT_GUIDE.md` — architecture, structure, and roadmap                 |
+| **MVP spec**    | `docs/chronos-mvp.md` — complete Chronos system architecture                   |
+| **Entry point** | `python scripts/launch_app.py` — Dash v2 UI on port 8050                       |
+| **Pipeline**    | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph |
+| **Tests**       | `python -m pytest tests/` — 90 tests, run before committing                    |
 
 ## What This Project Does
 
-**Chronos** transforms **Plaud voice recordings** into a **searchable knowledge base**:
+**Chronos** transforms **Plaud voice recordings** into a **searchable knowledge timeline**:
 
-- Fetches audio from Plaud API (OAuth) and stores locally
-- Processes through Gemini 3 for cognitive cleaning (removes "ums", extracts events)
+- Fetches transcripts from Plaud API (OAuth) and stores locally
+- Processes through Gemini AI for cognitive cleaning (removes filler, extracts events)
 - Indexes to Qdrant with temporal metadata (day-of-week, hour, category)
-- Extracts entities and builds knowledge graph (NetworkX)
-- Provides Streamlit UI with timeline and semantic search
-- Optional: Notion sync, MCP server
+- Provides **Dash UI with interactive Knowledge Graph** (Cytoscape)
+- Full Plaud integration: devices, workflows, webhooks
+- **MCP server** for OpenAI/ChatGPT tool access to your knowledge timeline
+- **Auto-sync** via webhooks and USB watcher for real-time ingestion
 
-## Project Structure (Simplified)
+## UI Layout (Dash v2 — `app_v2/`)
+
+| View         | Purpose                                                              |
+| ------------ | -------------------------------------------------------------------- |
+| **Days**     | Date-grouped event timeline, click recording → detail panel          |
+| **Topics**   | Events grouped by category (work, meeting, personal, etc.)           |
+| **Search**   | Semantic search with category/date filters                           |
+| **Graph**    | Interactive Cytoscape knowledge graph, 6 layouts, node click details |
+| **Stats**    | 8 stat cards, sentiment chart, productivity insights                 |
+| **Sync**     | Pipeline dashboard: status counts, Full Sync, Reset Stuck            |
+| **Settings** | Real connectivity checks for Plaud, Gemini, Qdrant                   |
+
+## Project Structure
 
 ```
-chronos_app.py          → Streamlit UI (Master-Detail with timeline)
-plaud_setup.py          → Setup wizard + OAuth
-scripts/                → CLI tools (chronos_pipeline.py, mcp_server.py, plaud_auth_utils.py)
-src/chronos/            → Core Chronos system (engine, qdrant_client, ingest, graph, analytics)
-src/                    → Shared logic (plaud_client, database/, models/, ai/graph_rag.py)
-tests/                  → Pytest suite
+app_v2/                 → MAIN Dash v2 UI (14 callbacks)
+  main.py               → Run with: python scripts/launch_app.py
+  layout.py             → 3-column layout (sidebar | content | detail)
+  assets/style.css      → ~2700 lines dark theme CSS
+  components/           → sidebar, day_view, search, graph, stats, topics, recording_detail
+  callbacks/            → navigation, search, day_view, graph
+  services/data_service.py → Data access layer (~1000 lines)
+scripts/                → CLI tools
+  chronos_pipeline.py   → Full pipeline runner (~688 lines)
+  mcp_server.py         → Production MCP server (11 tools, FastMCP)
+  auto_sync.py          → Webhook + USB auto-sync orchestrator
+  launch_app.py         → App launcher
+  fix_recordings.py     → Diagnose + repair stuck recordings
+  index_unindexed.py    → Batch index events to Qdrant
+src/chronos/            → Core engine (ingest, process, embed, search, graph)
+src/plaud_*.py          → Plaud API clients + webhook + USB watcher
+src/database/           → SQLAlchemy models & repositories
+src/models/             → Pydantic schemas
+tests/                  → Pytest suite (90 tests)
 docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
-archive/                → Legacy GUI and Pinecone code (don't import from here)
 ```
 
-## User Philosophy
+## Key Services (src/chronos/)
 
-> _"Gunnar loves data, granularity, and depth—the ability to drill down and see what's happening under the hood."_
-
-- **Expose metrics** (latency, read units, scores) in the UI
-- **Add tooltips** explaining what every control does
-- **Show provenance** — link vectors back to source recordings
-- **Never hide information** that could help debug or understand behavior
+| Service                | Purpose                                               |
+| ---------------------- | ----------------------------------------------------- |
+| `ingest_service`       | Fetch recordings from Plaud, store metadata in SQLite |
+| `transcript_processor` | Process transcripts through Gemini AI                 |
+| `qdrant_client`        | Native Qdrant client with temporal payload indexes    |
+| `embedding_service`    | Gemini embedding batch processing                     |
+| `graph_service`        | Entity extraction and NetworkX graph building         |
 
 ## Coding Rules
 
 1. **Environment:** All secrets from `.env` via `python-dotenv`. Never hardcode.
 2. **Imports:** Use `from src.X import Y` pattern. All `src/` subdirs have `__init__.py`.
-3. **Schemas:** Validate data with Pydantic (`src/models/chronos_schemas.py` for Chronos, `src/models/schemas.py` for legacy)
-4. **Qdrant:** Use `src/chronos/qdrant_client.py` — native Qdrant API with temporal indexes
-5. **Gemini:** Use `src/chronos/engine.py` for audio processing and `src/chronos/embedding_service.py` for vectors
-6. **Tests:** Run `pytest tests/` before any commit. Currently 57 tests.
+3. **Schemas:** Validate data with Pydantic (`src/models/chronos_schemas.py`)
+4. **Qdrant:** Use `src/chronos/qdrant_client.py` — native API with temporal indexes
+5. **Tests:** Run `pytest tests/` before any commit.
 
-## Before You Code
+## User Philosophy
 
-1. **Read `docs/chronos-mvp.md`** for Chronos architecture
-2. **Read `docs/PROJECT_GUIDE.md`** if you need full context
-3. **Check `src/chronos/` modules** — this is the active codebase
-4. **Run tests** after any change: `python -m pytest tests/ -q`
+> _"Gunnar loves data, granularity, and depth—the ability to drill down and see what's happening under the hood."_
 
-## Key Chronos Services (src/chronos/)
-
-| Service             | Purpose                                                    |
-| ------------------- | ---------------------------------------------------------- |
-| `ingest_service`    | Download audio from Plaud, verify checksums, store locally |
-| `engine`            | Gemini File API integration for cognitive cleaning         |
-| `qdrant_client`     | Native Qdrant client with temporal payload indexes         |
-| `embedding_service` | Gemini text-embedding-004 batch embedding                  |
-| `analytics`         | Day-of-week pattern analysis, sentiment aggregation        |
-| `graph_service`     | Entity extraction and NetworkX graph building              |
+- **Expose metrics** (latency, scores) in the UI
+- **Show command previews** before running pipelines
+- **Progressive disclosure** — simple by default, advanced options collapsed
+- **Never hide information** that could help debug or understand behavior
 
 ## Don't
 
-- Don't import from `archive/` — that's retired code (legacy GUI, Pinecone shims)
-- Don't use chunking — Gemini's 1M token context processes full recordings
-- Don't scatter `load_dotenv()` — use `src/config.py`
+- Don't import from `archive/` — that's retired code
 - Don't reference Pinecone — we're 100% Qdrant now
+- Don't scatter `load_dotenv()` — use `src/config.py`
+- Don't use `ChronosRecording.status` — the field is `processing_status`

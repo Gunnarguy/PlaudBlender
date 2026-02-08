@@ -56,7 +56,7 @@ def index_pending_segments(
         }
         vector_id = upsert_fn(vector, metadata, namespace)
 
-        seg.pinecone_id = vector_id  # legacy column name; used by tests
+        seg.vector_id = vector_id  # Qdrant vector ID
         seg.embedding_model = embedding_model
         seg.status = "indexed"
         processed += 1

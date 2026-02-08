@@ -2,18 +2,25 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Run: Chronos UI (Streamlit)",
+      "label": "Run: Chronos UI (Dash)",
       "type": "shell",
-      "command": "streamlit",
-      "args": ["run", "chronos_app.py"],
+      "command": "${workspaceFolder}/venv/bin/python",
+      "args": ["scripts/launch_app.py"],
       "problemMatcher": [],
       "isBackground": true,
       "group": "build"
     },
     {
+      "label": "Run: Full Pipeline",
+      "type": "shell",
+      "command": "${workspaceFolder}/venv/bin/python",
+      "args": ["scripts/chronos_pipeline.py", "--full"],
+      "problemMatcher": []
+    },
+    {
       "label": "Test: pytest (quick)",
       "type": "shell",
-      "command": "python",
+      "command": "${workspaceFolder}/venv/bin/python",
       "args": ["-m", "pytest", "tests", "-q"],
       "problemMatcher": [],
       "group": "test"
@@ -21,7 +28,7 @@
     {
       "label": "Test: pytest (verbose)",
       "type": "shell",
-      "command": "python",
+      "command": "${workspaceFolder}/venv/bin/python",
       "args": ["-m", "pytest", "tests", "-v", "--tb=short"],
       "problemMatcher": [],
       "group": "test"
@@ -29,9 +36,17 @@
     {
       "label": "Run: MCP server",
       "type": "shell",
-      "command": "python",
+      "command": "${workspaceFolder}/venv/bin/python",
       "args": ["-m", "scripts.mcp_server"],
       "problemMatcher": []
+    },
+    {
+      "label": "Run: Auto-Sync",
+      "type": "shell",
+      "command": "${workspaceFolder}/venv/bin/python",
+      "args": ["scripts/auto_sync.py"],
+      "problemMatcher": [],
+      "isBackground": true
     }
   ]
 }

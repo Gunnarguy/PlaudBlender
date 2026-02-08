@@ -281,13 +281,13 @@ class ChronosQdrantClient:
 
         # Execute search
         if query_vector:
-            # Semantic + filter
-            results = self.client.search(
+            # Semantic + filter using query_points (modern API)
+            results = self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_vector,
+                query=query_vector,
                 query_filter=query_filter,
                 limit=limit,
-            )
+            ).points
         else:
             # Filter-only (scroll)
             results = self.client.scroll(
@@ -376,3 +376,84 @@ class ChronosQdrantClient:
             "indexed_vectors_count": indexed_vectors_count,
             "status": status,
         }
+
+    def search(
+        self,
+        query_vector: List[float],
+        limit: int = 10,
+        query_filter: Optional[Filter] = None,
+        with_payload: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Simple semantic search (convenience wrapper).
+
+        Args:
+            query_vector: Embedding vector for similarity search
+            limit: Max results to return
+            query_filter: Optional Qdrant filter
+            with_payload: Include payload in results
+
+        Returns:
+            List of search results with id, score, and payload
+        """
+        results = self.client.query_points(
+            collection_name=self.collection_name,
+            query=query_vector,
+            query_filter=query_filter,
+            limit=limit,
+            with_payload=with_payload,
+        ).points
+
+        return [
+            {
+                "event_id": hit.id,
+                "score": hit.score,
+                "payload": hit.payload,
+            }
+            for hit in results
+        ]
+
+    def delete_by_recording_id(self, recording_id: str) -> int:
+        """Delete all events for a recording.
+
+        Args:
+            recording_id: Recording ID to delete events for
+
+        Returns:
+            Number of points deleted (estimated)
+        """
+        # Count before delete
+        count_before = self.client.count(
+            collection_name=self.collection_name,
+            count_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="recording_id",
+                        match=MatchValue(value=recording_id),
+                    )
+                ]
+            ),
+        ).count
+
+        # Delete by filter
+        self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="recording_id",
+                        match=MatchValue(value=recording_id),
+                    )
+                ]
+            ),
+        )
+
+        logger.info(f"Deleted ~{count_before} events for recording {recording_id}")
+        return count_before
+
+    def collection_exists(self) -> bool:
+        """Check if the collection exists.
+
+        Returns:
+            True if collection exists
+        """
+        return self.client.collection_exists(self.collection_name)

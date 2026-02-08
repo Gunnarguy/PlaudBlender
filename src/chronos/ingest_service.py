@@ -214,6 +214,7 @@ class ChronosIngestService:
             upsert_chronos_recording(
                 session=self.db,
                 recording_id=recording_id,
+                title=None,
                 created_at=created_at,
                 duration_seconds=duration_ms // 1000,
                 local_audio_path=local_path,
@@ -253,35 +254,16 @@ class ChronosIngestService:
         # Fetch from Plaud API with optional pagination
         try:
             if fetch_all_pages:
-                # Paginate through all recordings (page by page)
-                logger.info("Paginating through ALL recordings...")
-                recordings = []
-                page_size = 100
-                offset = 0
-                total_fetched = 0
-
-                while True:
-                    batch = self.plaud.list_recordings(limit=page_size, offset=offset)
-                    if not batch:
-                        break
-
-                    recordings.extend(batch)
-                    total_fetched += len(batch)
-                    logger.info(f"  ... fetched {total_fetched} so far")
-
-                    if limit and total_fetched >= limit:
-                        logger.info(f"Reached limit ({limit}), stopping pagination")
-                        break
-                    if len(batch) < page_size:
-                        logger.info(
-                            "Reached end of Plaud recordings (last page smaller than page_size)"
-                        )
-                        break
-
-                    offset += len(batch)
+                # Paginate through all recordings (using built-in pagination)
+                logger.info("Fetching ALL recordings...")
+                recordings = self.plaud.list_recordings(fetch_all=True)
+                if limit:
+                    recordings = recordings[:limit]
+                    logger.info(f"Limited to {limit} recordings")
             else:
-                # Single batch fetch (most recent N only)
-                recordings = self.plaud.list_recordings(limit=limit)
+                # Single page fetch (most recent N only, max 20 per API)
+                page_size = min(limit, 20) if limit else 20
+                recordings = self.plaud.list_recordings(page=1, page_size=page_size)
         except Exception as e:
             logger.error(f"Failed to fetch from Plaud API: {e}")
             return (0, 0)
@@ -305,7 +287,7 @@ class ChronosIngestService:
             # Parse timestamp
             try:
                 created_at = datetime.fromisoformat(
-                    created_at_str.replace("Z", "+00:00")
+                    (created_at_str or "").replace("Z", "+00:00")
                 )
             except Exception as e:
                 logger.error(f"Invalid timestamp for {recording_id}: {e}")
@@ -343,14 +325,15 @@ class ChronosIngestService:
             bool: True if checksum matches
         """
         rec = get_chronos_recording(self.db, recording_id)
-        if not rec or not rec.checksum:
+        if not rec or not rec.checksum:  # type: ignore[truthy-bool]
             return False
 
-        if not os.path.exists(rec.local_audio_path):
-            logger.error(f"Audio file missing: {rec.local_audio_path}")
+        audio_path = str(rec.local_audio_path)
+        if not os.path.exists(audio_path):
+            logger.error(f"Audio file missing: {audio_path}")
             return False
 
-        actual_checksum = self._compute_checksum(rec.local_audio_path)
+        actual_checksum = self._compute_checksum(audio_path)
         if actual_checksum != rec.checksum:
             logger.error(f"Checksum mismatch for {recording_id}")
             return False

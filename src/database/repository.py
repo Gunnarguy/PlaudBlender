@@ -62,15 +62,15 @@ def add_segments(
     segments: Iterable[SegmentSchema],
     default_namespace: str = "full_text",
     status: str = "pending",
-    pinecone_ids: Optional[dict] = None,
+    vector_ids: Optional[dict] = None,
     embedding_model: Optional[str] = None,
 ) -> List[Segment]:
     """Persist segment rows for a recording.
 
-    pinecone_ids: optional mapping of segment.id -> pinecone vector id
+    vector_ids: optional mapping of segment.id -> Qdrant vector id
     """
     persisted: List[Segment] = []
-    pinecone_ids = pinecone_ids or {}
+    vector_ids = vector_ids or {}
 
     for seg in segments:
         segment = Segment(
@@ -81,7 +81,7 @@ def add_segments(
             end_ms=seg.end_ms,
             namespace=seg.namespace or default_namespace,
             status=status,
-            pinecone_id=pinecone_ids.get(seg.id),
+            vector_id=vector_ids.get(seg.id),
             embedding_model=embedding_model,
         )
         session.add(segment)

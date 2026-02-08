@@ -69,9 +69,11 @@ CHRONOS_CLEAN_PROMPT = """You are an expert cognitive editor processing a voice 
    - Each event should represent 2-15 minutes of cohesive thought
 
 4. **TEMPORAL ACCURACY**
-   - Each event MUST have accurate start_ts and end_ts based on the audio timestamps
+   - This recording was made on: {{RECORDING_DATE}}
+   - Each event MUST use this date for start_ts and end_ts
+   - Distribute event times across the recording duration on that date
    - If there's a 10+ minute silence, create a "break" event
-   - Do NOT invent timestamps - use the actual audio timing
+   - Do NOT use dates from examples - use the RECORDING DATE above
 
 5. **CATEGORIZATION**
    - Assign each event to ONE category:
@@ -99,8 +101,8 @@ Return a JSON object with this EXACT structure:
     {
       "event_id": "uuid-string",
       "recording_id": "{{RECORDING_ID}}",
-      "start_ts": "2025-10-27T09:15:32Z",
-      "end_ts": "2025-10-27T09:18:45Z",
+      "start_ts": "{{RECORDING_DATE}}T09:15:32Z",
+      "end_ts": "{{RECORDING_DATE}}T09:18:45Z",
       "day_of_week": "Monday",
       "hour_of_day": 9,
       "clean_text": "Reviewed the Sprint planning doc. The team agreed to prioritize the authentication refactor. I'm concerned about the timeline but optimistic about the new architecture.",
@@ -210,22 +212,30 @@ class ChronosEngine:
         logger.info(f"File uploaded successfully: {file_handle.name}")
         return file_handle
 
-    def _build_prompt(self, recording_id: str) -> str:
+    def _build_prompt(self, recording_id: str, recording_date: str = "") -> str:
         """Build the full prompt with recording context.
 
         Args:
             recording_id: Recording ID to inject into prompt
+            recording_date: ISO date string (YYYY-MM-DD) for temporal anchoring
 
         Returns:
             str: Complete prompt
         """
-        return CHRONOS_CLEAN_PROMPT.replace("{{RECORDING_ID}}", recording_id)
+        # Default to today if no date provided
+        if not recording_date:
+            from datetime import datetime
+
+            recording_date = datetime.now().strftime("%Y-%m-%d")
+        prompt = CHRONOS_CLEAN_PROMPT.replace("{{RECORDING_ID}}", recording_id)
+        return prompt.replace("{{RECORDING_DATE}}", recording_date)
 
     def process_audio(
         self,
         audio_path: str,
         recording_id: str,
         max_retries: int = 3,
+        recording_date: str = "",
     ) -> Optional[GeminiEventOutput]:
         """Process audio file and extract structured events.
 
@@ -243,7 +253,7 @@ class ChronosEngine:
                 file_handle = self._upload_audio_file(audio_path)
 
                 # Build prompt
-                prompt = self._build_prompt(recording_id)
+                prompt = self._build_prompt(recording_id, recording_date)
 
                 # Generate with strict JSON output
                 logger.info(
@@ -325,17 +335,21 @@ class ChronosEngine:
         self,
         audio_path: str,
         recording_id: str,
+        recording_date: str = "",
     ) -> Optional[List[ChronosEvent]]:
         """Convenience method that returns just the event list.
 
         Args:
             audio_path: Path to audio file
             recording_id: Recording ID
+            recording_date: ISO date string (YYYY-MM-DD) for temporal anchoring
 
         Returns:
             List[ChronosEvent]: List of validated events, or None if failed
         """
-        output = self.process_audio(audio_path, recording_id)
+        output = self.process_audio(
+            audio_path, recording_id, recording_date=recording_date
+        )
         return output.events if output else None
 
 

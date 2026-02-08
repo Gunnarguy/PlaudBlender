@@ -11,6 +11,8 @@ Usage:
 import argparse
 import logging
 import sys
+import time
+import threading
 from pathlib import Path
 
 # Increase Python's integer string conversion limit (default 4300 digits).
@@ -48,6 +50,49 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Progress Display Helpers
+# ═══════════════════════════════════════════════════════════════════
+
+
+def progress_bar(current: int, total: int, width: int = 40, prefix: str = "") -> str:
+    """Generate ASCII progress bar string."""
+    if total == 0:
+        pct = 100
+    else:
+        pct = int(100 * current / total)
+    filled = int(width * current / max(total, 1))
+    bar = "█" * filled + "░" * (width - filled)
+    return f"{prefix}[{bar}] {current}/{total} ({pct}%)"
+
+
+def print_progress(
+    phase: str, current: int, total: int, item: str = "", elapsed: float = 0
+):
+    """Print progress update with phase info (newline for subprocess compatibility)."""
+    bar = progress_bar(current, total, width=30)
+    elapsed_str = f" ({elapsed:.1f}s)" if elapsed > 0 else ""
+    item_str = (
+        f" → {item[:40]}..."
+        if item and len(item) > 40
+        else f" → {item}" if item else ""
+    )
+    # Use newline (not \r) so subprocess output streams properly to Streamlit
+    print(f"⏳ {phase}: {bar}{item_str}{elapsed_str}", flush=True)
+
+
+def print_phase_header(phase: str, icon: str = "▶"):
+    """Print a visible phase header."""
+    print(f"\n{'═' * 60}")
+    print(f"{icon} {phase}")
+    print(f"{'═' * 60}")
+
+
+def print_phase_complete(phase: str, count: int, elapsed: float):
+    """Print phase completion summary."""
+    print(f"\n✅ {phase} complete: {count} items in {elapsed:.1f}s")
 
 
 def run_preflight(*, smoke_call: bool = False) -> int:
@@ -169,18 +214,27 @@ def run_ingest(session, limit: int = 100, *, fetch_all_pages: bool = False) -> i
     Returns:
         int: Number of recordings ingested
     """
-    logger.info("=" * 60)
-    logger.info("PHASE 1: INGEST")
-    logger.info("=" * 60)
+    print_phase_header("PHASE 1: INGEST (Plaud API)", "📥")
+    print("Fetching recordings from Plaud...")
+
+    start_time = time.time()
 
     service = ChronosIngestService(db_session=session)
+
+    # Add progress callback to the service
+    def on_progress(current, total, recording_id):
+        print_progress("Plaud", current, total, recording_id, time.time() - start_time)
+
     success_count, failure_count = service.ingest_recent_recordings(
         limit=limit, fetch_all_pages=fetch_all_pages
     )
 
-    logger.info(
-        f"Ingestion complete: {success_count} success, {failure_count} failures"
-    )
+    elapsed = time.time() - start_time
+    print_phase_complete("Ingest", success_count, elapsed)
+
+    if failure_count > 0:
+        print(f"⚠️  {failure_count} recordings failed to ingest")
+
     return success_count
 
 
@@ -192,33 +246,104 @@ def run_process(
     force: bool = False,
 ) -> int:
     """Process pending recordings through Gemini using transcripts."""
-    logger.info("=" * 60)
-    logger.info("PHASE 2: PROCESS (Transcripts)")
-    logger.info("=" * 60)
+    print_phase_header("PHASE 2: PROCESS (Gemini AI)", "🧠")
 
+    start_time = time.time()
     processor = TranscriptProcessor(db_session=session)
 
     if recording_id:
+        print(f"Processing single recording: {recording_id[:20]}...")
+        print_progress("Gemini", 0, 1, recording_id[:30])
         ok = processor.process_recording_id(
             recording_id,
             delete_existing_events=bool(force),
         )
+        print_progress("Gemini", 1, 1, recording_id[:30], time.time() - start_time)
         success_count, failure_count = (1, 0) if ok else (0, 1)
     else:
-        # Get pending count
+        # Get pending recordings
         pending = get_pending_chronos_recordings(session, limit=limit)
-        logger.info(f"Found {len(pending)} pending recordings")
+        total = len(pending)
+
+        print(f"Found {total} pending recordings")
 
         if not pending:
-            logger.info("No pending recordings to process")
+            print("✓ No pending recordings to process")
             return 0
 
-        # Process transcripts
-        success_count, failure_count = processor.process_pending_recordings(limit=limit)
+        # Process with progress tracking
+        success_count = 0
+        failure_count = 0
 
-    logger.info(f"Processed {success_count} recordings successfully")
+        for i, rec in enumerate(pending):
+            rec_id = rec.recording_id
+            duration_mins = (rec.duration_seconds or 0) // 60
+
+            # Show which recording we're starting
+            print(
+                f"\n📄 Recording {i+1}/{total}: {rec_id[:20]}... ({duration_mins}m)",
+                flush=True,
+            )
+            print(f"   🔄 Fetching transcript from Plaud...", flush=True)
+
+            try:
+                # This is the slow part - show we're calling Gemini
+                print(f"   🧠 Sending to Gemini AI...", flush=True)
+                proc_start = time.time()
+
+                # Heartbeat thread to show we're still alive
+                stop_heartbeat = threading.Event()
+
+                def heartbeat():
+                    dots = 0
+                    while not stop_heartbeat.is_set():
+                        elapsed = time.time() - proc_start
+                        dots = (dots % 3) + 1
+                        print(
+                            f"   ⏳ Still processing{'.' * dots} ({elapsed:.0f}s elapsed)",
+                            flush=True,
+                        )
+                        stop_heartbeat.wait(5)  # Print every 5 seconds
+
+                heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+                heartbeat_thread.start()
+
+                try:
+                    ok = processor.process_recording_id(rec_id)
+                finally:
+                    stop_heartbeat.set()
+                    heartbeat_thread.join(timeout=1)
+
+                proc_time = time.time() - proc_start
+                if ok:
+                    success_count += 1
+                    print(
+                        f"   ✅ Done! Extracted events in {proc_time:.1f}s", flush=True
+                    )
+                else:
+                    failure_count += 1
+                    print(f"   ❌ Failed after {proc_time:.1f}s", flush=True)
+                    session.rollback()  # Clear any failed transaction state
+            except Exception as e:
+                logger.error(f"Error processing {rec_id}: {e}")
+                failure_count += 1
+                print(f"   ❌ Error: {str(e)[:60]}", flush=True)
+                session.rollback()  # Clear any failed transaction state
+
+            # Overall progress bar
+            print_progress(
+                "Gemini",
+                i + 1,
+                total,
+                f"{success_count} ok, {failure_count} failed",
+                time.time() - start_time,
+            )
+
+    elapsed = time.time() - start_time
+    print_phase_complete("Process", success_count, elapsed)
+
     if failure_count > 0:
-        logger.warning(f"{failure_count} recordings failed")
+        print(f"⚠️  {failure_count} recordings failed")
 
     return success_count
 
@@ -234,19 +359,21 @@ def run_index(
     Returns:
         int: Number of events indexed
     """
-    logger.info("=" * 60)
-    logger.info("PHASE 3: INDEX (Qdrant)")
-    logger.info("=" * 60)
+    print_phase_header("PHASE 3: INDEX (Qdrant)", "📤")
+
+    start_time = time.time()
 
     from src.database.models import ChronosEvent as ChronosEventDB
     from src.chronos.qdrant_client import ChronosQdrantClient
     from src.chronos.embedding_service import ChronosEmbeddingService
 
     # Initialize clients
+    print("Connecting to Qdrant...")
     qdrant = ChronosQdrantClient()
     embedder = ChronosEmbeddingService()
 
     # Ensure collection exists
+    print("Ensuring collection exists...")
     try:
         qdrant.create_collection(vector_size=768, force_recreate=False)
     except Exception as e:
@@ -260,10 +387,11 @@ def run_index(
     events_to_index = q.limit(limit * 10).all()  # multiple events per recording
 
     if not events_to_index:
-        logger.info("No events to index")
+        print("✓ No events to index")
         return 0
 
-    logger.info(f"Found {len(events_to_index)} events to index")
+    total = len(events_to_index)
+    print(f"Found {total} events to index")
 
     # Convert to Pydantic for validation
     from src.models.chronos_schemas import (
@@ -273,8 +401,9 @@ def run_index(
         SpeakerMode,
     )
 
+    print_progress("Validate", 0, total, "converting events...")
     pydantic_events = []
-    for db_event in events_to_index:
+    for i, db_event in enumerate(events_to_index):
         try:
             pydantic_event = ChronosEventSchema(
                 event_id=db_event.event_id,
@@ -296,25 +425,59 @@ def run_index(
                 gemini_reasoning=db_event.gemini_reasoning,
             )
             pydantic_events.append(pydantic_event)
+            if (i + 1) % 10 == 0:
+                print_progress("Validate", i + 1, total, f"{i + 1} events validated")
         except Exception as e:
             logger.error(f"Failed to convert event {db_event.event_id}: {e}")
             continue
 
+    print_progress(
+        "Validate", total, total, "validation complete", time.time() - start_time
+    )
+
     if not pydantic_events:
-        logger.error("No valid events to index")
+        print("\n❌ No valid events to index")
         return 0
 
-    # Generate embeddings
-    logger.info("Generating embeddings...")
+    # Generate embeddings with progress
+    print(f"\n\n🔮 Generating embeddings for {len(pydantic_events)} events...")
+    embed_start = time.time()
     texts = [event.clean_text for event in pydantic_events]
-    embeddings = embedder.embed_batch(texts, task_type="RETRIEVAL_DOCUMENT")
+
+    # Batch embedding with progress
+    batch_size = 20
+    embeddings = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i : i + batch_size]
+        print_progress(
+            "Embed",
+            i,
+            len(texts),
+            f"batch {i//batch_size + 1}",
+            time.time() - embed_start,
+        )
+        batch_embeddings = embedder.embed_batch(batch, task_type="RETRIEVAL_DOCUMENT")
+        embeddings.extend(batch_embeddings)
+
+    print_progress(
+        "Embed", len(texts), len(texts), "complete", time.time() - embed_start
+    )
 
     # Upsert to Qdrant
-    logger.info("Upserting to Qdrant...")
+    print(f"\n\n📤 Upserting {len(pydantic_events)} events to Qdrant...")
+    upsert_start = time.time()
     indexed_count = qdrant.upsert_events_batch(pydantic_events, embeddings)
+    print_progress(
+        "Qdrant",
+        indexed_count,
+        indexed_count,
+        "upsert complete",
+        time.time() - upsert_start,
+    )
 
     # Update database with qdrant_point_id
-    for event in pydantic_events:
+    print("\n\n📝 Updating database references...")
+    for i, event in enumerate(pydantic_events):
         db_event = (
             session.query(ChronosEventDB).filter_by(event_id=event.event_id).first()
         )
@@ -323,7 +486,8 @@ def run_index(
 
     session.commit()
 
-    logger.info(f"Successfully indexed {indexed_count} events")
+    elapsed = time.time() - start_time
+    print_phase_complete("Index", indexed_count, elapsed)
     return indexed_count
 
 

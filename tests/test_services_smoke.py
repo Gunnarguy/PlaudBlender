@@ -1,6 +1,6 @@
 """
-Smoke tests for GUI services.
-These tests verify basic functionality without requiring external API connections.
+Service Smoke Tests.
+Tests for core Chronos services and database operations.
 """
 
 import pytest
@@ -16,341 +16,253 @@ if ROOT not in sys.path:
 
 
 # ===========================================================================
-# Stats Service Tests
+# Chronos Services Tests
 # ===========================================================================
 
-class TestStatsService:
-    """Tests for gui/services/stats_service.py."""
-    
-    def test_stats_service_import(self):
-        """Verify StatsService can be imported."""
-        from gui.services.stats_service import StatsService
-        assert StatsService is not None
-    
-    def test_stats_service_instantiation(self):
-        """Verify StatsService can be instantiated."""
-        from gui.services.stats_service import StatsService
-        service = StatsService()
-        assert service is not None
-    
-    @patch('src.database.engine.SessionLocal')
-    @patch('src.database.engine.init_db')
-    def test_get_pipeline_stats_empty_db(self, mock_init_db, mock_sessionlocal):
-        """Test pipeline stats with empty database."""
-        from gui.services.stats_service import StatsService
-        
-        # Mock empty session
-        mock_sess = MagicMock()
-        mock_sess.query.return_value.count.return_value = 0
-        mock_sessionlocal.return_value = mock_sess
-        
-        service = StatsService()
-        stats = service.get_all_stats(force_refresh=True)
 
-        assert hasattr(stats, 'total_recordings')
-        assert hasattr(stats, 'total_segments')
-    
-    def test_get_health_status(self):
-        """Test health status returns expected structure."""
-        from gui.services.stats_service import StatsService
-        
-        service = StatsService()
-        status = service.get_health_status()
-        
-        assert 'database' in status
-        assert 'pinecone' in status
-        assert 'notion' in status
+class TestChronosQdrantClient:
+    """Tests for src/chronos/qdrant_client.py."""
+
+    def test_qdrant_client_import(self):
+        """Verify ChronosQdrantClient can be imported."""
+        from src.chronos.qdrant_client import ChronosQdrantClient
+
+        assert ChronosQdrantClient is not None
+
+    def test_qdrant_client_has_methods(self):
+        """Verify ChronosQdrantClient has expected methods."""
+        from src.chronos.qdrant_client import ChronosQdrantClient
+
+        assert hasattr(ChronosQdrantClient, "create_collection")
+        assert hasattr(ChronosQdrantClient, "upsert_event")
+        assert hasattr(ChronosQdrantClient, "upsert_events_batch")
+        assert hasattr(ChronosQdrantClient, "search")
 
 
-# ===========================================================================
-# Transcripts Service Tests
-# ===========================================================================
+class TestChronosEmbeddingService:
+    """Tests for src/chronos/embedding_service.py."""
 
-class TestTranscriptsService:
-    """Tests for gui/services/transcripts_service.py."""
-    
-    def test_transcripts_service_import(self):
-        """Verify transcripts service functions can be imported."""
-        from gui.services.transcripts_service import (
-            fetch_transcripts,
-            sync_recording,
-            delete_recording,
-            export_recording,
-            export_all_recordings,
-        )
-        assert fetch_transcripts is not None
-        assert sync_recording is not None
-        assert delete_recording is not None
-        assert export_recording is not None
-        assert export_all_recordings is not None
-    
-    @patch('gui.services.transcripts_service.SessionLocal')
-    @patch('gui.services.transcripts_service.init_db')
-    def test_delete_recording_removes_from_db(self, mock_init_db, mock_sessionlocal):
-        """Test delete_recording removes entry from database."""
-        from gui.services.transcripts_service import delete_recording
-        
-        mock_sess = MagicMock()
-        mock_recording = Mock(id='test_id')
-        mock_sess.query.return_value.filter_by.return_value.first.return_value = mock_recording
-        mock_sess.get.return_value = mock_recording
-        mock_sessionlocal.return_value = mock_sess
-        
-        result = delete_recording('test_id')
-        # Should complete without error
-        assert result is None or isinstance(result, dict) or result == True
-    
-    @patch('gui.services.transcripts_service.SessionLocal')
-    @patch('gui.services.transcripts_service.init_db')
-    def test_export_recordings_format(self, mock_init_db, mock_sessionlocal):
-        """Test export_all_recordings returns proper format with mocked DB."""
-        from gui.services.transcripts_service import export_all_recordings
-        
-        mock_sess = MagicMock()
-        mock_sess.execute.return_value.scalars.return_value.all.return_value = []
-        mock_sessionlocal.return_value = mock_sess
-        
-        result = export_all_recordings(status_filter='nonexistent')
-        assert isinstance(result, list)
-
-
-# ===========================================================================
-# Embedding Service Tests
-# ===========================================================================
-
-class TestEmbeddingService:
-    """Tests for gui/services/embedding_service.py."""
-    
     def test_embedding_service_import(self):
-        """Verify EmbeddingService can be imported."""
-        from gui.services.embedding_service import EmbeddingService
-        assert EmbeddingService is not None
-    
-    def test_embedding_service_instantiation(self):
-        """Verify EmbeddingService can be instantiated."""
-        from gui.services.embedding_service import EmbeddingService
-        
-        # Should work even without API keys (lazy initialization)
-        service = EmbeddingService()
-        assert service is not None
+        """Verify ChronosEmbeddingService can be imported."""
+        from src.chronos.embedding_service import ChronosEmbeddingService
+
+        assert ChronosEmbeddingService is not None
+
+    def test_embedding_service_has_methods(self):
+        """Verify ChronosEmbeddingService has expected methods."""
+        from src.chronos.embedding_service import ChronosEmbeddingService
+
+        assert hasattr(ChronosEmbeddingService, "embed_text")
+        assert hasattr(ChronosEmbeddingService, "embed_batch")
+
+
+class TestChronosIngestService:
+    """Tests for src/chronos/ingest_service.py."""
+
+    def test_ingest_service_import(self):
+        """Verify ChronosIngestService can be imported."""
+        from src.chronos.ingest_service import ChronosIngestService
+
+        assert ChronosIngestService is not None
+
+
+class TestChronosTranscriptProcessor:
+    """Tests for src/chronos/transcript_processor.py."""
+
+    def test_transcript_processor_import(self):
+        """Verify TranscriptProcessor can be imported."""
+        from src.chronos.transcript_processor import TranscriptProcessor
+
+        assert TranscriptProcessor is not None
+
+
+class TestChronosGraphService:
+    """Tests for src/chronos/graph_service.py."""
+
+    def test_graph_service_import(self):
+        """Verify ChronosGraphExtractor can be imported."""
+        from src.chronos.graph_service import ChronosGraphExtractor
+
+        assert ChronosGraphExtractor is not None
 
 
 # ===========================================================================
-# Search Service Tests
+# Processing Engine Tests
 # ===========================================================================
 
-class TestSearchService:
-    """Tests for gui/services/search_service.py."""
-    
-    def test_search_service_import(self):
-        """Verify search service functions can be imported."""
-        from gui.services.search_service import (
-            semantic_search,
-            search_with_rerank,
-            cross_namespace_search,
+
+class TestProcessingEngine:
+    """Tests for src/processing/engine.py."""
+
+    def test_engine_import(self):
+        """Verify processing engine can be imported."""
+        from src.processing.engine import process_pending_recordings, ChunkingConfig
+
+        assert process_pending_recordings is not None
+        assert ChunkingConfig is not None
+
+    def test_chunking_config_defaults(self):
+        """Test ChunkingConfig has sensible defaults."""
+        from src.processing.engine import ChunkingConfig
+
+        cfg = ChunkingConfig()
+        assert cfg.max_words > 0
+        assert cfg.overlap_words >= 0
+
+
+class TestProcessingIndexer:
+    """Tests for src/processing/indexer.py."""
+
+    def test_indexer_import(self):
+        """Verify indexer can be imported."""
+        from src.processing.indexer import index_pending_segments
+
+        assert index_pending_segments is not None
+
+
+# ===========================================================================
+# Plaud Client Tests
+# ===========================================================================
+
+
+class TestPlaudClient:
+    """Tests for src/plaud_client.py."""
+
+    def test_plaud_client_import(self):
+        """Verify PlaudClient can be imported."""
+        from src.plaud_client import PlaudClient
+
+        assert PlaudClient is not None
+
+    def test_plaud_client_has_methods(self):
+        """Verify PlaudClient has expected methods."""
+        from src.plaud_client import PlaudClient
+
+        assert hasattr(PlaudClient, "list_recordings")
+        assert hasattr(PlaudClient, "get_recording")
+        assert hasattr(PlaudClient, "get_transcript")
+        assert hasattr(PlaudClient, "get_user")
+
+
+class TestPlaudOAuth:
+    """Tests for src/plaud_oauth.py."""
+
+    def test_plaud_oauth_import(self):
+        """Verify PlaudOAuthClient can be imported."""
+        from src.plaud_oauth import PlaudOAuthClient
+
+        assert PlaudOAuthClient is not None
+
+
+class TestPlaudWorkflow:
+    """Tests for src/plaud_workflow.py."""
+
+    def test_plaud_workflow_import(self):
+        """Verify PlaudWorkflowClient can be imported."""
+        from src.plaud_workflow import PlaudWorkflowClient
+
+        assert PlaudWorkflowClient is not None
+
+
+class TestPlaudDevice:
+    """Tests for src/plaud_device.py."""
+
+    def test_plaud_device_import(self):
+        """Verify PlaudDeviceManager can be imported."""
+        from src.plaud_device import PlaudDeviceManager
+
+        assert PlaudDeviceManager is not None
+
+
+class TestPlaudWebhook:
+    """Tests for src/plaud_webhook.py."""
+
+    def test_plaud_webhook_import(self):
+        """Verify webhook handler can be imported."""
+        from src.plaud_webhook import PlaudWebhookHandler
+
+        assert PlaudWebhookHandler is not None
+
+
+# ===========================================================================
+# Database Tests
+# ===========================================================================
+
+
+class TestDatabaseModels:
+    """Tests for src/database/models.py."""
+
+    def test_models_import(self):
+        """Verify database models can be imported."""
+        from src.database.models import Base, Recording, Segment
+
+        assert Base is not None
+        assert Recording is not None
+        assert Segment is not None
+
+
+class TestDatabaseRepository:
+    """Tests for src/database/repository.py."""
+
+    def test_repository_import(self):
+        """Verify repository functions can be imported."""
+        from src.database.repository import upsert_recording, add_segments
+
+        assert upsert_recording is not None
+        assert add_segments is not None
+
+
+class TestChronosRepository:
+    """Tests for src/database/chronos_repository.py."""
+
+    def test_chronos_repository_import(self):
+        """Verify chronos repository can be imported."""
+        from src.database.chronos_repository import (
+            upsert_chronos_recording,
+            get_chronos_recording,
         )
-        assert semantic_search is not None
-        assert search_with_rerank is not None
-        assert cross_namespace_search is not None
 
-
-# ===========================================================================
-# Notion Sync Service Tests
-# ===========================================================================
-
-class TestNotionSyncService:
-    """Tests for src/notion_sync.py."""
-    
-    def test_notion_sync_import(self):
-        """Verify NotionSyncService can be imported."""
-        from src.notion_sync import NotionSyncService
-        assert NotionSyncService is not None
-    
-    @patch('src.notion_sync.os.getenv')
-    @patch.dict('sys.modules', {'notion_client': MagicMock()})
-    def test_notion_sync_handles_missing_config(self, mock_getenv):
-        """Test NotionSyncService handles missing configuration gracefully."""
-        mock_getenv.return_value = None
-        
-        from src.notion_sync import NotionSyncService
-        with pytest.raises(ValueError):
-            NotionSyncService()
-
-
-# ===========================================================================
-# Query Router Tests
-# ===========================================================================
-
-class TestQueryRouter:
-    """Tests for src/processing/query_router.py."""
-    
-    def test_query_router_import(self):
-        """Verify QueryRouter can be imported."""
-        from src.processing.query_router import QueryRouter, QueryIntent
-        assert QueryRouter is not None
-        assert QueryIntent is not None
-    
-    def test_query_router_classify_semantic(self):
-        """Test QueryRouter classifies semantic queries correctly."""
-        from src.processing.query_router import QueryRouter
-        
-        router = QueryRouter()
-        result = router.route("What are the main themes discussed?")
-        
-        assert result is not None
-        assert hasattr(result, 'intent')
-    
-    def test_query_router_classify_metadata(self):
-        """Test QueryRouter classifies metadata queries correctly."""
-        from src.processing.query_router import QueryRouter
-        
-        router = QueryRouter()
-        result = router.route("Show me recording rec_12345")
-        
-        assert result is not None
-
-
-# ===========================================================================
-# RRF Fusion Tests
-# ===========================================================================
-
-class TestRRFFusion:
-    """Tests for src/processing/rrf_fusion.py."""
-    
-    def test_rrf_fusion_import(self):
-        """Verify RRF functions can be imported."""
-        from src.processing.rrf_fusion import reciprocal_rank_fusion, RRFMergeResult
-        assert reciprocal_rank_fusion is not None
-        assert RRFMergeResult is not None
-    
-    def test_rrf_empty_inputs(self):
-        """Test RRF handles empty inputs."""
-        from src.processing.rrf_fusion import reciprocal_rank_fusion, RRFMergeResult
-        
-        result = reciprocal_rank_fusion([], [], [])
-        assert isinstance(result, RRFMergeResult)
-        assert len(result.results) == 0
-    
-    def test_rrf_single_source(self):
-        """Test RRF with single source of results."""
-        from src.processing.rrf_fusion import reciprocal_rank_fusion, RRFMergeResult
-        
-        dense_results = [
-            {'id': 'a', 'score': 0.9},
-            {'id': 'b', 'score': 0.8},
-        ]
-        
-        result = reciprocal_rank_fusion(dense_results, [], [])
-        assert isinstance(result, RRFMergeResult)
-        assert len(result.results) == 2
-        # First result should be highest ranked
-        assert result.results[0].id == 'a'
-
-
-# ===========================================================================
-# Thought Signatures Tests
-# ===========================================================================
-
-class TestThoughtSignatures:
-    """Tests for src/processing/thought_signatures.py."""
-    
-    def test_thought_signatures_import(self):
-        """Verify ThoughtSignatureManager can be imported."""
-        from src.processing.thought_signatures import ThoughtSignatureManager, ThoughtSignature
-        assert ThoughtSignatureManager is not None
-        assert ThoughtSignature is not None
-    
-    def test_thought_signature_manager(self):
-        """Test ThoughtSignatureManager instantiation."""
-        from src.processing.thought_signatures import get_thought_manager
-        
-        manager = get_thought_manager()
-        assert manager is not None
-
-
-# ===========================================================================
-# Conflict Detection Tests
-# ===========================================================================
-
-class TestConflictDetection:
-    """Tests for src/processing/conflict_detection.py."""
-    
-    def test_conflict_detection_import(self):
-        """Verify ConflictDetector can be imported."""
-        from src.processing.conflict_detection import ConflictDetector
-        assert ConflictDetector is not None
-    
-    def test_detect_method_exists(self):
-        """Test ConflictDetector has detect method."""
-        from src.processing.conflict_detection import ConflictDetector
-        
-        detector = ConflictDetector()
-        assert hasattr(detector, 'detect')
-
-
-# ===========================================================================
-# ColPali Ingestion Tests
-# ===========================================================================
-
-class TestColPaliIngestion:
-    """Tests for src/processing/colpali_ingestion.py."""
-    
-    def test_colpali_import(self):
-        """Verify ColPaliProcessor can be imported."""
-        from src.processing.colpali_ingestion import ColPaliProcessor, GeminiVisionAnalyzer
-        assert ColPaliProcessor is not None
-        assert GeminiVisionAnalyzer is not None
-    
-    def test_colpali_instantiation(self):
-        """Verify ColPaliProcessor can be instantiated."""
-        from src.processing.colpali_ingestion import ColPaliProcessor
-        
-        processor = ColPaliProcessor()
-        assert processor is not None
+        assert upsert_chronos_recording is not None
+        assert get_chronos_recording is not None
 
 
 # ===========================================================================
 # Integration Test: Full Pipeline Smoke
 # ===========================================================================
 
+
 class TestPipelineSmoke:
     """End-to-end smoke tests for the processing pipeline."""
-    
+
     def test_full_import_chain(self):
         """Verify all major components can be imported together."""
         # Database
         from src.database.models import Base, Recording, Segment
         from src.database.repository import upsert_recording, add_segments
-        
-        # Processing
+
+        # Chronos core
+        from src.chronos.qdrant_client import ChronosQdrantClient
+        from src.chronos.embedding_service import ChronosEmbeddingService
+        from src.chronos.transcript_processor import TranscriptProcessor
+        from src.chronos.ingest_service import ChronosIngestService
+        from src.chronos.graph_service import ChronosGraphExtractor
+
+        # Processing (legacy)
         from src.processing.engine import process_pending_recordings, ChunkingConfig
         from src.processing.indexer import index_pending_segments
-        from src.processing.query_router import QueryRouter
-        from src.processing.rrf_fusion import reciprocal_rank_fusion
-        from src.processing.thought_signatures import ThoughtSignatureManager
-        from src.processing.conflict_detection import ConflictDetector
-        from src.processing.colpali_ingestion import ColPaliProcessor
-        
-        # Services
-        from gui.services.stats_service import StatsService
-        from gui.services.embedding_service import EmbeddingService
-        from gui.services.search_service import semantic_search, search_with_rerank
-        from gui.services.transcripts_service import fetch_transcripts
-        
-        # Notion
-        from src.notion_sync import NotionSyncService
-        
+
+        # Plaud
+        from src.plaud_client import PlaudClient
+        from src.plaud_oauth import PlaudOAuthClient
+        from src.plaud_workflow import PlaudWorkflowClient
+        from src.plaud_device import PlaudDeviceManager
+
+        # Models
+        from src.models.schemas import RecordingSchema
+        from src.models.chronos_schemas import ChronosEvent, TemporalFilter
+
         # All imports succeeded
         assert True
-    
-    def test_stats_service_methods_exist(self):
-        """Test StatsService has expected methods."""
-        from gui.services.stats_service import StatsService
-        
-        service = StatsService()
-        assert hasattr(service, 'get_all_stats')
-        assert hasattr(service, 'get_health_status')
-        assert hasattr(service, 'invalidate_cache')
 
 
 if __name__ == '__main__':

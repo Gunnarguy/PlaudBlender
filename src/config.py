@@ -22,28 +22,51 @@ class Settings:
     plaud_client_secret: Optional[str] = os.getenv("PLAUD_CLIENT_SECRET")
     plaud_redirect_uri: Optional[str] = os.getenv("PLAUD_REDIRECT_URI")
 
+    # Plaud Webhook (for async notifications)
+    plaud_webhook_secret: Optional[str] = os.getenv("PLAUD_WEBHOOK_SECRET")
+    plaud_webhook_url: Optional[str] = os.getenv("PLAUD_WEBHOOK_URL")
+
+    # Plaud API Settings
+    plaud_api_base_url: str = os.getenv(
+        "PLAUD_API_BASE_URL", "https://api.plaud.ai/api"
+    )
+    plaud_default_language: str = os.getenv("PLAUD_DEFAULT_LANGUAGE", "en")
+    plaud_enable_diarization: bool = os.getenv("PLAUD_ENABLE_DIARIZATION", "1") == "1"
+    plaud_workflow_timeout: int = int(os.getenv("PLAUD_WORKFLOW_TIMEOUT", "600"))
+
     # LLM
     gemini_api_key: Optional[str] = os.getenv("GEMINI_API_KEY")
 
     # Gemini API version (google-genai defaults to v1beta; allow override for preview features)
     gemini_api_version: str = os.getenv("GEMINI_API_VERSION", "v1beta")
 
-    # Chronos: Gemini Model Selection
+    # ─────────────────────────────────────────────────────────────────────────
+    # Chronos: Gemini Model Selection (Feb 2026 — Latest Available Models)
+    # ─────────────────────────────────────────────────────────────────────────
+    # Model Hierarchy (best to fastest):
+    #   gemini-3-pro-preview    → Best reasoning, Batch only (no free standard tier)
+    #   gemini-3-flash-preview  → Best FREE model, great for processing ✅
+    #   gemini-2.5-pro          → Stable thinking model, FREE standard tier
+    #   gemini-2.5-flash        → Stable fast model, FREE standard tier
+    #   gemini-2.0-flash        → ⚠️ DEPRECATED (shutdown March 31, 2026)
+    #
+    # Embeddings:
+    #   gemini-embedding-001    → Current stable embedding model, FREE
+    # ─────────────────────────────────────────────────────────────────────────
     chronos_cleaning_model: str = os.getenv(
-        # Default to Gemini 3 Flash. Override via CHRONOS_CLEANING_MODEL.
+        # Gemini 3 Flash Preview — FREE on standard tier, excellent for processing
         "CHRONOS_CLEANING_MODEL",
-        # Gemini 3 models are currently documented as preview IDs.
         "gemini-3-flash-preview",
     )
     chronos_embedding_model: str = os.getenv(
-        # Use the current Gemini embedding model family.
+        # Gemini Embedding 001 — stable, FREE, 768 dims
         "CHRONOS_EMBEDDING_MODEL",
         "gemini-embedding-001",
     )
     chronos_embedding_dim: int = int(os.getenv("CHRONOS_EMBEDDING_DIM", "768"))
     chronos_analyst_model: str = os.getenv(
-        # Default to a "thinking" model for harder reasoning / repair passes.
-        # Override via CHRONOS_ANALYST_MODEL.
+        # Gemini 3 Pro Preview — Best reasoning model (Batch only, no free standard)
+        # Falls back to gemini-3-flash-preview if Pro unavailable
         "CHRONOS_ANALYST_MODEL",
         "gemini-3-pro-preview",
     )
@@ -52,11 +75,7 @@ class Settings:
     # Flash supports: minimal/low/medium/high. Pro supports: low/high.
     chronos_thinking_level: str = os.getenv("CHRONOS_THINKING_LEVEL", "high")
 
-    # Pinecone (legacy - for backward compatibility)
-    pinecone_api_key: Optional[str] = os.getenv("PINECONE_API_KEY")
-    pinecone_index_name: str = os.getenv("PINECONE_INDEX_NAME", "transcripts")
-
-    # Qdrant (primary for Chronos)
+    # Qdrant (primary vector store)
     qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
     qdrant_api_key: Optional[str] = os.getenv("QDRANT_API_KEY")
     qdrant_collection_name: str = os.getenv("QDRANT_COLLECTION_NAME", "chronos_events")
