@@ -10,7 +10,7 @@
 | **MVP spec**    | `docs/chronos-mvp.md` — complete Chronos system architecture                   |
 | **Entry point** | `python scripts/launch_app.py` — Dash v2 UI on port 8050                       |
 | **Pipeline**    | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph |
-| **Tests**       | `python -m pytest tests/` — 74 tests, run before committing                    |
+| **Tests**       | `python -m pytest tests/` — 99 tests, run before committing                    |
 
 ## What This Project Does
 
@@ -21,6 +21,8 @@
 - Indexes to Qdrant with temporal metadata (day-of-week, hour, category)
 - Provides **Dash UI with interactive Knowledge Graph** (Cytoscape)
 - Full Plaud integration: devices, workflows, webhooks
+- **MCP server** for OpenAI/ChatGPT tool access to your knowledge timeline
+- **Auto-sync** via webhooks and USB watcher for real-time ingestion
 
 ## UI Layout (Dash v2 — `app_v2/`)
 
@@ -46,14 +48,16 @@ app_v2/                 → MAIN Dash v2 UI (14 callbacks)
   services/data_service.py → Data access layer (~1000 lines)
 scripts/                → CLI tools
   chronos_pipeline.py   → Full pipeline runner (~688 lines)
+  mcp_server.py         → Production MCP server (11 tools, FastMCP)
+  auto_sync.py          → Webhook + USB auto-sync orchestrator
   launch_app.py         → App launcher
   fix_recordings.py     → Diagnose + repair stuck recordings
   index_unindexed.py    → Batch index events to Qdrant
 src/chronos/            → Core engine (ingest, process, embed, search, graph)
-src/plaud_*.py          → Plaud API clients
+src/plaud_*.py          → Plaud API clients + webhook + USB watcher
 src/database/           → SQLAlchemy models & repositories
 src/models/             → Pydantic schemas
-tests/                  → Pytest suite (74 tests)
+tests/                  → Pytest suite (99 tests)
 docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 ```
 

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "chronos": {
+      "command": "python",
+      "args": ["-m", "scripts.mcp_server"],
+      "cwd": ".",
+      "env": {
+        "GEMINI_API_KEY": "${GEMINI_API_KEY}",
+        "PLAUD_ACCESS_TOKEN": "${PLAUD_ACCESS_TOKEN}"
+      }
+    }
+  }
+}
