@@ -196,14 +196,29 @@ class PlaudOAuthClient:
             "Accept": "application/json",
         }
 
+        # Plaud docs: body is just code + redirect_uri (NO grant_type)
         data = f"code={code}&redirect_uri={self.redirect_uri}"
+
+        logger.info(
+            "Token exchange → %s  redirect_uri=%s  code=%s…",
+            PLAUD_TOKEN_URL,
+            self.redirect_uri,
+            code[:12] if len(code) > 12 else code,
+        )
 
         try:
             response = requests.post(PLAUD_TOKEN_URL, headers=headers, data=data)
+            if not response.ok:
+                logger.error(
+                    "Token exchange failed: %s %s — %s",
+                    response.status_code,
+                    response.reason,
+                    response.text[:500],
+                )
             response.raise_for_status()
         except requests.HTTPError as exc:
             logger.error(
-                "Plaud token refresh failed (%s) — clearing tokens, please re-authenticate",
+                "Plaud token exchange failed (%s) — clearing tokens, please re-authenticate",
                 exc,
             )
             self._clear_tokens()
@@ -236,33 +251,30 @@ class PlaudOAuthClient:
         if not self._refresh_token:
             raise ValueError("No refresh token available. Please re-authenticate.")
 
-        # Try legacy refresh with Basic auth first
-        credentials = f"{self.client_id}:{self.client_secret}"
-        basic_auth = base64.b64encode(credentials.encode()).decode()
-
+        # Plaud docs: POST /access-token/refresh with just refresh_token
         headers = {
-            "Authorization": f"Basic {basic_auth}",
             "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json",
         }
-
-        data = f"refresh_token={self._refresh_token}&grant_type=refresh_token"
+        data = f"refresh_token={self._refresh_token}"
 
         try:
-            response = requests.post(PLAUD_TOKEN_URL, headers=headers, data=data)
+            response = requests.post(PLAUD_REFRESH_URL, headers=headers, data=data)
+            if not response.ok:
+                logger.error(
+                    "Token refresh failed: %s %s — %s",
+                    response.status_code,
+                    response.reason,
+                    response.text[:500],
+                )
             response.raise_for_status()
         except requests.HTTPError as exc:
-            logger.warning("Legacy refresh failed (%s); trying /refresh endpoint", exc)
-            # Plaud docs: /access-token/refresh takes just refresh_token, no auth header
-            fallback_headers = {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json",
-            }
-            fallback_data = f"refresh_token={self._refresh_token}"
-            response = requests.post(
-                PLAUD_REFRESH_URL, headers=fallback_headers, data=fallback_data
+            logger.error(
+                "Plaud token refresh failed (%s) — clearing tokens",
+                exc,
             )
-            response.raise_for_status()
+            self._clear_tokens()
+            raise
 
         token_data = response.json()
 
