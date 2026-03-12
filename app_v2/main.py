@@ -51,10 +51,10 @@ def _register_auth_routes(server):
             auth_url, state = client.get_authorization_url()
             _oauth_pending_states[state] = True
 
-            # Open Chrome (has localhost mixed-content exemption)
-            _open_in_chrome(auth_url)
-
-            return _auth_waiting_page()
+            # Return a page that opens the auth URL via window.open()
+            # so the popup can auto-close itself (window.close() only
+            # works on script-opened windows).
+            return _auth_waiting_page(auth_url)
         except Exception as e:
             safe_msg = escape(str(e))
             return (
@@ -210,35 +210,42 @@ def _open_in_chrome(url: str):
         webbrowser.open(url)
 
 
-def _auth_waiting_page() -> str:
-    """Page shown while user completes OAuth in Chrome."""
-    return """<!DOCTYPE html>
+def _auth_waiting_page(auth_url: str) -> str:
+    """Page shown while user completes OAuth — opens auth in a popup."""
+    import json as _json
+
+    safe_url = _json.dumps(auth_url)  # JS-safe string with quotes
+    return f"""<!DOCTYPE html>
 <html><head><title>Chronos — Authenticating…</title></head>
 <body style="font-family:-apple-system,sans-serif;text-align:center;padding:60px;
 background:#0f172a;color:#e2e8f0;">
 <h1>🔐 Authenticating with Plaud…</h1>
-<p>A Chrome window has opened. Complete the login there.</p>
+<p>A popup has opened. Complete the login there.</p>
+<p>If you don't see it, <a id="manual-link" href="#" style="color:#60a5fa;"
+   onclick="authWin=window.open({safe_url},'plaud_auth','width=600,height=700');return false;">
+   click here</a>.</p>
 <p id="status" style="color:#64748b;">Waiting for authorization…</p>
 <div style="margin:30px auto;width:40px;height:40px;border:4px solid #334155;
 border-top:4px solid #60a5fa;border-radius:50%;animation:spin 1s linear infinite;"></div>
-<style>@keyframes spin{to{transform:rotate(360deg);}}</style>
+<style>@keyframes spin{{to{{transform:rotate(360deg);}}}}</style>
 <script>
-(function poll(){
+var authWin=window.open({safe_url},'plaud_auth','width=600,height=700');
+(function poll(){{
   fetch('/auth/plaud/status')
-    .then(r=>r.json())
-    .then(d=>{
-      if(d.is_authenticated){
+    .then(function(r){{return r.json();}})
+    .then(function(d){{
+      if(d.is_authenticated){{
         document.getElementById('status').textContent='Connected!';
         document.querySelector('h1').textContent='✅ Plaud Connected!';
         document.querySelector('div').style.display='none';
-        if(window.opener){window.opener.postMessage('plaud-auth-success','*');}
-        setTimeout(function(){window.close();},2000);
-      } else {
+        if(authWin){{try{{authWin.close();}}catch(e){{}}}};
+        setTimeout(function(){{window.location.href='/';}},2000);
+      }} else {{
         setTimeout(poll,2000);
-      }
-    })
-    .catch(()=>setTimeout(poll,3000));
-})();
+      }}
+    }})
+    .catch(function(){{setTimeout(poll,3000);}});
+}})();
 </script>
 </body></html>"""
 
