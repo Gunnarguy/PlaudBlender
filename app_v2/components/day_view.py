@@ -5,18 +5,7 @@ from dash import html, dcc
 from typing import List, Optional
 
 from app_v2.services.data_service import DaySummary, RecordingSummary
-
-# ── Shared category palette ──────────────────────────────────────────────────
-CATEGORY_COLORS = {
-    "work": "#3b82f6",  # blue
-    "personal": "#8b5cf6",  # purple
-    "meeting": "#f59e0b",  # amber
-    "reflection": "#10b981",  # emerald
-    "idea": "#ec4899",  # pink
-    "deep_work": "#6366f1",  # indigo
-    "break": "#64748b",  # slate
-    "unknown": "#374151",  # gray
-}
+from app_v2.components import CATEGORY_COLORS
 
 # ── Intensity ramp for heat-map ───────────────────────────────────────────────
 _HEAT_LEVELS = [

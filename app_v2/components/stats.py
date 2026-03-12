@@ -4,6 +4,105 @@ from dash import html
 from typing import Dict
 
 from app_v2.services.data_service import Stats
+from app_v2.components import CATEGORY_COLORS
+
+
+def _hour_label(h: int) -> str:
+    """Format hour for heatmap labels."""
+    if h == 0:
+        return "12a"
+    if h < 12:
+        return f"{h}a"
+    if h == 12:
+        return "12p"
+    return f"{h - 12}p"
+
+
+def create_hour_category_heatmap(
+    categories_by_hour: dict, categories: dict
+) -> html.Div:
+    """Create a 24h × category heatmap showing when each category appears."""
+    if not categories_by_hour:
+        return html.Div(className="chart-empty", children=["No data"])
+
+    # Get active categories (sorted by total count)
+    active_cats = sorted(categories.keys(), key=lambda c: -categories.get(c, 0))
+    # Limit to top 6 categories to keep compact
+    active_cats = [c for c in active_cats if c != "unknown"][:6]
+
+    # Find max value for color scaling
+    max_val = 1
+    for h_data in categories_by_hour.values():
+        for count in h_data.values():
+            max_val = max(max_val, count)
+
+    rows = []
+    for cat in active_cats:
+        cat_label = cat.replace("_", " ").title()
+        cat_color = CATEGORY_COLORS.get(cat, "#374151")
+
+        cells = []
+        for hour in range(24):
+            count = categories_by_hour.get(hour, {}).get(cat, 0)
+            intensity = count / max_val if max_val else 0
+            # Scale from transparent to full category color
+            bg = (
+                f"rgba({_hex_to_rgb(cat_color)}, {max(0.05, intensity)})"
+                if count
+                else "transparent"
+            )
+
+            cells.append(
+                html.Div(
+                    className="heatmap-cell",
+                    style={"backgroundColor": bg},
+                    title=f"{cat_label} at {_hour_label(hour)}: {count} events",
+                    children=(
+                        [html.Span(str(count), className="heatmap-cell-val")]
+                        if count
+                        else []
+                    ),
+                )
+            )
+
+        rows.append(
+            html.Div(
+                className="heatmap-row",
+                children=[
+                    html.Span(cat_label, className="heatmap-row-label"),
+                    html.Div(className="heatmap-cells", children=cells),
+                ],
+            )
+        )
+
+    # Hour labels along bottom
+    hour_labels = html.Div(
+        className="heatmap-hour-labels",
+        children=[
+            html.Span("", className="heatmap-row-label"),  # spacer
+            html.Div(
+                className="heatmap-cells",
+                children=[
+                    html.Span(
+                        _hour_label(h) if h % 3 == 0 else "",
+                        className="heatmap-hour-label",
+                    )
+                    for h in range(24)
+                ],
+            ),
+        ],
+    )
+
+    return html.Div(
+        className="heatmap-container",
+        children=[*rows, hour_labels],
+    )
+
+
+def _hex_to_rgb(hex_color: str) -> str:
+    """Convert #RRGGBB to 'R, G, B' string."""
+    h = hex_color.lstrip("#")
+    return f"{int(h[0:2], 16)}, {int(h[2:4], 16)}, {int(h[4:6], 16)}"
 
 
 def create_stat_card(icon: str, label: str, value: str) -> html.Div:
@@ -30,17 +129,6 @@ def create_category_chart(categories: Dict[str, int]) -> html.Div:
 
     total = sum(categories.values())
 
-    colors = {
-        "work": "#3b82f6",
-        "personal": "#8b5cf6",
-        "meeting": "#f59e0b",
-        "reflection": "#10b981",
-        "idea": "#ec4899",
-        "deep_work": "#6366f1",
-        "break": "#64748b",
-        "unknown": "#374151",
-    }
-
     return html.Div(
         className="category-chart",
         children=[
@@ -55,7 +143,9 @@ def create_category_chart(categories: Dict[str, int]) -> html.Div:
                                 className="chart-bar",
                                 style={
                                     "width": f"{(count / total) * 100}%",
-                                    "backgroundColor": colors.get(cat, "#374151"),
+                                    "backgroundColor": CATEGORY_COLORS.get(
+                                        cat, "#374151"
+                                    ),
                                 },
                             ),
                         ],
@@ -337,6 +427,20 @@ def create_stats_view(stats: Stats) -> html.Div:
                 children=[
                     html.H3("Categories", className="section-title"),
                     create_category_chart(stats.categories),
+                ],
+            ),
+            # Hour × Category heatmap
+            html.Div(
+                className="stats-section",
+                children=[
+                    html.H3("🕐 When You Do What", className="section-title"),
+                    html.P(
+                        "Activity by hour and category — brighter = more events",
+                        className="section-subtitle",
+                    ),
+                    create_hour_category_heatmap(
+                        stats.categories_by_hour, stats.categories
+                    ),
                 ],
             ),
             # Activity by day of week

@@ -6,6 +6,7 @@ import logging
 
 from app_v2.services import get_data_service
 from app_v2.components import create_recording_card
+from app_v2.components.topics import create_topic_card
 
 logger = logging.getLogger(__name__)
 
@@ -132,3 +133,27 @@ def register_day_view_callbacks(app):
             raise PreventUpdate
 
         return None
+
+    @app.callback(
+        Output("topics-grid-container", "children"),
+        Input("topic-sort-select", "value"),
+        prevent_initial_call=True,
+    )
+    def sort_topics(sort_value):
+        """Re-sort topics grid based on dropdown selection."""
+        if not sort_value:
+            raise PreventUpdate
+
+        service = get_data_service()
+        topics = service.get_all_topics()
+
+        if sort_value == "freq-desc":
+            topics.sort(key=lambda x: -x[1])
+        elif sort_value == "freq-asc":
+            topics.sort(key=lambda x: x[1])
+        elif sort_value == "alpha-asc":
+            topics.sort(key=lambda x: x[0].lower())
+        elif sort_value == "alpha-desc":
+            topics.sort(key=lambda x: x[0].lower(), reverse=True)
+
+        return [create_topic_card(t, c) for t, c in topics[:100]]

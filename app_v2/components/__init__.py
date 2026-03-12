@@ -1,5 +1,30 @@
 """Components package."""
 
+# ── Canonical category palette (single source of truth) ───────────────────────
+CATEGORIES = [
+    "work",
+    "personal",
+    "meeting",
+    "reflection",
+    "idea",
+    "deep_work",
+    "break",
+    "unknown",
+]
+
+CATEGORY_COLORS = {
+    "work": "#3b82f6",  # blue
+    "personal": "#8b5cf6",  # purple
+    "meeting": "#f59e0b",  # amber
+    "reflection": "#10b981",  # emerald
+    "idea": "#ec4899",  # pink
+    "deep_work": "#6366f1",  # indigo
+    "break": "#64748b",  # slate
+    "unknown": "#374151",  # gray
+}
+
+CATEGORY_LABELS = {k: k.replace("_", " ").title() for k in CATEGORIES}
+
 from app_v2.components.sidebar import create_sidebar
 from app_v2.components.day_view import (
     create_day_view,
@@ -16,6 +41,9 @@ from app_v2.components.stats import create_stats_view
 from app_v2.components.graph import create_graph_view
 
 __all__ = [
+    "CATEGORIES",
+    "CATEGORY_COLORS",
+    "CATEGORY_LABELS",
     "create_sidebar",
     "create_day_view",
     "create_day_card",

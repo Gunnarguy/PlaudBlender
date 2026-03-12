@@ -233,6 +233,8 @@ class Stats:
     pipeline_completion_rate: float = 0.0  # % of recordings fully processed
     # Plaud cloud stats (fetched from API)
     plaud_cloud_stats: Optional[Dict[str, Any]] = None
+    # Hour × category matrix: {hour: {category: count}}
+    categories_by_hour: Dict[int, Dict[str, int]] = field(default_factory=dict)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1117,6 +1119,7 @@ class ChronosDataService:
         keywords: Dict[str, int] = defaultdict(int)
         by_day_of_week: Dict[str, int] = defaultdict(int)
         by_hour: Dict[int, int] = defaultdict(int)
+        cats_by_hour: Dict[int, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
         total_duration = 0.0
         total_sentiment = 0.0
         sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0}
@@ -1131,6 +1134,7 @@ class ChronosDataService:
                 keywords[kw.lower()] += 1
             by_day_of_week[event.day_of_week] += 1
             by_hour[event.hour_of_day] += 1
+            cats_by_hour[event.hour_of_day][event.category] += 1
             total_duration += event.duration_seconds
             total_sentiment += event.sentiment
             recording_durations[event.recording_id] += event.duration_seconds
@@ -1203,6 +1207,7 @@ class ChronosDataService:
             longest_recording_min=longest_rec_min,
             pipeline_completion_rate=pipeline_rate,
             plaud_cloud_stats=plaud_stats,
+            categories_by_hour={h: dict(c) for h, c in cats_by_hour.items()},
         )
 
     def refresh_cache(self):

@@ -74,7 +74,7 @@ def register_graph_callbacks(app):
         prevent_initial_call=True,
     )
     def show_node_detail(node_data):
-        """Show details when a graph node is clicked."""
+        """Show detailed info when a graph node is clicked."""
         if not node_data:
             raise PreventUpdate
 
@@ -83,15 +83,17 @@ def register_graph_callbacks(app):
         count = node_data.get("count", node_data.get("mention_count", 0))
         categories = node_data.get("categories", "")
         sentiment = node_data.get("sentiment")
+        related = node_data.get("related_keywords", "")
+        recordings = node_data.get("recording_count", 0)
 
         type_icons = {
-            "topic": "●",
-            "category": "■",
-            "date": "◼",
-            "person": "●",
-            "project": "◆",
-            "organization": "■",
-            "location": "⬠",
+            "topic": "💬",
+            "category": "📁",
+            "date": "📅",
+            "person": "👤",
+            "project": "📌",
+            "organization": "🏢",
+            "location": "📍",
         }
         type_colors = {
             "topic": "#475569",
@@ -113,47 +115,114 @@ def register_graph_callbacks(app):
                     html.Span(
                         icon,
                         className="node-detail-icon",
-                        style={"color": color, "fontSize": "1.2rem"},
+                        style={"fontSize": "1.5rem"},
                     ),
-                    html.H4(label, className="node-detail-name"),
-                    html.Span(
-                        node_type.capitalize(),
-                        className="node-detail-type",
+                    html.Div(
+                        children=[
+                            html.H4(label, className="node-detail-name"),
+                            html.Span(
+                                node_type.capitalize(),
+                                className="node-detail-type",
+                                style={"color": color},
+                            ),
+                        ],
                     ),
                 ],
             ),
         ]
 
+        # Stats row
+        stats_items = []
         if count:
             unit = "event" if node_type == "category" else "mention"
-            children.append(
-                html.P(
+            stats_items.append(
+                html.Span(
                     f"{count} {unit}{'s' if count != 1 else ''}",
-                    className="node-detail-count",
+                    className="node-stat",
                 )
             )
-
-        if categories:
-            children.append(
-                html.P(
-                    f"Categories: {categories}",
-                    className="node-detail-desc",
-                    style={"color": "#94a3b8", "fontSize": "0.8rem"},
+        if recordings:
+            stats_items.append(
+                html.Span(
+                    f"{recordings} recording{'s' if recordings != 1 else ''}",
+                    className="node-stat",
                 )
             )
+        if stats_items:
+            children.append(html.Div(className="node-stats-row", children=stats_items))
 
+        # Sentiment
         if sentiment is not None and sentiment != 0:
-            sentiment_label = (
-                "positive"
-                if sentiment > 0.1
-                else ("negative" if sentiment < -0.1 else "neutral")
-            )
+            sent_val = float(sentiment)
+            if sent_val > 0.1:
+                sent_emoji, sent_label = "😊", "positive"
+            elif sent_val < -0.1:
+                sent_emoji, sent_label = "😔", "negative"
+            else:
+                sent_emoji, sent_label = "😐", "neutral"
             children.append(
-                html.P(
-                    f"Avg. sentiment: {sentiment} ({sentiment_label})",
-                    className="node-detail-desc",
-                    style={"color": "#94a3b8", "fontSize": "0.8rem"},
+                html.Div(
+                    className="node-sentiment",
+                    children=[
+                        html.Span(sent_emoji, className="node-sentiment-icon"),
+                        html.Span(
+                            f"Avg: {sent_val:+.2f} ({sent_label})",
+                            className="node-sentiment-text",
+                        ),
+                    ],
                 )
             )
+
+        # Categories
+        if categories:
+            cat_list = [c.strip() for c in str(categories).split(",") if c.strip()]
+            if cat_list:
+                from app_v2.components import CATEGORY_COLORS as CAT_COLORS
+
+                children.append(
+                    html.Div(
+                        className="node-categories",
+                        children=[
+                            html.Span("Appears in:", className="node-section-label"),
+                            html.Div(
+                                className="node-category-pills",
+                                children=[
+                                    html.Span(
+                                        c.replace("_", " ").title(),
+                                        className="category-pill",
+                                        style={
+                                            "backgroundColor": CAT_COLORS.get(
+                                                c, "#374151"
+                                            )
+                                        },
+                                    )
+                                    for c in cat_list
+                                ],
+                            ),
+                        ],
+                    )
+                )
+
+        # Related keywords
+        if related:
+            kw_list = [k.strip() for k in str(related).split(",") if k.strip()]
+            if kw_list:
+                children.append(
+                    html.Div(
+                        className="node-related",
+                        children=[
+                            html.Span(
+                                "Related topics:", className="node-section-label"
+                            ),
+                            html.Div(
+                                className="node-related-tags",
+                                children=[
+                                    html.Span(kw, className="keyword-tag small")
+                                    for kw in kw_list[:8]
+                                ],
+                            ),
+                        ],
+                    )
+                )
 
         return html.Div(className="node-detail-card", children=children)

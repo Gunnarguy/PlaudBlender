@@ -5,28 +5,7 @@ from typing import Optional, List
 from datetime import datetime
 
 from app_v2.services.data_service import RecordingDetail, Event
-
-# Canonical category list + colors
-CATEGORIES = [
-    "work",
-    "personal",
-    "meeting",
-    "reflection",
-    "idea",
-    "deep_work",
-    "break",
-    "unknown",
-]
-CATEGORY_COLORS = {
-    "work": "#3b82f6",
-    "personal": "#8b5cf6",
-    "meeting": "#f59e0b",
-    "reflection": "#10b981",
-    "idea": "#ec4899",
-    "deep_work": "#6366f1",
-    "break": "#64748b",
-    "unknown": "#374151",
-}
+from app_v2.components import CATEGORIES, CATEGORY_COLORS, CATEGORY_LABELS
 
 
 def _time_of_day_label(hour: int) -> str:
@@ -130,7 +109,7 @@ def create_event_card(event: Event, index: int, highlighted: bool = False) -> ht
                                 id={"type": "event-category-edit", "id": event.id},
                                 options=[
                                     {
-                                        "label": cat.replace("_", " ").title(),
+                                        "label": CATEGORY_LABELS.get(cat, cat),
                                         "value": cat,
                                     }
                                     for cat in CATEGORIES
@@ -186,7 +165,7 @@ def create_recording_detail(
     highlight_event_id: Optional[str] = None,
     ai_summary: Optional[str] = None,
 ) -> html.Div:
-    """Create the full recording detail view."""
+    """Create the full recording detail view with tabbed layout."""
     summary = detail.summary
     events = detail.events
 
@@ -202,6 +181,235 @@ def create_recording_detail(
 
     # Key moments
     key_moments = _find_key_moments(events)
+
+    # ── Build tab content ─────────────────────────────────────────────────────
+
+    # Overview tab
+    overview_children = []
+
+    # AI Summary
+    if ai_summary:
+        overview_children.append(
+            html.Div(
+                className="ai-summary-section",
+                children=[
+                    html.H4("✨ Summary", className="section-title"),
+                    html.P(ai_summary, className="ai-summary-text"),
+                ],
+            )
+        )
+
+    # Key Moments
+    if key_moments:
+        overview_children.append(
+            html.Div(
+                className="key-moments-section",
+                children=[
+                    html.H4(
+                        f"⚡ Key Moments ({len(key_moments)})",
+                        className="section-title",
+                    ),
+                    html.Div(
+                        className="key-moments-list",
+                        children=[
+                            html.Div(
+                                className="key-moment",
+                                children=[
+                                    html.Span(
+                                        km.start_ts.strftime("%I:%M %p"),
+                                        className="moment-time",
+                                    ),
+                                    html.Span(
+                                        CATEGORY_LABELS.get(km.category, km.category),
+                                        className="moment-category",
+                                        style={
+                                            "backgroundColor": CATEGORY_COLORS.get(
+                                                km.category, "#374151"
+                                            )
+                                        },
+                                    ),
+                                    html.Span(
+                                        km.clean_text[:120]
+                                        + ("…" if len(km.clean_text) > 120 else ""),
+                                        className="moment-text",
+                                    ),
+                                ],
+                            )
+                            for km in key_moments
+                        ],
+                    ),
+                ],
+            )
+        )
+
+    # Timeline visual
+    overview_children.append(
+        html.Div(
+            className="timeline-visual",
+            children=[
+                html.H4(f"Timeline ({len(events)} events)", className="section-title"),
+                html.Div(
+                    className="timeline-bar",
+                    children=[
+                        html.Div(
+                            id={"type": "timeline-marker", "event": e.id},
+                            className="timeline-event-marker",
+                            style={
+                                "left": f"{((e.start_ts - summary.start_time).total_seconds() / max(summary.duration_seconds, 1)) * 100}%",
+                                "backgroundColor": CATEGORY_COLORS.get(
+                                    e.category, "#374151"
+                                ),
+                            },
+                            title=f"{e.start_ts.strftime('%I:%M %p')}: {e.category} — {e.clean_text[:60]}",
+                        )
+                        for e in events
+                    ],
+                ),
+                html.Div(
+                    className="timeline-labels",
+                    children=[
+                        html.Span(
+                            summary.start_time.strftime("%I:%M %p"),
+                            className="timeline-start",
+                        ),
+                        html.Span(
+                            summary.end_time.strftime("%I:%M %p"),
+                            className="timeline-end",
+                        ),
+                    ],
+                ),
+            ],
+        )
+    )
+
+    # Category breakdown
+    overview_children.append(
+        html.Div(
+            className="category-breakdown",
+            children=[
+                html.H4("Category Breakdown", className="section-title"),
+                html.Div(
+                    className="category-bars-detailed",
+                    children=[
+                        html.Div(
+                            className="category-row",
+                            children=[
+                                html.Span(
+                                    CATEGORY_LABELS.get(cat, cat),
+                                    className="category-label",
+                                ),
+                                html.Div(
+                                    className="category-bar-wrapper",
+                                    children=[
+                                        html.Div(
+                                            className="category-bar-fill",
+                                            style={
+                                                "width": f"{pct}%",
+                                                "backgroundColor": CATEGORY_COLORS.get(
+                                                    cat, "#374151"
+                                                ),
+                                            },
+                                        ),
+                                    ],
+                                ),
+                                html.Span(f"{pct:.0f}%", className="category-pct"),
+                            ],
+                        )
+                        for cat, pct in sorted(cat_pcts.items(), key=lambda x: -x[1])
+                    ],
+                ),
+            ],
+        )
+    )
+
+    # Keywords
+    overview_children.append(
+        html.Div(
+            className="recording-keywords-section",
+            children=[
+                html.H4("Keywords", className="section-title"),
+                html.Div(
+                    className="keywords-list",
+                    children=(
+                        [
+                            html.Span(kw, className="keyword-tag")
+                            for kw in summary.keywords
+                        ]
+                        if summary.keywords
+                        else [html.Span("No keywords", className="no-keywords")]
+                    ),
+                ),
+            ],
+        )
+    )
+
+    # Events tab
+    events_tab = html.Div(
+        className="events-section",
+        children=[
+            html.Div(
+                className="events-section-header",
+                children=[
+                    html.H4(
+                        f"Events ({len(events)})",
+                        className="section-title",
+                    ),
+                    dcc.Input(
+                        id="event-filter-input",
+                        type="text",
+                        placeholder="Filter events…",
+                        className="event-filter-input",
+                        debounce=False,
+                    ),
+                ],
+            ),
+            html.Div(
+                id="events-list-container",
+                className="events-list",
+                children=[
+                    create_event_card(
+                        event,
+                        i,
+                        highlighted=(event.id == highlight_event_id),
+                    )
+                    for i, event in enumerate(events)
+                ],
+            ),
+        ],
+    )
+
+    # Transcript tab
+    if transcript:
+        word_count = len(transcript.split())
+        char_count = len(transcript)
+        transcript_tab = html.Div(
+            className="transcript-tab-content",
+            children=[
+                html.Div(
+                    className="transcript-stats",
+                    children=[
+                        html.Span(f"{word_count:,} words", className="transcript-stat"),
+                        html.Span("·", className="stat-sep"),
+                        html.Span(f"{char_count:,} chars", className="transcript-stat"),
+                    ],
+                ),
+                html.Pre(transcript, className="transcript-text"),
+            ],
+        )
+    else:
+        transcript_tab = html.Div(
+            className="transcript-tab-content empty",
+            children=[
+                html.P("No transcript available", className="empty-transcript"),
+            ],
+        )
+
+    # Tab labels with counts
+    tab_labels = {
+        "overview": "Overview",
+        "events": f"Events ({len(events)})",
+        "transcript": f"Transcript{'  ✓' if transcript else ''}",
+    }
 
     return html.Div(
         className="recording-detail",
@@ -229,7 +437,7 @@ def create_recording_detail(
                     ),
                 ],
             ),
-            # Header
+            # Header (always visible)
             html.Div(
                 className="recording-detail-header",
                 children=[
@@ -245,7 +453,6 @@ def create_recording_detail(
                             ),
                         ],
                     ),
-                    # Ambient context tags
                     html.Div(
                         className="detail-ambient-tags",
                         children=[
@@ -256,222 +463,46 @@ def create_recording_detail(
                     ),
                 ],
             ),
-            # AI Summary (if available)
-            *(
-                [
-                    html.Div(
-                        className="ai-summary-section",
-                        children=[
-                            html.H4("✨ Summary", className="section-title"),
-                            html.P(ai_summary, className="ai-summary-text"),
-                        ],
-                    )
-                ]
-                if ai_summary
-                else []
-            ),
-            # Key Moments (top 3 notable events)
-            *(
-                [
-                    html.Div(
-                        className="key-moments-section",
-                        children=[
-                            html.H4(
-                                f"⚡ Key Moments ({len(key_moments)})",
-                                className="section-title",
-                            ),
-                            html.Div(
-                                className="key-moments-list",
-                                children=[
-                                    html.Div(
-                                        className="key-moment",
-                                        children=[
-                                            html.Span(
-                                                km.start_ts.strftime("%I:%M %p"),
-                                                className="moment-time",
-                                            ),
-                                            html.Span(
-                                                km.category,
-                                                className="moment-category",
-                                                style={
-                                                    "backgroundColor": CATEGORY_COLORS.get(
-                                                        km.category, "#374151"
-                                                    )
-                                                },
-                                            ),
-                                            html.Span(
-                                                km.clean_text[:120]
-                                                + (
-                                                    "…"
-                                                    if len(km.clean_text) > 120
-                                                    else ""
-                                                ),
-                                                className="moment-text",
-                                            ),
-                                        ],
-                                    )
-                                    for km in key_moments
-                                ],
-                            ),
-                        ],
-                    )
-                ]
-                if key_moments
-                else []
-            ),
-            # Category breakdown
-            html.Div(
-                className="category-breakdown",
+            # Tab navigation
+            dcc.Tabs(
+                id="detail-tabs",
+                value="overview",
+                className="detail-tabs",
                 children=[
-                    html.H4("Category Breakdown", className="section-title"),
-                    html.Div(
-                        className="category-bars-detailed",
+                    dcc.Tab(
+                        label=tab_labels["overview"],
+                        value="overview",
+                        className="detail-tab",
+                        selected_className="detail-tab--selected",
                         children=[
                             html.Div(
-                                className="category-row",
-                                children=[
-                                    html.Span(cat, className="category-label"),
-                                    html.Div(
-                                        className="category-bar-wrapper",
-                                        children=[
-                                            html.Div(
-                                                className="category-bar-fill",
-                                                style={
-                                                    "width": f"{pct}%",
-                                                    "backgroundColor": CATEGORY_COLORS.get(
-                                                        cat, "#374151"
-                                                    ),
-                                                },
-                                            ),
-                                        ],
-                                    ),
-                                    html.Span(f"{pct:.0f}%", className="category-pct"),
-                                ],
-                            )
-                            for cat, pct in sorted(
-                                cat_pcts.items(), key=lambda x: -x[1]
+                                className="detail-tab-content",
+                                children=overview_children,
                             )
                         ],
                     ),
-                ],
-            ),
-            # Keywords
-            html.Div(
-                className="recording-keywords-section",
-                children=[
-                    html.H4("Keywords", className="section-title"),
-                    html.Div(
-                        className="keywords-list",
-                        children=(
-                            [
-                                html.Span(kw, className="keyword-tag")
-                                for kw in summary.keywords
-                            ]
-                            if summary.keywords
-                            else [html.Span("No keywords", className="no-keywords")]
-                        ),
-                    ),
-                ],
-            ),
-            # Timeline visual
-            html.Div(
-                className="timeline-visual",
-                children=[
-                    html.H4(
-                        f"Timeline ({len(events)} events)", className="section-title"
-                    ),
-                    html.Div(
-                        className="timeline-bar",
+                    dcc.Tab(
+                        label=tab_labels["events"],
+                        value="events",
+                        className="detail-tab",
+                        selected_className="detail-tab--selected",
                         children=[
                             html.Div(
-                                id={"type": "timeline-marker", "event": e.id},
-                                className="timeline-event-marker",
-                                style={
-                                    "left": f"{((e.start_ts - summary.start_time).total_seconds() / max(summary.duration_seconds, 1)) * 100}%",
-                                    "backgroundColor": CATEGORY_COLORS.get(
-                                        e.category, "#374151"
-                                    ),
-                                },
-                                title=f"{e.start_ts.strftime('%I:%M %p')}: {e.category} — {e.clean_text[:60]}",
+                                className="detail-tab-content",
+                                children=[events_tab],
                             )
-                            for e in events
                         ],
                     ),
-                    html.Div(
-                        className="timeline-labels",
+                    dcc.Tab(
+                        label=tab_labels["transcript"],
+                        value="transcript",
+                        className="detail-tab",
+                        selected_className="detail-tab--selected",
                         children=[
-                            html.Span(
-                                summary.start_time.strftime("%I:%M %p"),
-                                className="timeline-start",
-                            ),
-                            html.Span(
-                                summary.end_time.strftime("%I:%M %p"),
-                                className="timeline-end",
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-            # Transcript viewer (collapsible)
-            *(
-                [
-                    html.Details(
-                        className="transcript-section",
-                        children=[
-                            html.Summary(
-                                children=[
-                                    html.H4(
-                                        "📝 Raw Transcript",
-                                        className="section-title",
-                                        style={"display": "inline"},
-                                    ),
-                                    html.Span(
-                                        f" ({len(transcript.split())} words, {len(transcript):,} chars)",
-                                        className="transcript-meta",
-                                    ),
-                                ],
-                            ),
-                            html.Pre(
-                                transcript,
-                                className="transcript-text",
-                            ),
-                        ],
-                    )
-                ]
-                if transcript
-                else []
-            ),
-            # Events list
-            html.Div(
-                className="events-section",
-                children=[
-                    # Header with count + inline filter
-                    html.Div(
-                        className="events-section-header",
-                        children=[
-                            html.H4(
-                                f"Events ({len(events)})",
-                                className="section-title",
-                            ),
-                            dcc.Input(
-                                id="event-filter-input",
-                                type="text",
-                                placeholder="Filter events…",
-                                className="event-filter-input",
-                                debounce=False,
-                            ),
-                        ],
-                    ),
-                    html.Div(
-                        id="events-list-container",
-                        className="events-list",
-                        children=[
-                            create_event_card(
-                                event,
-                                i,
-                                highlighted=(event.id == highlight_event_id),
+                            html.Div(
+                                className="detail-tab-content",
+                                children=[transcript_tab],
                             )
-                            for i, event in enumerate(events)
                         ],
                     ),
                 ],
