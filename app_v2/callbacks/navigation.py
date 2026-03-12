@@ -2066,7 +2066,9 @@ def register_navigation_callbacks(app):
                         success, failed = ingest_svc.ingest_recent_recordings(
                             days_back=days_back or 7, fetch_all_pages=True
                         )
-                    except RuntimeError as auth_err:
+                    except Exception as auth_err:
+                        # Catch ALL ingest errors (auth, network, API) —
+                        # don't let ingest failure kill process/index phases.
                         auth_warning = str(auth_err)
                         success, failed = 0, 0
                     t_ingest = _time.monotonic() - t0

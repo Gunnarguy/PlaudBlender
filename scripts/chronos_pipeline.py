@@ -228,9 +228,16 @@ def run_ingest(session, limit: int = 100, *, fetch_all_pages: bool = False) -> i
     def on_progress(current, total, recording_id):
         print_progress("Plaud", current, total, recording_id, time.time() - start_time)
 
-    success_count, failure_count = service.ingest_recent_recordings(
-        limit=limit, fetch_all_pages=fetch_all_pages
-    )
+    try:
+        success_count, failure_count = service.ingest_recent_recordings(
+            limit=limit, fetch_all_pages=fetch_all_pages
+        )
+    except Exception as e:
+        # Auth failure or network error — log warning but don't crash
+        # so process/index phases can still run on existing data.
+        print(f"⚠️  Ingest failed: {e}")
+        logger.warning(f"Ingest phase failed (non-fatal): {e}")
+        success_count, failure_count = 0, 0
 
     elapsed = time.time() - start_time
     print_phase_complete("Ingest", success_count, elapsed)
