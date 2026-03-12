@@ -91,6 +91,14 @@ def _register_auth_routes(server):
     @server.route("/auth/plaud/callback", methods=["GET", "OPTIONS"])
     def auth_plaud_callback():
         """Handle OAuth callback from Plaud, exchange code for tokens."""
+        logger.info(
+            "CALLBACK HIT: method=%s url=%s args=%s origin=%s",
+            request.method,
+            request.url,
+            dict(request.args),
+            request.headers.get("Origin", "(none)"),
+        )
+
         # Handle CORS preflight
         if request.method == "OPTIONS":
             return _cors_response("", 204)
@@ -113,13 +121,25 @@ def _register_auth_routes(server):
         if state:
             _oauth_pending_states.pop(state, None)
 
-        try:
-            from src.plaud_oauth import PlaudOAuthClient
+        from src.plaud_oauth import PlaudOAuthClient
 
+        # Idempotent: if a previous XHR hit already exchanged the code
+        # and we have valid tokens, just return success.
+        try:
             client = PlaudOAuthClient(redirect_uri=INAPP_REDIRECT_URI)
-            client.exchange_code_for_token(code)
+            if client.is_authenticated:
+                logger.info("CALLBACK: already authenticated — skipping exchange")
+                return _cors_response(_auth_success_page())
+        except Exception:
+            pass
+
+        try:
+            client = PlaudOAuthClient(redirect_uri=INAPP_REDIRECT_URI)
+            token_data = client.exchange_code_for_token(code)
+            logger.info("CALLBACK: token exchange SUCCESS — keys=%s", list(token_data.keys()))
             return _cors_response(_auth_success_page())
         except Exception as e:
+            logger.error("CALLBACK: token exchange FAILED — %s", e)
             safe_msg = escape(str(e))
             return _cors_response(
                 _auth_error_page("Token Exchange Failed", safe_msg), 500
