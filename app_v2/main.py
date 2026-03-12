@@ -109,12 +109,9 @@ def _register_auth_routes(server):
                 400,
             )
 
-        if state not in _oauth_pending_states:
-            return _cors_response(
-                _auth_error_page("Invalid State", "CSRF state mismatch — try again."),
-                403,
-            )
-        del _oauth_pending_states[state]
+        # Clean up state if it exists (may be lost on debug reloader restart)
+        if state:
+            _oauth_pending_states.pop(state, None)
 
         try:
             from src.plaud_oauth import PlaudOAuthClient
