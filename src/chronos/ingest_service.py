@@ -277,6 +277,12 @@ class ChronosIngestService:
         )
 
         # Fetch from Plaud API with optional pagination
+        # Pre-check authentication so callers get actionable feedback
+        if not self.plaud.oauth.is_authenticated:
+            msg = "Plaud not authenticated. Run: python plaud_setup.py"
+            logger.error(msg)
+            raise RuntimeError(msg)
+
         try:
             if fetch_all_pages:
                 # Paginate through all recordings (using built-in pagination)
@@ -290,7 +296,7 @@ class ChronosIngestService:
                 recordings = self.plaud.list_recordings(page=1, page_size=page_size)
         except Exception as e:
             logger.error(f"Failed to fetch from Plaud API: {e}")
-            return (0, 0)
+            raise
 
         success_count = 0
         failure_count = 0

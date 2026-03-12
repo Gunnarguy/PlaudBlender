@@ -217,6 +217,61 @@ def create_sync_view(service) -> html.Div:
 
     # Plaud cloud stats row
     plaud_cloud_children = []
+
+    # Failed recording details
+    failed_details_children = []
+    if failed > 0:
+        try:
+            from src.database.engine import SessionLocal as _SL
+            import sqlalchemy as sa
+
+            _db = _SL()
+            try:
+                failed_rows = _db.execute(
+                    sa.text(
+                        "SELECT recording_id, error_message FROM chronos_recordings "
+                        "WHERE processing_status = 'failed' LIMIT 5"
+                    )
+                ).fetchall()
+                if failed_rows:
+                    failed_details_children = [
+                        html.Div(
+                            className="failed-recordings-detail",
+                            style={
+                                "marginTop": "10px",
+                                "borderTop": "1px solid var(--border-color, #e2e8f0)",
+                                "paddingTop": "10px",
+                            },
+                            children=[
+                                html.Span(
+                                    "🔍 Failed Recordings:",
+                                    style={
+                                        "fontWeight": "600",
+                                        "fontSize": "0.85rem",
+                                        "color": "#ef4444",
+                                    },
+                                ),
+                                html.Ul(
+                                    style={
+                                        "margin": "4px 0 0 0",
+                                        "paddingLeft": "18px",
+                                        "fontSize": "0.8rem",
+                                        "color": "#94a3b8",
+                                    },
+                                    children=[
+                                        html.Li(
+                                            f"{row[0][:16]}… — {(row[1] or 'Unknown error')[:80]}"
+                                        )
+                                        for row in failed_rows
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ]
+            finally:
+                _db.close()
+        except Exception:
+            pass
     if stats.plaud_cloud_stats:
         cs = stats.plaud_cloud_stats
         cloud_total = cs.get("total_count", 0)
@@ -381,6 +436,8 @@ def create_sync_view(service) -> html.Div:
                     ),
                     # Plaud cloud stats (if available)
                     *plaud_cloud_children,
+                    # Failed recording error details (if any)
+                    *failed_details_children,
                 ],
             ),
             html.Div(
@@ -1990,32 +2047,47 @@ def register_navigation_callbacks(app):
                     get_chronos_events_by_recording,
                 )
                 from src.database.models import ChronosEvent as ChronosEventModel
+                import time as _time
 
                 db = SessionLocal()
                 steps = []
+                timings = []
                 try:
                     active_phases = ["ingest", "process", "index"]
                     progress.start_run(phases=active_phases, trigger="manual")
 
                     # Phase 1: Ingest from Plaud
+                    t0 = _time.monotonic()
                     progress.start_phase("ingest")
                     progress.update(step="Fetching recording list from Plaud…")
                     ingest_svc = ChronosIngestService(db_session=db)
-                    success, failed = ingest_svc.ingest_recent_recordings(
-                        days_back=days_back or 7, fetch_all_pages=True
-                    )
-                    steps.append(f"📥 Ingested: {success} new, {failed} failed")
+                    auth_warning = None
+                    try:
+                        success, failed = ingest_svc.ingest_recent_recordings(
+                            days_back=days_back or 7, fetch_all_pages=True
+                        )
+                    except RuntimeError as auth_err:
+                        auth_warning = str(auth_err)
+                        success, failed = 0, 0
+                    t_ingest = _time.monotonic() - t0
+                    timings.append(("Ingest", t_ingest))
+                    if auth_warning:
+                        steps.append(f"⚠️ Plaud Auth Failed: {auth_warning}")
+                    else:
+                        steps.append(f"📥 Ingested: {success} new, {failed} failed")
                     progress.finish_phase(
                         summary=f"{success} ingested, {failed} failed"
                     )
 
                     # Phase 2: Process pending through Gemini
+                    t0 = _time.monotonic()
                     pending = get_pending_chronos_recordings(db)
                     progress.start_phase("process", total_items=len(pending))
                     if pending:
                         processor = TranscriptProcessor(db_session=db)
                         processed = 0
                         proc_failed = 0
+                        proc_errors = []
                         for i, rec in enumerate(pending):
                             rec_id = str(rec.recording_id)
                             progress.update(
@@ -2031,24 +2103,34 @@ def register_navigation_callbacks(app):
                                     )
                                 else:
                                     proc_failed += 1
+                                    proc_errors.append(rec_id[:16])
                                     progress.advance(
                                         item=rec_id[:20], step=f"❌ failed"
                                     )
                             except Exception as e:
                                 logger.error(f"Process error: {e}")
                                 proc_failed += 1
+                                proc_errors.append(f"{rec_id[:16]}: {str(e)[:40]}")
                                 progress.advance(item=rec_id[:20])
-                        steps.append(
-                            f"🧠 Processed: {processed} recordings ({proc_failed} failed)"
-                        )
+                        t_process = _time.monotonic() - t0
+                        timings.append(("Process", t_process))
+                        step_msg = f"🧠 Processed: {processed} recordings"
+                        if proc_failed:
+                            step_msg += f" ({proc_failed} failed)"
+                        steps.append(step_msg)
+                        if proc_errors:
+                            steps.append(f"   └ Errors: {'; '.join(proc_errors[:3])}")
                         progress.finish_phase(
                             summary=f"{processed} processed, {proc_failed} failed"
                         )
                     else:
+                        t_process = _time.monotonic() - t0
+                        timings.append(("Process", t_process))
                         steps.append("🧠 No pending recordings to process")
                         progress.finish_phase(summary="No pending recordings")
 
                     # Phase 3: Index to Qdrant
+                    t0 = _time.monotonic()
                     progress.start_phase("index")
                     try:
                         embedder = ChronosEmbeddingService()
@@ -2102,7 +2184,11 @@ def register_navigation_callbacks(app):
                         else:
                             steps.append("📊 All events already indexed")
                             progress.finish_phase(summary="All events already indexed")
+                        t_index = _time.monotonic() - t0
+                        timings.append(("Index", t_index))
                     except Exception as e:
+                        t_index = _time.monotonic() - t0
+                        timings.append(("Index", t_index))
                         steps.append(f"📊 Indexing error: {str(e)[:60]}")
                         progress.finish_phase(error=str(e)[:100])
 
@@ -2110,6 +2196,59 @@ def register_navigation_callbacks(app):
                     service = get_data_service()
                     service.refresh_cache()
                     progress.finish_run()
+
+                    # Build telemetry section
+                    total_time = sum(t for _, t in timings)
+                    telemetry_children = [
+                        html.Div(
+                            className="sync-telemetry",
+                            children=[
+                                html.Span("⏱ ", className="telemetry-icon"),
+                                html.Span(
+                                    " · ".join(
+                                        f"{name}: {t:.1f}s" for name, t in timings
+                                    )
+                                    + f" · Total: {total_time:.1f}s",
+                                    className="telemetry-text",
+                                ),
+                            ],
+                        )
+                    ]
+
+                    # Build failed recording details (if any)
+                    failed_details = []
+                    try:
+                        import sqlalchemy as sa
+
+                        failed_rows = db.execute(
+                            sa.text(
+                                "SELECT recording_id, error_message FROM chronos_recordings "
+                                "WHERE processing_status = 'failed' LIMIT 5"
+                            )
+                        ).fetchall()
+                        if failed_rows:
+                            failed_details = [
+                                html.Div(
+                                    className="sync-failed-details",
+                                    children=[
+                                        html.Span(
+                                            "🔍 Failed recordings:",
+                                            style={"fontWeight": "600"},
+                                        ),
+                                        html.Ul(
+                                            [
+                                                html.Li(
+                                                    f"{row[0][:16]}… — {(row[1] or 'Unknown error')[:80]}",
+                                                    className="failed-detail-item",
+                                                )
+                                                for row in failed_rows
+                                            ]
+                                        ),
+                                    ],
+                                )
+                            ]
+                    except Exception:
+                        pass
 
                     return html.Div(
                         className="sync-success",
@@ -2119,6 +2258,8 @@ def register_navigation_callbacks(app):
                             ),
                         ]
                         + [html.P(step) for step in steps]
+                        + telemetry_children
+                        + failed_details
                         + [
                             html.P(
                                 "Refresh the page to see updated data.",
