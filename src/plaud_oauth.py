@@ -57,7 +57,7 @@ PLAUD_API_BASE = "https://platform.plaud.ai/developer/api/open/third-party"
 #
 # IMPORTANT: The redirect URI *must* exactly match what you registered in the
 # Plaud developer portal (scheme, host, port, and path).
-DEFAULT_REDIRECT_URI = "http://localhost:8080/callback"
+DEFAULT_REDIRECT_URI = "http://localhost:8050/auth/plaud/callback"
 TOKEN_FILE = Path(__file__).parent.parent / ".plaud_tokens.json"
 CERT_DIR = Path(__file__).parent.parent / ".certs"
 
@@ -521,7 +521,7 @@ class PlaudOAuthClient:
                 # still attempt to redirect to the *registered* redirect URI.
                 raise RuntimeError(
                     "PLAUD_REDIRECT_URI is set to https:// but no TLS cert/key were found. "
-                    "Either set PLAUD_REDIRECT_URI to http://localhost:8080/callback (and register it in Plaud), "
+                    "Either set PLAUD_REDIRECT_URI to http://localhost:8050/auth/plaud/callback (and register it in Plaud), "
                     f"or provide TLS files at {CERT_DIR}/localhost.crt and {CERT_DIR}/localhost.key."
                 )
 

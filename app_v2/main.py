@@ -9,7 +9,7 @@ import threading
 import time
 
 from dash import Dash
-from flask import redirect, request, jsonify
+from flask import redirect, request, jsonify, make_response
 from flask_compress import Compress
 from markupsafe import escape
 
@@ -56,23 +56,49 @@ def _register_auth_routes(server):
                 500,
             )
 
-    @server.route("/auth/plaud/callback")
+    def _cors_response(body, status=200, content_type="text/html"):
+        """Wrap a response with CORS headers for Plaud OAuth XHR callbacks."""
+        resp = make_response(body, status)
+        # Plaud's OAuth page may send Origin: null (sandboxed redirect) or
+        # its own domain.  We must reflect the request Origin so the browser
+        # accepts the XHR response.
+        origin = request.headers.get("Origin", "")
+        allowed = {"https://app.plaud.ai", "https://resource.plaud.ai", "null"}
+        if origin in allowed:
+            resp.headers["Access-Control-Allow-Origin"] = origin
+        else:
+            # Fallback — allow any origin for this one endpoint since
+            # only a valid state+code can trigger token exchange.
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        if content_type:
+            resp.headers["Content-Type"] = content_type
+        return resp
+
+    @server.route("/auth/plaud/callback", methods=["GET", "OPTIONS"])
     def auth_plaud_callback():
         """Handle OAuth callback from Plaud, exchange code for tokens."""
+        # Handle CORS preflight
+        if request.method == "OPTIONS":
+            return _cors_response("", 204)
+
         error = request.args.get("error")
         if error:
-            return _auth_error_page("Plaud Denied Access", escape(str(error))), 400
+            return _cors_response(
+                _auth_error_page("Plaud Denied Access", escape(str(error))), 400
+            )
 
         code = request.args.get("code")
         state = request.args.get("state")
         if not code:
-            return (
+            return _cors_response(
                 _auth_error_page("Missing Code", "No authorization code received."),
                 400,
             )
 
         if state not in _oauth_pending_states:
-            return (
+            return _cors_response(
                 _auth_error_page("Invalid State", "CSRF state mismatch — try again."),
                 403,
             )
@@ -83,10 +109,12 @@ def _register_auth_routes(server):
 
             client = PlaudOAuthClient(redirect_uri=INAPP_REDIRECT_URI)
             client.exchange_code_for_token(code)
-            return _auth_success_page()
+            return _cors_response(_auth_success_page())
         except Exception as e:
             safe_msg = escape(str(e))
-            return _auth_error_page("Token Exchange Failed", safe_msg), 500
+            return _cors_response(
+                _auth_error_page("Token Exchange Failed", safe_msg), 500
+            )
 
     @server.route("/auth/plaud/status")
     def auth_plaud_status():

@@ -805,17 +805,17 @@ def _check_services(settings):
                 except Exception:
                     checks["plaud"] = (
                         False,
-                        "Token expired; refresh failed — run plaud_setup.py",
+                        "Token expired; refresh failed — use Connect in Sync view",
                     )
             else:
                 checks["plaud"] = (
                     False,
-                    "Token expired; no refresh token — run plaud_setup.py",
+                    "Token expired; no refresh token — use Connect in Sync view",
                 )
         elif has_token:
             checks["plaud"] = (True, "Token present")
         else:
-            checks["plaud"] = (False, "Run plaud_setup.py to authenticate")
+            checks["plaud"] = (False, "Not authenticated — use Connect in Sync view")
     except Exception as e:
         checks["plaud"] = (False, str(e)[:80])
 
@@ -949,12 +949,38 @@ def create_settings_view(preferences=None) -> html.Div:
         return html.Div(className="setting-param-row", children=children)
 
     # ── Section: Service Connections ──────────────────────────────────────
+    # Build Plaud Auth row with inline Connect link when not authenticated
+    plaud_ok, plaud_detail = checks["plaud"]
+    plaud_row_children = [
+        html.Label("Plaud Auth:"),
+        html.Span(
+            "✅ Connected" if plaud_ok else "❌ Not Connected",
+            className=f"status-badge {'connected' if plaud_ok else 'disconnected'}",
+        ),
+        html.Span(plaud_detail, className="status-detail"),
+    ]
+    if not plaud_ok:
+        plaud_row_children.append(
+            html.A(
+                "Connect →",
+                href="/auth/plaud",
+                target="_blank",
+                className="plaud-connect-btn",
+                style={
+                    "marginLeft": "8px",
+                    "fontSize": "0.8rem",
+                    "padding": "2px 10px",
+                },
+            )
+        )
+    plaud_auth_row = html.Div(className="setting-row", children=plaud_row_children)
+
     connection_section = html.Div(
         className="settings-section",
         children=[
             html.H4("🔗 Service Connections"),
             status_row("Docker:", *checks["docker"]),
-            status_row("Plaud Auth:", *checks["plaud"]),
+            plaud_auth_row,
             status_row("Gemini AI:", *checks["gemini"]),
             status_row("OpenAI:", *checks["openai"]),
             status_row("SQLite:", *checks["sqlite"]),

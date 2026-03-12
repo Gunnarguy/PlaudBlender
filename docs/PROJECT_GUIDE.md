@@ -275,7 +275,7 @@ PlaudBlender/
 # Plaud OAuth
 PLAUD_CLIENT_ID=
 PLAUD_CLIENT_SECRET=
-PLAUD_REDIRECT_URI=http://localhost:8080/callback
+PLAUD_REDIRECT_URI=http://localhost:8050/auth/plaud/callback
 
 # Gemini AI
 GEMINI_API_KEY=
@@ -458,9 +458,9 @@ python scripts/chronos_pipeline.py --reindex            # Re-embed all events (m
 
 Tracked via [Issue #1: Chronos System Roadmap](https://github.com/Gunnarguy/PlaudBlender/issues/1)
 
-| Issue | Title                       | Status   |
-| ----- | --------------------------- | -------- |
-| #1    | Master Roadmap              | Closed   |
+| Issue | Title                       | Status    |
+| ----- | --------------------------- | --------- |
+| #1    | Master Roadmap              | Closed    |
 | #2    | T2.3: Real Settings checks  | ✅ Closed |
 | #3    | T2.2: Analytics Stats       | ✅ Closed |
 | #4    | T2.1: Knowledge Graph       | ✅ Closed |

@@ -80,7 +80,7 @@ def create_env_template():
 # Get these from: https://platform.plaud.ai/developer/portal
 PLAUD_CLIENT_ID=your_client_id_here
 PLAUD_CLIENT_SECRET=your_client_secret_here
-PLAUD_REDIRECT_URI=http://localhost:8080/callback
+PLAUD_REDIRECT_URI=http://localhost:8050/auth/plaud/callback
 
 # === AI / SEARCH (Required for processing features) ===
 # Google Gemini - https://ai.google.dev/
