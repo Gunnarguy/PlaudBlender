@@ -102,6 +102,26 @@ def register_day_view_callbacks(app):
         return topic
 
     @app.callback(
+        Output("selected-recording", "data", allow_duplicate=True),
+        Input({"type": "occurrence-card", "id": ALL, "recording_id": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def select_occurrence(n_clicks):
+        """Handle occurrence card click in topic timeline."""
+        if not any(n_clicks):
+            raise PreventUpdate
+
+        triggered = ctx.triggered_id
+        if not triggered:
+            raise PreventUpdate
+
+        recording_id = triggered.get("recording_id")
+        event_id = triggered.get("id")
+        logger.info(f"Occurrence selected: event={event_id} recording={recording_id}")
+
+        return {"id": recording_id, "scroll_to_event": event_id}
+
+    @app.callback(
         Output("selected-topic", "data", allow_duplicate=True),
         Input("back-to-topics-btn", "n_clicks"),
         prevent_initial_call=True,

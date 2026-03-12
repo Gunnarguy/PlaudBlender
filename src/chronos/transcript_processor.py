@@ -149,6 +149,19 @@ BROKEN_JSON:
         Returns:
             GeminiEventOutput with extracted events
         """
+        # Skip transcripts that are too short to extract meaningful events
+        MIN_TRANSCRIPT_CHARS = 100
+        if len(transcript_text.strip()) < MIN_TRANSCRIPT_CHARS:
+            if verbose:
+                print(
+                    f"      ⚠️ Transcript too short ({len(transcript_text.strip())} chars < {MIN_TRANSCRIPT_CHARS}), skipping",
+                    flush=True,
+                )
+            logger.warning(
+                f"Skipping {recording_id}: transcript too short ({len(transcript_text.strip())} chars)"
+            )
+            return None
+
         # Build prompt (same as audio version)
         prompt = self.engine._build_prompt(recording_id, recording_date)
 
@@ -195,12 +208,14 @@ Extract events from this transcript following the schema exactly."""
                     )
 
                 # Use streaming to show real-time progress
+                STREAM_TIMEOUT = 600  # 10 min max for any single Gemini call
                 if verbose:
                     response_text = ""
                     token_count = 0
                     events_found = 0
                     last_print_len = 0
                     start_time = __import__("time").time()
+                    last_chunk_time = start_time
 
                     stream = self.engine.client.models.generate_content_stream(
                         model=self.engine.model_name,
@@ -209,6 +224,15 @@ Extract events from this transcript following the schema exactly."""
                     )
 
                     for chunk in stream:
+                        now = __import__("time").time()
+                        # Timeout: if total elapsed exceeds limit, abort
+                        if now - start_time > STREAM_TIMEOUT:
+                            print(
+                                f"\n      ⚠️ Stream timeout ({STREAM_TIMEOUT}s), using partial response",
+                                flush=True,
+                            )
+                            break
+                        last_chunk_time = now
                         chunk_text = chunk.text or ""
                         response_text += chunk_text
                         token_count += len(chunk_text.split())  # Rough estimate

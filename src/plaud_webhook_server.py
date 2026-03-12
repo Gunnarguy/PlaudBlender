@@ -17,7 +17,7 @@ import os
 import json
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Callable
 from dataclasses import dataclass, field
 from queue import Queue
@@ -86,6 +86,9 @@ class PlaudWebhookServer:
         self.event_queue: Queue[PlaudEvent] = Queue()
         self.event_log: List[EventLogEntry] = []
         self.max_log_size = 100
+        self._seen_event_ids: Dict[str, datetime] = {}
+        self._event_ttl = timedelta(hours=24)
+        self.admin_token = os.getenv("WEBHOOK_ADMIN_TOKEN")
 
         # Thread control
         self._thread: Optional[threading.Thread] = None
@@ -100,24 +103,41 @@ class PlaudWebhookServer:
     def _setup_routes(self) -> None:
         """Set up Flask routes."""
 
-        @self.app.route("/health", methods=["GET"])
-        def health():
-            return jsonify(
-                {
-                    "status": "healthy",
-                    "server": "plaud-webhook-server",
-                    "events_received": len(self.event_log),
-                    "queue_size": self.event_queue.qsize(),
-                }
+        def _extract_signature() -> Optional[str]:
+            return (
+                request.headers.get("Plaud-Signature")
+                or request.headers.get("X-Plaud-Signature")
+                or request.headers.get("X-Plaud-Signature-256")
             )
 
-        @self.app.route("/webhook/plaud", methods=["POST"])
-        def plaud_webhook():
+        def _prune_seen_event_ids() -> None:
+            cutoff = datetime.now() - self._event_ttl
+            stale = [
+                eid for eid, seen_at in self._seen_event_ids.items() if seen_at < cutoff
+            ]
+            for eid in stale:
+                self._seen_event_ids.pop(eid, None)
+
+        def _authorize_admin():
+            """Protect debug/operational routes with optional bearer token."""
+            if not self.admin_token:
+                return None
+
+            token = request.headers.get("X-Webhook-Admin-Token", "")
+            auth = request.headers.get("Authorization", "")
+            if auth.lower().startswith("bearer "):
+                token = auth[7:].strip()
+
+            if token != self.admin_token:
+                return jsonify({"error": "Unauthorized"}), 401
+            return None
+
+        def _handle_webhook_post():
             """Receive Plaud webhook events."""
             try:
-                signature = request.headers.get("Plaud-Signature")
+                signature = _extract_signature()
                 payload_body = request.data
-                payload_json = request.get_json() or {}
+                payload_json = request.get_json(silent=True) or {}
 
                 # Verify signature
                 if not self.handler.verify_signature(payload_body, signature):
@@ -127,6 +147,21 @@ class PlaudWebhookServer:
                 # Parse event
                 event = self.handler.parse_event(payload_json)
                 logger.info(f"Received webhook event: {event.event_type.value}")
+
+                # Idempotency: ignore duplicate event IDs
+                _prune_seen_event_ids()
+                if event.event_id in self._seen_event_ids:
+                    logger.info("Duplicate webhook event ignored: %s", event.event_id)
+                    return (
+                        jsonify(
+                            {
+                                "status": "duplicate_ignored",
+                                "event_id": event.event_id,
+                            }
+                        ),
+                        200,
+                    )
+                self._seen_event_ids[event.event_id] = datetime.now()
 
                 # Log event
                 entry = EventLogEntry(event=event)
@@ -156,9 +191,35 @@ class PlaudWebhookServer:
                 logger.error(f"Webhook error: {e}")
                 return jsonify({"error": str(e)}), 500
 
+        @self.app.route("/health", methods=["GET"])
+        def health():
+            return jsonify(
+                {
+                    "status": "healthy",
+                    "server": "plaud-webhook-server",
+                    "events_received": len(self.event_log),
+                    "queue_size": self.event_queue.qsize(),
+                    "signature_required": bool(self.handler.webhook_secret),
+                    "configured_url": settings.plaud_webhook_url,
+                    "admin_protection_enabled": bool(self.admin_token),
+                }
+            )
+
+        @self.app.route("/webhook/plaud", methods=["POST"])
+        def plaud_webhook_plaud_path():
+            return _handle_webhook_post()
+
+        @self.app.route("/webhook", methods=["POST"])
+        def plaud_webhook_default_path():
+            return _handle_webhook_post()
+
         @self.app.route("/events", methods=["GET"])
         def list_events():
             """List recent webhook events."""
+            auth_error = _authorize_admin()
+            if auth_error:
+                return auth_error
+
             limit = request.args.get("limit", 20, type=int)
             events = [e.to_dict() for e in self.event_log[-limit:]]
             return jsonify({"events": events, "total": len(self.event_log)})
@@ -166,6 +227,10 @@ class PlaudWebhookServer:
         @self.app.route("/events/clear", methods=["POST"])
         def clear_events():
             """Clear event log."""
+            auth_error = _authorize_admin()
+            if auth_error:
+                return auth_error
+
             self.event_log.clear()
             return jsonify({"status": "cleared"})
 

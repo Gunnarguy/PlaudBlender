@@ -22,10 +22,38 @@ if not unindexed:
 embedder = ChronosEmbeddingService()
 qdrant = ChronosQdrantClient()
 
-# Batch embed
-texts = [e.clean_text for e in unindexed]
-print(f"Embedding {len(texts)} texts...")
-vectors = embedder.embed_batch(texts)
+# Build audio lookup if multimodal is available
+audio_map: dict[str, str] = {}
+if embedder.supports_multimodal:
+    from src.database.models import ChronosRecording
+
+    rec_ids = {e.recording_id for e in unindexed}
+    for rec in (
+        db.query(ChronosRecording)
+        .filter(ChronosRecording.recording_id.in_(rec_ids))
+        .all()
+    ):
+        if rec.local_audio_path:
+            audio_map[rec.recording_id] = rec.local_audio_path
+    print(f"Multimodal: {len(audio_map)} recordings have audio files")
+
+# Generate embeddings
+if audio_map:
+    # Per-event multimodal (text + audio) embeddings
+    print(f"Embedding {len(unindexed)} events (multimodal)...")
+    vectors = []
+    for e in unindexed:
+        vec = embedder.embed_text_with_audio(
+            text=e.clean_text,
+            audio_path=audio_map.get(e.recording_id, ""),
+            task_type="RETRIEVAL_DOCUMENT",
+        )
+        vectors.append(vec)
+else:
+    # Batch text-only
+    texts = [e.clean_text for e in unindexed]
+    print(f"Embedding {len(texts)} texts...")
+    vectors = embedder.embed_batch(texts, task_type="RETRIEVAL_DOCUMENT")
 print(f"Got {len(vectors)} vectors")
 
 indexed = 0

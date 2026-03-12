@@ -94,17 +94,17 @@ def create_search_result_card(result: SearchResult) -> html.Div:
             "event_id": event.id,
             "recording_id": event.recording_id,
         },
-        className="search-result",
+        className="search-result-card",
         children=[
             # Header
             html.Div(
                 className="result-header",
                 children=[
-                    html.Span(f"📅 {date_str}", className="result-date"),
-                    html.Span(f"🕐 {time_str}", className="result-time"),
+                    html.Span(f"📅 {date_str}", className="result-recording"),
+                    html.Span(f"🕐 {time_str}", className="result-meta"),
                     html.Span(
                         event.category,
-                        className=f"result-category cat-{event.category}",
+                        className=f"category-pill cat-{event.category}",
                     ),
                     html.Span(f"{score_pct:.0f}%", className="result-score"),
                 ],
@@ -118,21 +118,6 @@ def create_search_result_card(result: SearchResult) -> html.Div:
                 ),
                 className="result-text",
             ),
-            # Action buttons
-            html.Div(
-                className="result-actions",
-                children=[
-                    html.Button(
-                        "View in Context",
-                        className="result-action-btn",
-                        id={
-                            "type": "view-context-btn",
-                            "id": event.id,
-                            "recording_id": event.recording_id,
-                        },
-                    ),
-                ],
-            ),
         ],
     )
 
@@ -141,7 +126,7 @@ def create_search_results(results: List[SearchResult], query: str) -> html.Div:
     """Create the search results view."""
     if not results:
         return html.Div(
-            className="search-results empty",
+            className="search-results-container empty-state",
             children=[
                 html.Span("🔍", className="empty-icon"),
                 html.P(f'No results found for "{query}"'),
@@ -149,17 +134,17 @@ def create_search_results(results: List[SearchResult], query: str) -> html.Div:
         )
 
     return html.Div(
-        className="search-results",
+        className="search-results-container",
         children=[
             html.Div(
-                className="results-header",
+                className="search-results-header",
                 children=[
-                    html.H3(f'Results for "{query}"'),
-                    html.Span(f"{len(results)} matches", className="results-count"),
+                    html.H3(f'Results for "{query}"', className="search-results-title"),
+                    html.Span(f"{len(results)} matches", className="result-score"),
                 ],
             ),
             html.Div(
-                className="results-list",
+                className="search-results-list",
                 children=[create_search_result_card(result) for result in results],
             ),
         ],

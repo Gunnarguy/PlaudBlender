@@ -82,14 +82,16 @@ class TestMCPSearchEvents:
         """search_events should return valid JSON."""
         import scripts.mcp_server as mcp
 
+        mock_event = Mock()
+        mock_event.start_ts = datetime(2025, 1, 15, 10, 0)
+        mock_event.end_ts = datetime(2025, 1, 15, 11, 0)
+        mock_event.clean_text = "Test Event. A test summary."
+        mock_event.category = "work"
+        mock_event.recording_id = "abc123"
+
         mock_result = Mock()
-        mock_result.title = "Test Event"
-        mock_result.summary = "A test"
-        mock_result.date = "2025-01-15"
-        mock_result.time_range_formatted = "10:00-11:00"
-        mock_result.category = "work"
+        mock_result.event = mock_event
         mock_result.score = 0.95
-        mock_result.recording_id = "abc123"
 
         mock_ds = Mock()
         mock_ds.search.return_value = [mock_result]

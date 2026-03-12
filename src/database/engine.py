@@ -80,6 +80,13 @@ def _ensure_sqlite_additive_schema(eng: Engine) -> None:
             _add_column("chronos_recordings", "transcript TEXT")
         if "transcript_cached_at" not in cols:
             _add_column("chronos_recordings", "transcript_cached_at DATETIME")
+        if "plaud_ai_summary" not in cols:
+            _add_column("chronos_recordings", "plaud_ai_summary TEXT")
+
+        # ChronosEvent: user-editable category override
+        event_cols = _columns_for("chronos_events")
+        if event_cols and "user_category_override" not in event_cols:
+            _add_column("chronos_events", "user_category_override VARCHAR")
     except Exception:
         # Never block app startup due to a best-effort migration.
         return

@@ -39,3 +39,11 @@ docs/archive/
 .DS_Store
 Thumbs.db
 .certs/
+.git-corrupted/
+
+# Backup/temp files
+.git_backup/
+.run/
+*.bak
+*.pre-ultra
+GeminiEmbed2*.md

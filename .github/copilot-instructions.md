@@ -39,13 +39,13 @@
 ## Project Structure
 
 ```
-app_v2/                 → MAIN Dash v2 UI (14 callbacks)
+app_v2/                 → MAIN Dash v2 UI (23 callbacks)
   main.py               → Run with: python scripts/launch_app.py
   layout.py             → 3-column layout (sidebar | content | detail)
-  assets/style.css      → ~2700 lines dark theme CSS
+  assets/style.css      → ~3950 lines dark theme CSS
   components/           → sidebar, day_view, search, graph, stats, topics, recording_detail
   callbacks/            → navigation, search, day_view, graph
-  services/data_service.py → Data access layer (~1000 lines)
+  services/data_service.py → Data access layer (~1250 lines)
 scripts/                → CLI tools
   chronos_pipeline.py   → Full pipeline runner (~688 lines)
   mcp_server.py         → Production MCP server (11 tools, FastMCP)
@@ -63,13 +63,15 @@ docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 
 ## Key Services (src/chronos/)
 
-| Service                | Purpose                                               |
-| ---------------------- | ----------------------------------------------------- |
-| `ingest_service`       | Fetch recordings from Plaud, store metadata in SQLite |
-| `transcript_processor` | Process transcripts through Gemini AI                 |
-| `qdrant_client`        | Native Qdrant client with temporal payload indexes    |
-| `embedding_service`    | Gemini embedding batch processing                     |
-| `graph_service`        | Entity extraction and NetworkX graph building         |
+| Service                | Purpose                                                            |
+| ---------------------- | ------------------------------------------------------------------ |
+| `ingest_service`       | Fetch recordings from Plaud, store metadata in SQLite              |
+| `transcript_processor` | Process transcripts through Gemini AI                              |
+| `qdrant_client`        | Native Qdrant client with temporal payload indexes                 |
+| `embedding_service`    | Gemini embedding — multimodal (text+audio) via embedding-2-preview |
+| `graph_service`        | Entity extraction and NetworkX graph building                      |
+| `graph_rag`            | Graph-enhanced RAG with community detection + Gemini synthesis     |
+| `openai_service`       | OpenAI Responses API — RAG queries via GPT-5.4                     |
 
 ## Coding Rules
 
@@ -92,5 +94,8 @@ docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 
 - Don't import from `archive/` — that's retired code
 - Don't reference Pinecone — we're 100% Qdrant now
+- Don't use `gemini-embedding-001` — we're on `gemini-embedding-2-preview` (multimodal)
+- Don't use `gemini-3-pro-preview` — it was shut down 2026-03-09; use `gemini-3.1-pro-preview`
 - Don't scatter `load_dotenv()` — use `src/config.py`
 - Don't use `ChronosRecording.status` — the field is `processing_status`
+- Don't use `gpt-4o` or `gpt-4o-mini` — we're on `gpt-5.4` (OpenAI flagship, 1.05M context)

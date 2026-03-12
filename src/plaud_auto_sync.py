@@ -19,12 +19,13 @@ import logging
 import threading
 import subprocess
 import sys
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from queue import Queue
+from queue import Queue, Empty
 
 from .plaud_usb_watcher import (
     PlaudUSBWatcher,
@@ -83,8 +84,17 @@ class SyncConfig:
 
     # What to sync
     ingest_new_recordings: bool = True
-    process_after_ingest: bool = False  # Run Gemini processing
-    index_after_process: bool = False  # Index to Qdrant
+    process_after_ingest: bool = True  # Run Gemini processing
+    index_after_process: bool = True  # Index to Qdrant
+    refresh_workflows: bool = True  # Refresh Plaud cloud workflow statuses
+
+    # Scheduled polling (cloud recordings)
+    enable_scheduled_poll: bool = True
+    poll_interval_minutes: int = 15  # Check Plaud cloud every N minutes
+
+    # Webhook server
+    enable_webhook_server: bool = True
+    webhook_port: int = 8090
 
     # Rate limiting
     min_sync_interval_seconds: int = 60
@@ -114,10 +124,12 @@ class PlaudAutoSync:
 
         # Components
         self._usb_watcher: Optional[PlaudUSBWatcher] = None
+        self._webhook_server: Optional[Any] = None  # PlaudWebhookServer (lazy import)
 
         # State
         self._running = False
         self._last_sync_time: Optional[datetime] = None
+        self._last_poll_time: Optional[datetime] = None
         self._sync_queue: Queue[SyncJob] = Queue()
         self._sync_history: List[SyncJob] = []
         self._worker_thread: Optional[threading.Thread] = None
@@ -202,6 +214,9 @@ class PlaudAutoSync:
             if self.config.index_after_process:
                 cmd.append("--index")
 
+            if self.config.refresh_workflows:
+                cmd.append("--refresh-workflows")
+
             # Add specific recording if we have one
             if job.recording_id:
                 cmd.extend(["--recording-id", job.recording_id])
@@ -258,13 +273,33 @@ class PlaudAutoSync:
                 logger.error(f"Notification callback error: {e}")
 
     def _worker_loop(self) -> None:
-        """Worker thread that processes sync jobs."""
+        """Worker thread that processes sync jobs and schedules periodic polls."""
         logger.info("Auto-sync worker started")
+        poll_interval = timedelta(minutes=self.config.poll_interval_minutes)
+
         while self._running:
+            # --- Scheduled poll check ---
+            if self.config.enable_scheduled_poll:
+                now = datetime.now()
+                should_poll = (
+                    self._last_poll_time is None
+                    or (now - self._last_poll_time) >= poll_interval
+                )
+                if should_poll and self._sync_queue.empty():
+                    self._last_poll_time = now
+                    logger.info(
+                        "Scheduled cloud poll: queueing ingest + workflow refresh"
+                    )
+                    job = SyncJob(trigger=SyncTrigger.SCHEDULED)
+                    self._sync_queue.put(job)
+
+            # --- Process next job ---
             try:
                 job = self._sync_queue.get(timeout=1.0)
                 self._process_sync_job(job)
-            except:
+            except Empty:
+                continue
+            except Exception:
                 continue
         logger.info("Auto-sync worker stopped")
 
@@ -312,11 +347,26 @@ class PlaudAutoSync:
         return job
 
     def start(self) -> None:
-        """Start the auto-sync service."""
+        """Start the auto-sync service (USB watcher, webhook server, worker thread)."""
         if self._running:
             return
 
         self._running = True
+
+        # Start webhook server in background
+        if self.config.enable_webhook_server:
+            try:
+                from .plaud_webhook_server import PlaudWebhookServer
+
+                self._webhook_server = PlaudWebhookServer(port=self.config.webhook_port)
+                # Route webhook events into our sync queue
+                self._webhook_server.on_event(self.handle_webhook_event)
+                self._webhook_server.start()
+                logger.info(
+                    f"Webhook server started on port {self.config.webhook_port}"
+                )
+            except Exception as e:
+                logger.warning(f"Could not start webhook server: {e}")
 
         # Start USB watcher
         self._usb_watcher = get_usb_watcher()
@@ -324,15 +374,27 @@ class PlaudAutoSync:
         self._usb_watcher.on_device_disconnected(self._handle_usb_disconnect)
         self._usb_watcher.start()
 
-        # Start worker thread
+        # Start worker thread (handles job queue + scheduled polling)
         self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
         self._worker_thread.start()
 
-        logger.info("Auto-sync service started")
+        poll_status = (
+            f"every {self.config.poll_interval_minutes}m"
+            if self.config.enable_scheduled_poll
+            else "disabled"
+        )
+        logger.info(
+            f"Auto-sync service started "
+            f"(webhook={'on' if self.config.enable_webhook_server else 'off'}, "
+            f"usb=on, poll={poll_status})"
+        )
 
     def stop(self) -> None:
         """Stop the auto-sync service."""
         self._running = False
+
+        if self._webhook_server:
+            self._webhook_server.stop()
 
         if self._usb_watcher:
             self._usb_watcher.stop()
@@ -371,17 +433,30 @@ class PlaudAutoSync:
             "usb_watcher_running": (
                 self._usb_watcher.is_running if self._usb_watcher else False
             ),
+            "webhook_server_running": (
+                self._webhook_server.is_running if self._webhook_server else False
+            ),
+            "webhook_port": self.config.webhook_port,
             "connected_devices": len(self.connected_devices),
             "pending_jobs": self.pending_jobs,
             "last_sync": (
                 self._last_sync_time.isoformat() if self._last_sync_time else None
             ),
+            "last_poll": (
+                self._last_poll_time.isoformat() if self._last_poll_time else None
+            ),
+            "poll_interval_minutes": self.config.poll_interval_minutes,
+            "scheduled_poll_enabled": self.config.enable_scheduled_poll,
             "total_syncs": len(self._sync_history),
             "config": {
                 "sync_on_usb": self.config.sync_on_usb_connect,
                 "sync_on_webhook": self.config.sync_on_webhook,
                 "process_after_ingest": self.config.process_after_ingest,
                 "index_after_process": self.config.index_after_process,
+                "refresh_workflows": self.config.refresh_workflows,
+                "enable_scheduled_poll": self.config.enable_scheduled_poll,
+                "poll_interval_minutes": self.config.poll_interval_minutes,
+                "enable_webhook_server": self.config.enable_webhook_server,
             },
         }
 

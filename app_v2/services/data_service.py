@@ -7,12 +7,25 @@ and provides day-level summaries for the UI.
 from __future__ import annotations
 
 import logging
+import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.database import SessionLocal
+from src.database.models import (
+    ChronosRecording as _ChronosRecordingModel,
+    Recording as _RecordingModel,
+)
+
+# Detect local timezone once at import time so we convert UTC→local correctly
+_LOCAL_TZ = datetime.now().astimezone().tzinfo
+
 logger = logging.getLogger(__name__)
+
+_PLAUD_WORKFLOW_ACTIVE_STATUSES = {"PENDING", "PROCESSING"}
+_PLAUD_WORKFLOW_TERMINAL_STATUSES = {"SUCCESS", "FAILED", "CANCELLED"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -54,6 +67,17 @@ class Event:
         else:
             end_dt = start_dt
 
+        # Cap individual event duration to 4 hours — Gemini sometimes
+        # hallucinates end_ts months into the future.
+        MAX_EVENT_DURATION = 4 * 3600  # 4 hours
+        if (end_dt - start_dt).total_seconds() > MAX_EVENT_DURATION:
+            end_dt = start_dt + timedelta(seconds=MAX_EVENT_DURATION)
+
+        capped_duration = min(
+            max((end_dt - start_dt).total_seconds(), 0),
+            MAX_EVENT_DURATION,
+        )
+
         return cls(
             id=str(point_id),
             recording_id=payload.get("recording_id", "unknown"),
@@ -64,7 +88,7 @@ class Event:
             sentiment=payload.get("sentiment", 0.0),
             keywords=payload.get("keywords", []),
             speaker=payload.get("speaker", "unknown"),
-            duration_seconds=payload.get("duration_seconds", 0),
+            duration_seconds=capped_duration,
             day_of_week=payload.get("day_of_week", ""),
             hour_of_day=payload.get("hour_of_day", 0),
         )
@@ -207,6 +231,8 @@ class Stats:
     most_productive_hour: int = 0
     longest_recording_min: float = 0.0
     pipeline_completion_rate: float = 0.0  # % of recordings fully processed
+    # Plaud cloud stats (fetched from API)
+    plaud_cloud_stats: Optional[Dict[str, Any]] = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -227,6 +253,7 @@ class ChronosDataService:
         self._events_cache: List[Event] = []
         self._last_cache_time: Optional[datetime] = None
         self._cache_ttl_seconds = 60  # Refresh cache every minute
+        self._cache_lock = threading.Lock()
 
         self._init_services()
 
@@ -257,7 +284,7 @@ class ChronosDataService:
         """Get all events from Qdrant with caching."""
         now = datetime.now()
 
-        # Check cache validity
+        # Check cache validity (read outside lock for fast path)
         if (
             not force_refresh
             and self._events_cache
@@ -266,46 +293,57 @@ class ChronosDataService:
         ):
             return self._events_cache
 
-        if not self._qdrant:
-            return []
+        with self._cache_lock:
+            # Double-check after acquiring lock
+            if (
+                not force_refresh
+                and self._events_cache
+                and self._last_cache_time
+                and (datetime.now() - self._last_cache_time).seconds
+                < self._cache_ttl_seconds
+            ):
+                return self._events_cache
 
-        try:
-            events = []
-            offset = None
+            if not self._qdrant:
+                return []
 
-            while True:
-                response = self._qdrant.client.scroll(
-                    collection_name=self._qdrant.collection_name,
-                    limit=100,
-                    offset=offset,
-                    with_payload=True,
-                    with_vectors=False,
-                )
+            try:
+                events = []
+                offset = None
 
-                points, offset = response
-                if not points:
-                    break
+                while True:
+                    response = self._qdrant.client.scroll(
+                        collection_name=self._qdrant.collection_name,
+                        limit=1000,
+                        offset=offset,
+                        with_payload=True,
+                        with_vectors=False,
+                    )
 
-                for point in points:
-                    event = Event.from_qdrant(str(point.id), point.payload or {})
-                    events.append(event)
+                    points, offset = response
+                    if not points:
+                        break
 
-                if offset is None:
-                    break
+                    for point in points:
+                        event = Event.from_qdrant(str(point.id), point.payload or {})
+                        events.append(event)
 
-            # Sort by timestamp
-            events.sort(key=lambda e: e.start_ts)
+                    if offset is None:
+                        break
 
-            # Update cache
-            self._events_cache = events
-            self._last_cache_time = now
+                # Sort by timestamp
+                events.sort(key=lambda e: e.start_ts)
 
-            logger.info(f"Loaded {len(events)} events from Qdrant")
-            return events
+                # Update cache
+                self._events_cache = events
+                self._last_cache_time = datetime.now()
 
-        except Exception as e:
-            logger.error(f"Error fetching events: {e}")
-            return self._events_cache or []
+                logger.info(f"Loaded {len(events)} events from Qdrant")
+                return events
+
+            except Exception as e:
+                logger.error(f"Error fetching events: {e}")
+                return self._events_cache or []
 
     def _aggregate_by_recording(
         self, events: List[Event]
@@ -315,6 +353,23 @@ class ChronosDataService:
 
         for event in events:
             recordings[event.recording_id].append(event)
+
+        # ── Bulk-load ground-truth timestamps from SQLite (one query) ──────
+        _db = SessionLocal()
+        try:
+            _db_records: Dict[str, Any] = {
+                str(r.recording_id): r
+                for r in _db.query(_ChronosRecordingModel)
+                .filter(
+                    _ChronosRecordingModel.recording_id.in_(list(recordings.keys()))
+                )
+                .all()
+            }
+        except Exception as _e:
+            logger.warning(f"SQLite lookup failed, falling back to Gemini times: {_e}")
+            _db_records = {}
+        finally:
+            _db.close()
 
         summaries = {}
         for recording_id, rec_events in recordings.items():
@@ -339,14 +394,27 @@ class ChronosDataService:
                 kw for kw, _ in sorted(keyword_counts.items(), key=lambda x: -x[1])[:10]
             ]
 
-            # Calculate duration from first to last event
-            start_time = rec_events[0].start_ts
-            end_time = rec_events[-1].end_ts
-            duration = (end_time - start_time).total_seconds()
-
-            # Also sum individual event durations as backup
-            event_duration = sum(e.duration_seconds for e in rec_events)
-            duration = max(duration, event_duration)
+            # ── Ground-truth timestamps from Plaud DB ──────────────────────
+            # SQLite stores created_at as naive UTC.  We attach tzinfo=UTC,
+            # convert to the local timezone detected at startup, then strip
+            # tzinfo so the rest of the code stays timezone-naive.
+            # end_time = start + hardware duration (never trust Gemini end_ts).
+            db_rec = _db_records.get(recording_id)
+            if (
+                db_rec is not None
+                and db_rec.created_at is not None  # type: ignore[truthy-bool]
+                and db_rec.duration_seconds is not None  # type: ignore[truthy-bool]
+            ):
+                utc_start = db_rec.created_at.replace(tzinfo=timezone.utc)  # type: ignore[union-attr]
+                local_start = utc_start.astimezone(_LOCAL_TZ)
+                start_time = local_start.replace(tzinfo=None)
+                duration = float(db_rec.duration_seconds)  # type: ignore[arg-type]
+                end_time = start_time + timedelta(seconds=duration)
+            else:
+                # Fallback: Gemini-derived times (less accurate)
+                start_time = rec_events[0].start_ts
+                duration = sum(e.duration_seconds for e in rec_events)
+                end_time = start_time + timedelta(seconds=duration)
 
             summaries[recording_id] = RecordingSummary(
                 recording_id=recording_id,
@@ -403,8 +471,12 @@ class ChronosDataService:
             # Sort recordings by start time
             day_recordings.sort(key=lambda r: r.start_time)
 
-            # Aggregate day stats
-            total_duration = sum(r.duration_seconds for r in day_recordings)
+            # Aggregate day stats — cap at 24h (wall-clock reality)
+            MAX_DAY_SECONDS = 24 * 3600
+            total_duration = min(
+                sum(r.duration_seconds for r in day_recordings),
+                MAX_DAY_SECONDS,
+            )
             total_events = sum(r.event_count for r in day_recordings)
 
             categories: Dict[str, int] = defaultdict(int)
@@ -447,6 +519,63 @@ class ChronosDataService:
         result.sort(key=lambda d: d.date, reverse=True)
         return result
 
+    def get_days_filled(self, last_n_days: Optional[int] = None) -> List[DaySummary]:
+        """Get days with empty-day fill for a continuous timeline.
+
+        Unlike get_days(), this fills in gaps so the timeline is
+        continuous with zero-event placeholder days.
+
+        Args:
+            last_n_days: Show the last N calendar days (7, 14, 30, etc).
+                         If None, span from earliest to latest data day.
+
+        Returns:
+            List of DaySummary sorted by date descending, with gaps filled.
+        """
+        data_days = self.get_days()
+        if not data_days:
+            return []
+
+        # Build lookup by date string
+        day_lookup = {d.date: d for d in data_days}
+
+        # Determine range
+        from datetime import date as date_cls
+
+        if last_n_days:
+            end_dt = date_cls.today()
+            start_dt = end_dt - timedelta(days=last_n_days - 1)
+        else:
+            all_dates = sorted(day_lookup.keys())
+            start_dt = datetime.strptime(all_dates[0], "%Y-%m-%d").date()
+            end_dt = datetime.strptime(all_dates[-1], "%Y-%m-%d").date()
+
+        # Walk every calendar day in range
+        result: List[DaySummary] = []
+        cursor = end_dt
+        while cursor >= start_dt:
+            key = cursor.strftime("%Y-%m-%d")
+            if key in day_lookup:
+                result.append(day_lookup[key])
+            else:
+                # Empty placeholder
+                try:
+                    display = cursor.strftime("%A, %b %d")
+                except Exception:
+                    display = key
+                result.append(
+                    DaySummary(
+                        date=key,
+                        date_display=display,
+                        total_duration_seconds=0,
+                        recording_count=0,
+                        event_count=0,
+                    )
+                )
+            cursor -= timedelta(days=1)
+
+        return result  # already newest-first
+
     def get_day_detail(self, date: str) -> Optional[DaySummary]:
         """Get detailed view of a specific day.
 
@@ -478,6 +607,13 @@ class ChronosDataService:
         rec_events = [e for e in events if e.recording_id == recording_id]
         if not rec_events:
             return None
+
+        # Apply user category overrides from SQLite
+        overrides = self.get_category_overrides(recording_id)
+        for evt in rec_events:
+            override = overrides.get(evt.id)
+            if override:
+                evt.category = override
 
         # Sort by time
         rec_events.sort(key=lambda e: e.start_ts)
@@ -605,151 +741,257 @@ class ChronosDataService:
     def get_graph_data(self) -> GraphData:
         """Get knowledge graph data for Cytoscape visualization.
 
-        Tries to load from cached NetworkX pickle first,
-        falls back to building from events.
+        Builds graph from actual event data — categories, keywords, temporal
+        patterns and co-occurrence relationships.
         """
-        try:
-            from pathlib import Path
-            import pickle
-
-            graph_path = Path("data/cache/graphs/knowledge_graph.pkl")
-            if graph_path.exists():
-                return self._load_graph_from_pickle(graph_path)
-        except Exception as e:
-            logger.debug(f"No cached graph: {e}")
-
-        # Fallback: build simple graph from events
         return self._build_graph_from_events()
 
-    def _load_graph_from_pickle(self, graph_path) -> GraphData:
-        """Load NetworkX graph from pickle and convert to Cytoscape format."""
-        import pickle
-        import networkx as nx
-
-        with open(graph_path, "rb") as f:
-            data = pickle.load(f)
-
-        # Handle dict wrapper or raw NetworkX graph
-        if isinstance(data, dict) and "graph" in data:
-            graph: nx.Graph = data["graph"]  # type: ignore[assignment]
-        elif hasattr(data, "nodes"):
-            graph = data  # type: ignore[assignment]
-        else:
-            logger.warning(f"Unknown graph format: {type(data)}")
-            return self._build_graph_from_events()
-
-        # Calculate centrality for node sizing
-        centrality = nx.degree_centrality(graph)
-
-        nodes = []
-        for node_id, node_data in graph.nodes(data=True):
-            entity_type = node_data.get("type", "unknown")
-            name = node_data.get("name", str(node_id))
-            label = name[:18] + "…" if len(name) > 18 else name
-
-            nodes.append(
-                {
-                    "data": {
-                        "id": str(node_id),
-                        "label": label,
-                        "full_label": name,
-                        "type": entity_type,
-                        "description": node_data.get("description", ""),
-                        "mention_count": node_data.get("mention_count", 0),
-                        "size": 20 + (centrality.get(node_id, 0) * 80),
-                    },
-                    "classes": entity_type.lower(),
-                }
-            )
-
-        edges = []
-        for source, target, edge_data in graph.edges(data=True):
-            edges.append(
-                {
-                    "data": {
-                        "id": f"{source}-{target}",
-                        "source": str(source),
-                        "target": str(target),
-                        "label": edge_data.get(
-                            "relationship", edge_data.get("type", "")
-                        ),
-                        "weight": edge_data.get("weight", 1),
-                    }
-                }
-            )
-
-        logger.info(f"Loaded graph: {len(nodes)} nodes, {len(edges)} edges")
-        return GraphData(nodes=nodes, edges=edges)
-
     def _build_graph_from_events(self) -> GraphData:
-        """Build a simple entity graph from Qdrant events."""
+        """Build a meaningful knowledge graph from event data.
+
+        Creates three kinds of nodes:
+        - Category hubs (work, meeting, personal, etc.)
+        - Keyword/entity nodes (extracted from event keywords)
+        - Date nodes (days with recordings)
+
+        Edges represent:
+        - Keyword → Category (keyword appears in events of that category)
+        - Keyword → Keyword (co-occur in same recording)
+        - Date → Category (activity on that day)
+        """
         events = self._get_all_events()
         if not events:
             return GraphData()
 
-        # Build category nodes and recording nodes
+        # ── Collect data ──────────────────────────────────────────────
         category_counts: Dict[str, int] = defaultdict(int)
-        recording_categories: Dict[str, List[str]] = defaultdict(list)
+        keyword_counts: Dict[str, int] = defaultdict(int)
+        keyword_categories: Dict[str, set] = defaultdict(set)
+        recording_keywords: Dict[str, set] = defaultdict(set)
+        date_categories: Dict[str, set] = defaultdict(set)
+        date_event_count: Dict[str, int] = defaultdict(int)
+        keyword_sentiments: Dict[str, list] = defaultdict(list)
+
+        # Normalize keywords
+        def normalize(kw: str) -> str:
+            return kw.strip().lower()
+
+        # Skip low-value keywords
+        stop_keywords = {
+            "unknown",
+            "none",
+            "other",
+            "general",
+            "n/a",
+            "na",
+            "misc",
+            "the",
+            "and",
+            "for",
+            "with",
+            "that",
+            "this",
+            "from",
+            "about",
+        }
 
         for event in events:
-            category_counts[event.category] += 1
-            if event.category not in recording_categories[event.recording_id]:
-                recording_categories[event.recording_id].append(event.category)
+            cat = event.category
+            category_counts[cat] += 1
+            date_key = event.start_ts.strftime("%Y-%m-%d")
+            date_categories[date_key].add(cat)
+            date_event_count[date_key] += 1
 
+            for kw in event.keywords:
+                nkw = normalize(kw)
+                if len(nkw) < 2 or nkw in stop_keywords:
+                    continue
+                keyword_counts[nkw] += 1
+                keyword_categories[nkw].add(cat)
+                recording_keywords[event.recording_id].add(nkw)
+                keyword_sentiments[nkw].append(event.sentiment)
+
+        # ── Filter to meaningful keywords (appear 2+ times) ──────────
+        significant_keywords = {
+            kw for kw, count in keyword_counts.items() if count >= 2
+        }
+
+        # If too few pass the threshold, lower it
+        if len(significant_keywords) < 10:
+            significant_keywords = {
+                kw for kw, count in keyword_counts.items() if count >= 1
+            }
+
+        # Cap at top 80 keywords by frequency to keep graph readable
+        if len(significant_keywords) > 80:
+            sorted_kws = sorted(
+                significant_keywords, key=lambda k: keyword_counts[k], reverse=True
+            )
+            significant_keywords = set(sorted_kws[:80])
+
+        # ── Build co-occurrence edges between keywords ────────────────
+        keyword_cooccurrence: Dict[tuple, int] = defaultdict(int)
+        for rec_id, kws in recording_keywords.items():
+            relevant = kws & significant_keywords
+            kw_list = sorted(relevant)
+            for i in range(len(kw_list)):
+                for j in range(i + 1, len(kw_list)):
+                    keyword_cooccurrence[(kw_list[i], kw_list[j])] += 1
+
+        # ── Build nodes ──────────────────────────────────────────────
         nodes = []
-        # Category nodes
+
+        # Category hub nodes (large)
+        cat_colors = {
+            "work": "#3b82f6",
+            "meeting": "#8b5cf6",
+            "personal": "#ec4899",
+            "health": "#10b981",
+            "deep_work": "#f59e0b",
+            "errand": "#f97316",
+            "social": "#14b8a6",
+            "reflection": "#6366f1",
+            "planning": "#0ea5e9",
+        }
         for cat, count in category_counts.items():
             nodes.append(
                 {
                     "data": {
                         "id": f"cat:{cat}",
-                        "label": cat.capitalize(),
-                        "full_label": cat,
+                        "label": cat.replace("_", " ").title(),
+                        "full_label": f"{cat} ({count} events)",
                         "type": "category",
                         "count": count,
-                        "size": 25 + (count * 2),
+                        "size": max(35, min(70, 25 + count)),
+                        "color": cat_colors.get(cat, "#64748b"),
                     },
                     "classes": "category",
                 }
             )
 
-        # Recording nodes (just short IDs)
-        for rec_id, cats in recording_categories.items():
-            short_id = rec_id[:8]
+        # Keyword nodes
+        max_kw_count = (
+            max(keyword_counts[k] for k in significant_keywords)
+            if significant_keywords
+            else 1
+        )
+        for kw in significant_keywords:
+            count = keyword_counts[kw]
+            cats = keyword_categories[kw]
+            avg_sent = (
+                sum(keyword_sentiments[kw]) / len(keyword_sentiments[kw])
+                if keyword_sentiments[kw]
+                else 0
+            )
+
+            # Determine primary type based on simple heuristics
+            entity_type = "topic"
+            display = kw.title()
+            if any(c.isupper() for c in kw) or len(kw.split()) <= 2:
+                # Could be a person or project name
+                entity_type = "topic"
+
+            size = 15 + int((count / max_kw_count) * 30)
+
             nodes.append(
                 {
                     "data": {
-                        "id": f"rec:{short_id}",
-                        "label": short_id,
-                        "full_label": rec_id,
-                        "type": "recording",
-                        "count": len(cats),
-                        "size": 20,
+                        "id": f"kw:{kw}",
+                        "label": display[:20] + "…" if len(display) > 20 else display,
+                        "full_label": display,
+                        "type": entity_type,
+                        "count": count,
+                        "mention_count": count,
+                        "size": size,
+                        "categories": ", ".join(sorted(cats)),
+                        "sentiment": round(avg_sent, 2),
                     },
-                    "classes": "recording",
+                    "classes": entity_type,
                 }
             )
 
-        # Edges: recording → category
+        # Date nodes (only if < 20 unique dates, otherwise too cluttered)
+        unique_dates = sorted(date_categories.keys())
+        if len(unique_dates) <= 20:
+            for date_str in unique_dates:
+                cats = date_categories[date_str]
+                evt_count = date_event_count[date_str]
+                from datetime import datetime as dt_cls
+
+                try:
+                    day_name = dt_cls.strptime(date_str, "%Y-%m-%d").strftime(
+                        "%a %m/%d"
+                    )
+                except Exception:
+                    day_name = date_str
+
+                nodes.append(
+                    {
+                        "data": {
+                            "id": f"date:{date_str}",
+                            "label": day_name,
+                            "full_label": f"{date_str} ({evt_count} events)",
+                            "type": "date",
+                            "count": evt_count,
+                            "size": 18 + min(evt_count * 2, 20),
+                        },
+                        "classes": "date",
+                    }
+                )
+
+        # ── Build edges ──────────────────────────────────────────────
         edges = []
-        edge_set = set()
-        for rec_id, cats in recording_categories.items():
-            short_id = rec_id[:8]
+        edge_id = 0
+
+        # Keyword → Category edges (keyword appears in events of that category)
+        for kw in significant_keywords:
+            cats = keyword_categories[kw]
             for cat in cats:
-                edge_key = (f"rec:{short_id}", f"cat:{cat}")
-                if edge_key not in edge_set:
-                    edge_set.add(edge_key)
+                edge_id += 1
+                edges.append(
+                    {
+                        "data": {
+                            "id": f"e{edge_id}",
+                            "source": f"kw:{kw}",
+                            "target": f"cat:{cat}",
+                            "weight": keyword_counts[kw],
+                        }
+                    }
+                )
+
+        # Keyword ↔ Keyword co-occurrence edges (same recording)
+        for (kw1, kw2), cocount in keyword_cooccurrence.items():
+            if cocount >= 2:  # Only strong co-occurrences
+                edge_id += 1
+                edges.append(
+                    {
+                        "data": {
+                            "id": f"e{edge_id}",
+                            "source": f"kw:{kw1}",
+                            "target": f"kw:{kw2}",
+                            "label": f"{cocount}x",
+                            "weight": cocount,
+                        }
+                    }
+                )
+
+        # Date → Category edges
+        if len(unique_dates) <= 20:
+            for date_str, cats in date_categories.items():
+                for cat in cats:
+                    edge_id += 1
                     edges.append(
                         {
                             "data": {
-                                "id": f"{edge_key[0]}-{edge_key[1]}",
-                                "source": edge_key[0],
-                                "target": edge_key[1],
+                                "id": f"e{edge_id}",
+                                "source": f"date:{date_str}",
+                                "target": f"cat:{cat}",
+                                "weight": 1,
                             }
                         }
                     )
 
-        logger.info(f"Built graph from events: {len(nodes)} nodes, {len(edges)} edges")
+        logger.info(f"Built knowledge graph: {len(nodes)} nodes, {len(edges)} edges")
         return GraphData(nodes=nodes, edges=edges)
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -763,6 +1005,7 @@ class ChronosDataService:
         categories: Optional[List[str]] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        task_type: str = "RETRIEVAL_QUERY",
     ) -> List[SearchResult]:
         """Semantic search for events with optional filters.
 
@@ -772,6 +1015,8 @@ class ChronosDataService:
             categories: Filter by event categories
             start_date: Filter start date (YYYY-MM-DD)
             end_date: Filter end date (YYYY-MM-DD)
+            task_type: Gemini embedding task type — RETRIEVAL_QUERY for general
+                search, QUESTION_ANSWERING for RAG Q&A.
 
         Returns:
             List of SearchResult with scores
@@ -797,7 +1042,7 @@ class ChronosDataService:
                 )
 
             # Embed query
-            query_vector = self._embedder.embed_text(query, task_type="RETRIEVAL_QUERY")
+            query_vector = self._embedder.embed_text(query, task_type=task_type)
 
             # Use hybrid search if filters are present
             if temporal_filter or categories:
@@ -929,6 +1174,17 @@ class ChronosDataService:
         except Exception:
             pass
 
+        # Plaud cloud stats (non-blocking)
+        plaud_stats = None
+        try:
+            from src.plaud_client import PlaudClient
+
+            plaud = PlaudClient()
+            if plaud.oauth.is_authenticated:
+                plaud_stats = plaud.get_recording_stats()
+        except Exception as e:
+            logger.debug(f"Could not fetch Plaud cloud stats: {e}")
+
         return Stats(
             total_recordings=num_recordings,
             total_events=len(events),
@@ -946,6 +1202,7 @@ class ChronosDataService:
             most_productive_hour=most_productive_hour,
             longest_recording_min=longest_rec_min,
             pipeline_completion_rate=pipeline_rate,
+            plaud_cloud_stats=plaud_stats,
         )
 
     def refresh_cache(self):
@@ -955,19 +1212,451 @@ class ChronosDataService:
     def get_transcript(self, recording_id: str) -> Optional[str]:
         """Get the cached transcript for a recording from SQLite."""
         try:
-            from src.database.engine import SessionLocal
             from src.database.chronos_repository import get_chronos_recording
 
             db = SessionLocal()
             try:
                 rec = get_chronos_recording(db, recording_id)
-                if rec and rec.transcript:  # type: ignore[truthy-bool]
+                if rec is not None and rec.transcript is not None:
                     return str(rec.transcript)
             finally:
                 db.close()
         except Exception as e:
             logger.error(f"Error fetching transcript: {e}")
         return None
+
+    def get_ai_summary(self, recording_id: str) -> Optional[str]:
+        """Get the Plaud AI summary for a recording from SQLite."""
+        try:
+            from src.database.chronos_repository import get_chronos_recording
+
+            db = SessionLocal()
+            try:
+                rec = get_chronos_recording(db, recording_id)
+                if rec is not None and rec.plaud_ai_summary is not None:
+                    return str(rec.plaud_ai_summary)
+
+                legacy = db.query(_RecordingModel).filter_by(id=recording_id).first()
+                extra = self._coerce_recording_extra(legacy)
+                plaud_summary = extra.get("plaud_summary")
+                if isinstance(plaud_summary, str) and plaud_summary.strip():
+                    return plaud_summary.strip()
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error fetching AI summary: {e}")
+        return None
+
+    @staticmethod
+    def _coerce_recording_extra(record: Optional[_RecordingModel]) -> Dict[str, Any]:
+        """Return a safe mutable copy of Recording.extra."""
+        if record is None:
+            return {}
+        extra = getattr(record, "extra", None)
+        return dict(extra) if isinstance(extra, dict) else {}
+
+    @staticmethod
+    def _get_workflow_metadata(record: Optional[_RecordingModel]) -> Dict[str, Any]:
+        """Extract Plaud workflow metadata from a legacy recording row."""
+        extra = ChronosDataService._coerce_recording_extra(record)
+        workflow = extra.get("plaud_workflow")
+        return dict(workflow) if isinstance(workflow, dict) else {}
+
+    def _persist_plaud_workflow_artifacts(
+        self,
+        db,
+        recording_id: str,
+        workflow_metadata: Dict[str, Any],
+        summary: Optional[str] = None,
+        extracted_data: Optional[Dict[str, Any]] = None,
+        transcript: Optional[str] = None,
+    ) -> None:
+        """Persist Plaud workflow metadata and outputs into SQLite."""
+        chronos_record = (
+            db.query(_ChronosRecordingModel)
+            .filter_by(recording_id=recording_id)
+            .first()
+        )
+        legacy_record = db.query(_RecordingModel).filter_by(id=recording_id).first()
+
+        if chronos_record and summary:
+            chronos_record.plaud_ai_summary = summary.strip()
+
+        if legacy_record:
+            extra = self._coerce_recording_extra(legacy_record)
+            extra["plaud_workflow"] = workflow_metadata
+            if summary and summary.strip():
+                extra["plaud_summary"] = summary.strip()
+            if extracted_data is not None:
+                extra["plaud_extracted_data"] = extracted_data
+            if transcript and transcript.strip():
+                extra["plaud_workflow_transcript"] = transcript.strip()
+            legacy_record.extra = extra
+
+        db.commit()
+
+    def get_plaud_workflow_stats(self, days_back: int = 30) -> Dict[str, Any]:
+        """Summarize Plaud workflow coverage and current workflow state."""
+        stats = {
+            "recent_recordings": 0,
+            "with_ai_summary": 0,
+            "missing_ai_summary": 0,
+            "ready_for_enrichment": 0,
+            "workflow_pending": 0,
+            "workflow_failed": 0,
+            "workflow_success": 0,
+            "last_submitted_at": None,
+        }
+
+        try:
+            days_back = max(int(days_back), 1)
+            cutoff = datetime.utcnow() - timedelta(days=days_back)
+
+            db = SessionLocal()
+            try:
+                recent = (
+                    db.query(_ChronosRecordingModel)
+                    .filter(_ChronosRecordingModel.created_at >= cutoff)
+                    .order_by(_ChronosRecordingModel.created_at.desc())
+                    .all()
+                )
+                stats["recent_recordings"] = len(recent)
+
+                record_ids = [str(rec.recording_id) for rec in recent]
+                legacy_records = {}
+                if record_ids:
+                    legacy_records = {
+                        str(rec.id): rec
+                        for rec in db.query(_RecordingModel)
+                        .filter(_RecordingModel.id.in_(record_ids))
+                        .all()
+                    }
+
+                for rec in recent:
+                    legacy = legacy_records.get(str(rec.recording_id))
+                    workflow = self._get_workflow_metadata(legacy)
+                    workflow_status = str(workflow.get("status") or "").upper()
+                    has_summary = bool(rec.plaud_ai_summary)
+
+                    if not has_summary:
+                        extra = self._coerce_recording_extra(legacy)
+                        has_summary = bool(
+                            isinstance(extra.get("plaud_summary"), str)
+                            and extra.get("plaud_summary", "").strip()
+                        )
+
+                    if has_summary:
+                        stats["with_ai_summary"] += 1
+                    else:
+                        stats["missing_ai_summary"] += 1
+
+                    if workflow_status in _PLAUD_WORKFLOW_ACTIVE_STATUSES:
+                        stats["workflow_pending"] += 1
+                    elif workflow_status == "FAILED":
+                        stats["workflow_failed"] += 1
+                    elif workflow_status == "SUCCESS":
+                        stats["workflow_success"] += 1
+
+                    if (
+                        not has_summary
+                    ) and workflow_status not in _PLAUD_WORKFLOW_ACTIVE_STATUSES:
+                        stats["ready_for_enrichment"] += 1
+
+                    submitted_at = workflow.get("submitted_at")
+                    if isinstance(submitted_at, str):
+                        last_submitted = stats["last_submitted_at"]
+                        if not last_submitted or submitted_at > last_submitted:
+                            stats["last_submitted_at"] = submitted_at
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error fetching Plaud workflow stats: {e}")
+
+        return stats
+
+    def submit_plaud_workflows(
+        self,
+        days_back: int = 7,
+        limit: int = 3,
+        template_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Submit Plaud cloud workflows for recent recordings missing AI summaries."""
+        try:
+            from src.plaud_workflow import PlaudWorkflowClient
+
+            days_back = max(int(days_back), 1)
+            limit = max(int(limit), 1)
+            template_id = (template_id or "").strip() or None
+            cutoff = datetime.utcnow() - timedelta(days=days_back)
+            workflow_client = PlaudWorkflowClient()
+
+            result: Dict[str, Any] = {
+                "submitted": [],
+                "skipped": [],
+                "errors": [],
+                "template_id": template_id,
+            }
+
+            db = SessionLocal()
+            try:
+                recent = (
+                    db.query(_ChronosRecordingModel)
+                    .filter(_ChronosRecordingModel.created_at >= cutoff)
+                    .order_by(_ChronosRecordingModel.created_at.desc())
+                    .all()
+                )
+                record_ids = [str(rec.recording_id) for rec in recent]
+                legacy_records = {}
+                if record_ids:
+                    legacy_records = {
+                        str(rec.id): rec
+                        for rec in db.query(_RecordingModel)
+                        .filter(_RecordingModel.id.in_(record_ids))
+                        .all()
+                    }
+
+                candidates: List[_ChronosRecordingModel] = []
+                for rec in recent:
+                    legacy = legacy_records.get(str(rec.recording_id))
+                    workflow = self._get_workflow_metadata(legacy)
+                    workflow_status = str(workflow.get("status") or "").upper()
+                    if rec.plaud_ai_summary is not None:
+                        result["skipped"].append(
+                            {
+                                "recording_id": str(rec.recording_id),
+                                "reason": "already_has_summary",
+                            }
+                        )
+                        continue
+                    if workflow_status in _PLAUD_WORKFLOW_ACTIVE_STATUSES:
+                        result["skipped"].append(
+                            {
+                                "recording_id": str(rec.recording_id),
+                                "reason": "workflow_in_progress",
+                            }
+                        )
+                        continue
+                    candidates.append(rec)
+                    if len(candidates) >= limit:
+                        break
+
+                for rec in candidates:
+                    recording_id = str(rec.recording_id)
+                    try:
+                        workflow_id = workflow_client.submit_workflow(
+                            file_id=recording_id,
+                            template_id=template_id,
+                            include_summary=True,
+                            workflow_name=f"chronos_sync_{recording_id[:8]}",
+                        )
+                        workflow_metadata = {
+                            "workflow_id": workflow_id,
+                            "status": "PENDING",
+                            "submitted_at": datetime.utcnow().isoformat(),
+                            "source": "sync_view",
+                            "template_id": template_id,
+                            "completed_tasks": 0,
+                            "total_tasks": 3 if template_id else 2,
+                        }
+                        self._persist_plaud_workflow_artifacts(
+                            db,
+                            recording_id=recording_id,
+                            workflow_metadata=workflow_metadata,
+                        )
+                        result["submitted"].append(
+                            {
+                                "recording_id": recording_id,
+                                "workflow_id": workflow_id,
+                            }
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            f"Failed to submit Plaud workflow for {recording_id}: {exc}"
+                        )
+                        self._persist_plaud_workflow_artifacts(
+                            db,
+                            recording_id=recording_id,
+                            workflow_metadata={
+                                "workflow_id": None,
+                                "status": "FAILED",
+                                "submitted_at": datetime.utcnow().isoformat(),
+                                "source": "sync_view",
+                                "template_id": template_id,
+                                "error": str(exc),
+                            },
+                        )
+                        result["errors"].append(
+                            {"recording_id": recording_id, "error": str(exc)}
+                        )
+            finally:
+                db.close()
+
+            return result
+        except Exception as e:
+            logger.error(f"Error submitting Plaud workflows: {e}")
+            return {
+                "submitted": [],
+                "skipped": [],
+                "errors": [{"recording_id": None, "error": str(e)}],
+                "template_id": template_id,
+            }
+
+    def refresh_plaud_workflow_statuses(
+        self,
+        days_back: int = 30,
+        limit: int = 10,
+    ) -> Dict[str, Any]:
+        """Refresh pending Plaud workflow statuses and persist completed outputs."""
+        try:
+            from src.plaud_workflow import PlaudWorkflowClient
+
+            days_back = max(int(days_back), 1)
+            limit = max(int(limit), 1)
+            cutoff = datetime.utcnow() - timedelta(days=days_back)
+            workflow_client = PlaudWorkflowClient()
+
+            result: Dict[str, Any] = {"pending": [], "completed": [], "failed": []}
+
+            db = SessionLocal()
+            try:
+                recent = (
+                    db.query(_ChronosRecordingModel)
+                    .filter(_ChronosRecordingModel.created_at >= cutoff)
+                    .order_by(_ChronosRecordingModel.created_at.desc())
+                    .all()
+                )
+                record_ids = [str(rec.recording_id) for rec in recent]
+                legacy_records = {}
+                if record_ids:
+                    legacy_records = {
+                        str(rec.id): rec
+                        for rec in db.query(_RecordingModel)
+                        .filter(_RecordingModel.id.in_(record_ids))
+                        .all()
+                    }
+
+                targets: List[Tuple[str, Dict[str, Any]]] = []
+                for rec in recent:
+                    workflow = self._get_workflow_metadata(
+                        legacy_records.get(str(rec.recording_id))
+                    )
+                    if not workflow.get("workflow_id"):
+                        continue
+                    status = str(workflow.get("status") or "").upper()
+                    if status in _PLAUD_WORKFLOW_ACTIVE_STATUSES:
+                        targets.append((str(rec.recording_id), workflow))
+                    if len(targets) >= limit:
+                        break
+
+                for recording_id, workflow in targets:
+                    workflow_id = str(workflow.get("workflow_id"))
+                    try:
+                        status_info = workflow_client.get_workflow_status(workflow_id)
+                        workflow_metadata = dict(workflow)
+                        workflow_metadata.update(
+                            {
+                                "status": str(
+                                    status_info.get("status")
+                                    or workflow.get("status")
+                                    or "PENDING"
+                                ).upper(),
+                                "completed_tasks": status_info.get(
+                                    "completed_tasks",
+                                    workflow.get("completed_tasks", 0),
+                                ),
+                                "total_tasks": status_info.get(
+                                    "total_tasks",
+                                    workflow.get("total_tasks", 0),
+                                ),
+                                "current_task": status_info.get("current_task"),
+                                "last_checked_at": datetime.utcnow().isoformat(),
+                            }
+                        )
+
+                        status = workflow_metadata["status"]
+                        if status == "SUCCESS":
+                            workflow_result = workflow_client.get_workflow_results(
+                                workflow_id
+                            )
+                            workflow_metadata["completed_at"] = (
+                                datetime.utcnow().isoformat()
+                            )
+                            self._persist_plaud_workflow_artifacts(
+                                db,
+                                recording_id=recording_id,
+                                workflow_metadata=workflow_metadata,
+                                summary=workflow_result.summary,
+                                extracted_data=workflow_result.extracted_data,
+                                transcript=workflow_result.transcript,
+                            )
+                            result["completed"].append(
+                                {
+                                    "recording_id": recording_id,
+                                    "workflow_id": workflow_id,
+                                }
+                            )
+                        elif status in _PLAUD_WORKFLOW_TERMINAL_STATUSES:
+                            workflow_metadata["error"] = status_info.get("error")
+                            self._persist_plaud_workflow_artifacts(
+                                db,
+                                recording_id=recording_id,
+                                workflow_metadata=workflow_metadata,
+                            )
+                            result["failed"].append(
+                                {
+                                    "recording_id": recording_id,
+                                    "workflow_id": workflow_id,
+                                    "error": status_info.get("error"),
+                                }
+                            )
+                        else:
+                            self._persist_plaud_workflow_artifacts(
+                                db,
+                                recording_id=recording_id,
+                                workflow_metadata=workflow_metadata,
+                            )
+                            result["pending"].append(
+                                {
+                                    "recording_id": recording_id,
+                                    "workflow_id": workflow_id,
+                                    "current_task": status_info.get("current_task"),
+                                }
+                            )
+                    except Exception as exc:
+                        logger.error(
+                            f"Failed to refresh Plaud workflow for {recording_id}: {exc}"
+                        )
+                        failed_metadata = dict(workflow)
+                        failed_metadata.update(
+                            {
+                                "status": "FAILED",
+                                "error": str(exc),
+                                "last_checked_at": datetime.utcnow().isoformat(),
+                            }
+                        )
+                        self._persist_plaud_workflow_artifacts(
+                            db,
+                            recording_id=recording_id,
+                            workflow_metadata=failed_metadata,
+                        )
+                        result["failed"].append(
+                            {
+                                "recording_id": recording_id,
+                                "workflow_id": workflow_id,
+                                "error": str(exc),
+                            }
+                        )
+            finally:
+                db.close()
+
+            return result
+        except Exception as e:
+            logger.error(f"Error refreshing Plaud workflow statuses: {e}")
+            return {
+                "pending": [],
+                "completed": [],
+                "failed": [{"recording_id": None, "error": str(e)}],
+            }
 
     def get_recording_db_stats(self) -> Dict[str, int]:
         """Get recording status counts from SQLite."""
@@ -1004,12 +1693,70 @@ class ChronosDataService:
                     )
                 )
                 db.commit()
-                return result.rowcount  # type: ignore[attr-defined]
+                return int(getattr(result, "rowcount", 0) or 0)
             finally:
                 db.close()
         except Exception as e:
             logger.error(f"Error resetting recordings: {e}")
             return 0
+
+    def save_category_override(self, event_qdrant_id: str, new_category: str) -> bool:
+        """Save a user category override for an event.
+
+        Finds the ChronosEvent by its qdrant_point_id and sets user_category_override.
+        """
+        try:
+            from src.database.engine import SessionLocal
+            from src.database.models import ChronosEvent
+
+            db = SessionLocal()
+            try:
+                evt = (
+                    db.query(ChronosEvent)
+                    .filter_by(qdrant_point_id=event_qdrant_id)
+                    .first()
+                )
+                if evt:
+                    setattr(evt, "user_category_override", new_category)
+                    db.commit()
+                    # Invalidate cache so next load reflects the change
+                    self._get_all_events(force_refresh=True)
+                    return True
+                logger.warning(f"No event found with qdrant_point_id={event_qdrant_id}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error saving category override: {e}")
+        return False
+
+    def get_category_overrides(self, recording_id: str) -> Dict[str, str]:
+        """Get all user category overrides for events in a recording.
+
+        Returns:
+            Dict mapping qdrant_point_id → user_category_override
+        """
+        try:
+            from src.database.engine import SessionLocal
+            from src.database.models import ChronosEvent
+
+            db = SessionLocal()
+            try:
+                events = (
+                    db.query(
+                        ChronosEvent.qdrant_point_id,
+                        ChronosEvent.user_category_override,
+                    )
+                    .filter(
+                        ChronosEvent.user_category_override.isnot(None),
+                    )
+                    .all()
+                )
+                return {str(e[0]): str(e[1]) for e in events if e[0]}
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error fetching category overrides: {e}")
+        return {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

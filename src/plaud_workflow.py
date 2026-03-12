@@ -138,8 +138,8 @@ class PlaudWorkflowClient:
         self,
         file_id: str,
         template_id: Optional[str] = None,
-        language: str = "en",
-        enable_diarization: bool = True,
+        language: Optional[str] = None,
+        enable_diarization: Optional[bool] = None,
         include_summary: bool = True,
         workflow_name: str = "chronos_workflow",
         model: str = "gemini",
@@ -150,8 +150,8 @@ class PlaudWorkflowClient:
         Args:
             file_id: Plaud file/recording ID to process
             template_id: Custom ETL template ID (optional)
-            language: Language code for transcription
-            enable_diarization: Enable speaker diarization
+            language: Language code for transcription (default from config)
+            enable_diarization: Enable speaker diarization (default from config)
             include_summary: Include AI summary task
             workflow_name: Name for the workflow
             model: LLM model to use (gemini, openai, claude)
@@ -159,6 +159,10 @@ class PlaudWorkflowClient:
         Returns:
             workflow_id for tracking
         """
+        if language is None:
+            language = settings.plaud_default_language
+        if enable_diarization is None:
+            enable_diarization = settings.plaud_enable_diarization
         tasks: List[Dict[str, Any]] = []
 
         # Task 1: Audio Transcription
@@ -266,7 +270,10 @@ class PlaudWorkflowClient:
         return result
 
     def wait_for_workflow(
-        self, workflow_id: str, poll_interval: float = 5.0, timeout: float = 600.0
+        self,
+        workflow_id: str,
+        poll_interval: float = 5.0,
+        timeout: Optional[float] = None,
     ) -> WorkflowResult:
         """
         Wait for a workflow to complete (polling).
@@ -274,7 +281,7 @@ class PlaudWorkflowClient:
         Args:
             workflow_id: Workflow ID to monitor
             poll_interval: Seconds between status checks
-            timeout: Maximum seconds to wait
+            timeout: Maximum seconds to wait (default from config)
 
         Returns:
             WorkflowResult when complete
@@ -282,6 +289,8 @@ class PlaudWorkflowClient:
         Raises:
             TimeoutError: If workflow doesn't complete in time
         """
+        if timeout is None:
+            timeout = float(settings.plaud_workflow_timeout)
         start_time = time.time()
 
         while True:
@@ -317,9 +326,9 @@ class PlaudWorkflowClient:
     def process_recording(
         self,
         file_id: str,
-        language: str = "en",
+        language: Optional[str] = None,
         wait_for_result: bool = True,
-        timeout: float = 600.0,
+        timeout: Optional[float] = None,
     ) -> WorkflowResult:
         """
         Convenience method to fully process a recording.
@@ -329,13 +338,17 @@ class PlaudWorkflowClient:
 
         Args:
             file_id: Plaud recording file ID
-            language: Language code
+            language: Language code (default from config)
             wait_for_result: If True, blocks until complete
-            timeout: Max seconds to wait (if waiting)
+            timeout: Max seconds to wait (default from config)
 
         Returns:
             WorkflowResult with all outputs
         """
+        if language is None:
+            language = settings.plaud_default_language
+        if timeout is None:
+            timeout = float(settings.plaud_workflow_timeout)
         workflow_id = self.submit_workflow(
             file_id=file_id, language=language, include_summary=True
         )

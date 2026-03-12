@@ -41,17 +41,18 @@ class Settings:
     gemini_api_version: str = os.getenv("GEMINI_API_VERSION", "v1beta")
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Chronos: Gemini Model Selection (Feb 2026 — Latest Available Models)
+    # Chronos: Gemini Model Selection (March 2026 — Latest Available Models)
     # ─────────────────────────────────────────────────────────────────────────
     # Model Hierarchy (best to fastest):
-    #   gemini-3-pro-preview    → Best reasoning, Batch only (no free standard tier)
+    #   gemini-3.1-pro-preview  → Best reasoning, replaces shut-down 3-pro-preview
     #   gemini-3-flash-preview  → Best FREE model, great for processing ✅
     #   gemini-2.5-pro          → Stable thinking model, FREE standard tier
     #   gemini-2.5-flash        → Stable fast model, FREE standard tier
     #   gemini-2.0-flash        → ⚠️ DEPRECATED (shutdown March 31, 2026)
     #
     # Embeddings:
-    #   gemini-embedding-001    → Current stable embedding model, FREE
+    #   gemini-embedding-2-preview → Multimodal (text+audio+image+video+PDF)
+    #   gemini-embedding-001       → Text-only stable model (legacy)
     # ─────────────────────────────────────────────────────────────────────────
     chronos_cleaning_model: str = os.getenv(
         # Gemini 3 Flash Preview — FREE on standard tier, excellent for processing
@@ -59,16 +60,16 @@ class Settings:
         "gemini-3-flash-preview",
     )
     chronos_embedding_model: str = os.getenv(
-        # Gemini Embedding 001 — stable, FREE, 768 dims
+        # Gemini Embedding 2 Preview — multimodal (text, audio, image, video, PDF)
+        # Input limit: 8192 tokens. Audio: WAV/MP3 ≤80s. MRL: 128–3072 dims.
         "CHRONOS_EMBEDDING_MODEL",
-        "gemini-embedding-001",
+        "gemini-embedding-2-preview",
     )
     chronos_embedding_dim: int = int(os.getenv("CHRONOS_EMBEDDING_DIM", "768"))
     chronos_analyst_model: str = os.getenv(
-        # Gemini 3 Pro Preview — Best reasoning model (Batch only, no free standard)
-        # Falls back to gemini-3-flash-preview if Pro unavailable
+        # Gemini 3.1 Pro Preview — replaces gemini-3-pro-preview (shut down 2026-03-09)
         "CHRONOS_ANALYST_MODEL",
-        "gemini-3-pro-preview",
+        "gemini-3.1-pro-preview",
     )
 
     # Gemini 3 thinking level (applies when supported by the selected model)
@@ -120,6 +121,22 @@ class Settings:
             "graphs",
         ),
     )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # OpenAI: Responses API (for RAG / conversational queries)
+    # ─────────────────────────────────────────────────────────────────────────
+    # Model Hierarchy (July 2026 — Latest Available):
+    #   gpt-5.4       → Frontier flagship ($2.50/$15 MTok), 1.05M context, 128K output
+    #   gpt-5.4-pro   → Smart/precise version of 5.4
+    #   gpt-5-mini    → Near-frontier, cost-effective ($0.25/$2 MTok), 400K context
+    #   gpt-5-nano    → Fastest, cheapest GPT-5 variant
+    #   gpt-5         → Previous reasoning model
+    #   gpt-4.1       → Smartest non-reasoning model (legacy)
+    # Reasoning effort (gpt-5.4): none (default), low, medium, high, xhigh
+    # ─────────────────────────────────────────────────────────────────────────
+    openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
+    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-5.4")
+    openai_temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
 
     # Logging
     log_level: str = os.getenv("PB_LOG_LEVEL", "INFO")

@@ -829,18 +829,16 @@ Respond in JSON:
         self._llm = None
 
     def _get_llm(self):
-        """Lazy load LLM for summarization."""
+        """Lazy load LLM client + model for summarization."""
         if self._llm is None:
-            import google.generativeai as genai
+            from src.chronos.genai_helpers import get_genai_client
+            from src.config import get_settings
 
-            api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-            if api_key:
-                genai.configure(api_key=api_key)
-                # Use latest Gemini 3 Flash (free tier) for community summarization
-                model_name = os.getenv(
-                    "CHRONOS_CLEANING_MODEL", "gemini-3-flash-preview"
-                )
-                self._llm = genai.GenerativeModel(model_name)
+            settings = get_settings()
+            if settings.gemini_api_key:
+                client = get_genai_client()
+                model_name = settings.chronos_cleaning_model
+                self._llm = (client, model_name)
         return self._llm
 
     def detect_communities(self, graph: KnowledgeGraph) -> List[Community]:
@@ -972,6 +970,8 @@ Respond in JSON:
             community.summary = f"Cluster of {len(community.entities)} related entities"
             return community
 
+        client, model_name = llm
+
         # Build entity list
         entities_text = []
         for eid in community.entities[:20]:  # Limit for prompt size
@@ -997,8 +997,8 @@ Respond in JSON:
         )
 
         try:
-            response = llm.generate_content(prompt)
-            text = response.text.strip()
+            response = client.models.generate_content(model=model_name, contents=prompt)
+            text = (response.text or "").strip()
 
             # Parse JSON
             if "```json" in text:

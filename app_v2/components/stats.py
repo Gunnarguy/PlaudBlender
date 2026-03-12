@@ -192,6 +192,51 @@ def create_stats_view(stats: Stats) -> html.Div:
     elif stats.avg_sentiment < -0.15:
         sentiment_emoji = "😟"
 
+    # Build Plaud cloud section if stats are available
+    plaud_section_children = []
+    if stats.plaud_cloud_stats:
+        cs = stats.plaud_cloud_stats
+        cloud_total = cs.get("total_count", 0)
+        cloud_hours = cs.get("total_duration_hours", 0)
+        cloud_avg_min = cs.get("avg_duration_minutes", 0)
+        date_range = cs.get("date_range", {})
+        earliest = date_range.get("earliest", "—")
+        latest = date_range.get("latest", "—")
+        local_recs = stats.total_recordings
+        synced_pct = (local_recs / cloud_total * 100) if cloud_total else 0
+
+        plaud_section_children = [
+            html.Div(
+                className="stats-section plaud-cloud-section",
+                children=[
+                    html.H3("☁️ Plaud Cloud", className="section-title"),
+                    html.Div(
+                        className="stats-grid",
+                        children=[
+                            create_stat_card(
+                                "🌐", "Cloud Recordings", str(cloud_total)
+                            ),
+                            create_stat_card("⏱️", "Cloud Hours", f"{cloud_hours:.1f}"),
+                            create_stat_card(
+                                "📊", "Avg Duration", f"{cloud_avg_min:.0f}m"
+                            ),
+                            create_stat_card("🔄", "Synced", f"{synced_pct:.0f}%"),
+                        ],
+                    ),
+                    html.Div(
+                        className="plaud-date-range",
+                        children=[
+                            html.Span(f"Recording range: {earliest} → {latest}"),
+                            html.Span(
+                                f" · {local_recs}/{cloud_total} recordings synced locally",
+                                className="plaud-sync-detail",
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ]
+
     return html.Div(
         className="stats-view",
         children=[
@@ -245,6 +290,8 @@ def create_stats_view(stats: Stats) -> html.Div:
                     ),
                 ],
             ),
+            # Plaud cloud stats (if available)
+            *plaud_section_children,
             # Insights callout
             html.Div(
                 className="stats-insights",

@@ -175,9 +175,14 @@ class TestPlaudWebhookHandler:
 
     def test_signature_verification_no_secret(self):
         """Test signature verification when no secret is set."""
+        from unittest.mock import patch
         from src.plaud_webhook import PlaudWebhookHandler
 
-        handler = PlaudWebhookHandler(webhook_secret=None)
+        with patch.dict("os.environ", {}, clear=False):
+            import os
+
+            os.environ.pop("PLAUD_WEBHOOK_SECRET", None)
+            handler = PlaudWebhookHandler(webhook_secret=None)
 
         # Should return True when no secret is configured (skips verification)
         result = handler.verify_signature(b"test", "any_signature")
@@ -242,7 +247,13 @@ class TestPlaudAutoSync:
         assert config.sync_on_usb_connect is True
         assert config.sync_on_webhook is True
         assert config.ingest_new_recordings is True
-        assert config.process_after_ingest is False
+        assert config.process_after_ingest is True
+        assert config.index_after_process is True
+        assert config.refresh_workflows is True
+        assert config.enable_scheduled_poll is True
+        assert config.poll_interval_minutes == 15
+        assert config.enable_webhook_server is True
+        assert config.webhook_port == 8090
 
     def test_sync_job_creation(self):
         """Test SyncJob dataclass."""

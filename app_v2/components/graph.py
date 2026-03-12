@@ -11,7 +11,7 @@ cyto.load_extra_layouts()
 # ═══════════════════════════════════════════════════════════════════════════════
 
 GRAPH_STYLESHEET = [
-    # Base node style
+    # ── Base node ─────────────────────────────────────────────────────────────
     {
         "selector": "node",
         "style": {
@@ -19,18 +19,46 @@ GRAPH_STYLESHEET = [
             "text-valign": "center",
             "text-halign": "center",
             "background-color": "#6366f1",
-            "color": "#ffffff",
-            "font-size": "11px",
-            "font-weight": "600",
-            "text-outline-color": "#1e1b4b",
+            "color": "#e2e8f0",
+            "font-size": "10px",
+            "font-weight": "500",
+            "text-outline-color": "#0f172a",
             "text-outline-width": "2px",
             "width": "data(size)",
             "height": "data(size)",
             "border-width": "2px",
             "border-color": "#4f46e5",
+            "transition-property": "background-color, border-color, width, height, opacity",
+            "transition-duration": "0.2s",
         },
     },
-    # Person nodes (blue circles)
+    # ── Category hub nodes (large, bold) ──────────────────────────────────────
+    {
+        "selector": ".category",
+        "style": {
+            "background-color": "data(color)",
+            "border-color": "data(color)",
+            "shape": "round-rectangle",
+            "font-size": "13px",
+            "font-weight": "700",
+            "text-outline-width": "3px",
+            "text-outline-color": "#0f172a",
+            "color": "#ffffff",
+            "border-width": "3px",
+            "border-opacity": 0.6,
+        },
+    },
+    # ── Topic/keyword nodes (circles) ─────────────────────────────────────────
+    {
+        "selector": ".topic",
+        "style": {
+            "background-color": "#475569",
+            "border-color": "#64748b",
+            "shape": "ellipse",
+            "font-size": "9px",
+        },
+    },
+    # ── Person nodes ──────────────────────────────────────────────────────────
     {
         "selector": ".person",
         "style": {
@@ -39,16 +67,7 @@ GRAPH_STYLESHEET = [
             "shape": "ellipse",
         },
     },
-    # Organization nodes (green rounded rectangles)
-    {
-        "selector": ".organization",
-        "style": {
-            "background-color": "#10b981",
-            "border-color": "#059669",
-            "shape": "round-rectangle",
-        },
-    },
-    # Project nodes (orange diamonds)
+    # ── Project nodes ─────────────────────────────────────────────────────────
     {
         "selector": ".project",
         "style": {
@@ -57,34 +76,16 @@ GRAPH_STYLESHEET = [
             "shape": "diamond",
         },
     },
-    # Topic nodes (pink ellipses)
+    # ── Organization nodes ────────────────────────────────────────────────────
     {
-        "selector": ".topic",
+        "selector": ".organization",
         "style": {
-            "background-color": "#ec4899",
-            "border-color": "#db2777",
-            "shape": "ellipse",
-        },
-    },
-    # Category nodes (purple rounded rectangles)
-    {
-        "selector": ".category",
-        "style": {
-            "background-color": "#8b5cf6",
-            "border-color": "#7c3aed",
+            "background-color": "#10b981",
+            "border-color": "#059669",
             "shape": "round-rectangle",
         },
     },
-    # Recording nodes (teal rectangles)
-    {
-        "selector": ".recording",
-        "style": {
-            "background-color": "#14b8a6",
-            "border-color": "#0d9488",
-            "shape": "rectangle",
-        },
-    },
-    # Location nodes (amber)
+    # ── Location nodes ────────────────────────────────────────────────────────
     {
         "selector": ".location",
         "style": {
@@ -93,100 +94,71 @@ GRAPH_STYLESHEET = [
             "shape": "round-pentagon",
         },
     },
-    # Action nodes (sky blue)
-    {
-        "selector": ".action",
-        "style": {
-            "background-color": "#0ea5e9",
-            "border-color": "#0284c7",
-            "shape": "round-tag",
-        },
-    },
-    # Date nodes
+    # ── Date nodes ────────────────────────────────────────────────────────────
     {
         "selector": ".date",
         "style": {
-            "background-color": "#64748b",
+            "background-color": "#1e293b",
             "border-color": "#475569",
             "shape": "round-rectangle",
+            "font-size": "8px",
+            "color": "#94a3b8",
         },
     },
-    # Metric nodes
-    {
-        "selector": ".metric",
-        "style": {
-            "background-color": "#a855f7",
-            "border-color": "#9333ea",
-            "shape": "round-hexagon",
-        },
-    },
-    # Selected node
+    # ── Selected node ─────────────────────────────────────────────────────────
     {
         "selector": ":selected",
         "style": {
             "border-width": "4px",
             "border-color": "#fbbf24",
-            "background-color": "#fef3c7",
-            "color": "#1e1b4b",
-            "text-outline-color": "#fef3c7",
-        },
-    },
-    # Hovered node
-    {
-        "selector": "node:active",
-        "style": {
-            "overlay-opacity": 0.2,
-            "overlay-color": "#fbbf24",
-        },
-    },
-    # Highlighted nodes (from search)
-    {
-        "selector": ".highlighted",
-        "style": {
-            "border-width": "4px",
-            "border-color": "#22c55e",
-            "background-color": "#bbf7d0",
-            "color": "#14532d",
-            "text-outline-color": "#bbf7d0",
+            "background-opacity": 1,
             "z-index": 999,
         },
     },
-    # Dimmed nodes
+    # ── Hovered node ──────────────────────────────────────────────────────────
     {
-        "selector": ".dimmed",
+        "selector": "node:active",
         "style": {
-            "opacity": 0.3,
+            "overlay-opacity": 0.15,
+            "overlay-color": "#fbbf24",
         },
     },
-    # Edge styles
+    # ── Edge base ─────────────────────────────────────────────────────────────
     {
         "selector": "edge",
         "style": {
-            "width": 2,
-            "line-color": "#475569",
-            "target-arrow-color": "#475569",
-            "target-arrow-shape": "triangle",
+            "width": 1.5,
+            "line-color": "#334155",
             "curve-style": "bezier",
-            "opacity": 0.6,
+            "opacity": 0.4,
         },
     },
-    # Edge with label
+    # ── Edge connecting keyword ↔ keyword (co-occurrence) ─────────────────────
     {
         "selector": "edge[label]",
         "style": {
             "label": "data(label)",
-            "font-size": "9px",
-            "color": "#94a3b8",
+            "font-size": "7px",
+            "color": "#64748b",
             "text-rotation": "autorotate",
-            "text-margin-y": "-10px",
+            "text-margin-y": "-8px",
+            "line-style": "dashed",
+            "opacity": 0.3,
         },
     },
-    # Selected edge
+    # ── Edge connecting to category (solid, slightly brighter) ────────────────
+    {
+        "selector": "edge[target ^= 'cat:']",
+        "style": {
+            "opacity": 0.5,
+            "line-style": "solid",
+        },
+    },
+    # ── Selected edge ─────────────────────────────────────────────────────────
     {
         "selector": "edge:selected",
         "style": {
             "line-color": "#fbbf24",
-            "target-arrow-color": "#fbbf24",
             "width": 3,
             "opacity": 1,
         },
@@ -200,7 +172,7 @@ GRAPH_STYLESHEET = [
 
 
 def create_graph_view(graph_data=None) -> html.Div:
-    """Create the full knowledge graph view with controls and legend.
+    """Create the knowledge graph view with Cytoscape and controls.
 
     Args:
         graph_data: GraphData with nodes and edges lists (Cytoscape format)
@@ -231,9 +203,9 @@ def create_graph_view(graph_data=None) -> html.Div:
             html.Div(
                 className="view-header",
                 children=[
-                    html.H2("🕸️ Knowledge Graph", className="view-title"),
+                    html.H2("Knowledge Graph", className="view-title"),
                     html.P(
-                        f"{node_count} entities, {edge_count} connections",
+                        f"{node_count} entities • {edge_count} connections",
                         className="view-subtitle",
                     ),
                 ],
@@ -242,36 +214,35 @@ def create_graph_view(graph_data=None) -> html.Div:
             html.Div(
                 className="graph-controls",
                 children=[
-                    dcc.Dropdown(
-                        id="graph-layout-select",
-                        className="graph-layout-dropdown",
-                        value="cose-bilkent",
-                        clearable=False,
-                        searchable=False,
-                        options=[
-                            {"label": "Force-Directed (Best)", "value": "cose-bilkent"},
-                            {"label": "Force Layout", "value": "cose"},
-                            {"label": "Hierarchical", "value": "dagre"},
-                            {"label": "Circular", "value": "circle"},
-                            {"label": "Grid", "value": "grid"},
-                            {"label": "Concentric", "value": "concentric"},
+                    html.Div(
+                        id="graph-layout-controls",
+                        className="graph-layout-controls",
+                        style={"display": "flex"},
+                        children=[
+                            dcc.Dropdown(
+                                id="graph-layout-select",
+                                className="graph-layout-dropdown",
+                                value="cose-bilkent",
+                                clearable=False,
+                                searchable=False,
+                                options=[
+                                    {
+                                        "label": "Force-Directed",
+                                        "value": "cose-bilkent",
+                                    },
+                                    {"label": "Hierarchical", "value": "dagre"},
+                                    {"label": "Circular", "value": "circle"},
+                                    {"label": "Concentric", "value": "concentric"},
+                                ],
+                                style={"width": "180px"},
+                            ),
                         ],
-                        style={"width": "200px"},
-                    ),
-                    html.Button(
-                        "🔄 Reset View",
-                        id="graph-reset-btn",
-                        className="graph-btn",
-                    ),
-                    html.Button(
-                        "🔍 Fit All",
-                        id="graph-fit-btn",
-                        className="graph-btn",
                     ),
                 ],
             ),
             # Graph container
             html.Div(
+                id="graph-canvas-container",
                 className="graph-canvas",
                 children=(
                     [
@@ -284,15 +255,16 @@ def create_graph_view(graph_data=None) -> html.Div:
                                 "animate": False,
                                 "randomize": False,
                                 "nodeDimensionsIncludeLabels": True,
-                                "nodeRepulsion": 4500,
-                                "idealEdgeLength": 50,
+                                "nodeRepulsion": 8000,
+                                "idealEdgeLength": 80,
                                 "edgeElasticity": 0.45,
                                 "nestingFactor": 0.1,
-                                "gravity": 0.25,
-                                "numIter": 2500,
+                                "gravity": 0.15,
+                                "gravityRange": 3.8,
+                                "numIter": 3000,
                                 "tile": True,
                                 "fit": True,
-                                "padding": 30,
+                                "padding": 50,
                             },
                             style={
                                 "width": "100%",
@@ -313,19 +285,16 @@ def create_graph_view(graph_data=None) -> html.Div:
                             className="graph-empty",
                             children=[
                                 html.P(
-                                    "🕸️", style={"fontSize": "3rem", "opacity": "0.3"}
-                                ),
-                                html.P(
                                     "No knowledge graph data yet",
-                                    style={"color": "#94a3b8"},
+                                    style={"color": "#e6edf3", "fontSize": "1.1rem"},
                                 ),
                                 html.P(
                                     "Run the pipeline to extract entities and build the graph.",
-                                    style={"color": "#64748b", "fontSize": "0.875rem"},
+                                    style={"color": "#8b949e", "fontSize": "0.875rem"},
                                 ),
                                 html.Code(
-                                    "python scripts/chronos_pipeline.py --graph",
-                                    style={"color": "#8b5cf6"},
+                                    "python scripts/chronos_pipeline.py --full",
+                                    style={"color": "#a371f7"},
                                 ),
                             ],
                         )
@@ -334,9 +303,15 @@ def create_graph_view(graph_data=None) -> html.Div:
             ),
             # Legend
             html.Div(
+                id="graph-legend-container",
                 className="graph-legend",
+                style={"display": "flex"},
                 children=[
                     html.Span("Legend:", className="legend-title"),
+                    _legend_item(
+                        "■", "Category", "#8b5cf6", type_counts.get("category", 0)
+                    ),
+                    _legend_item("●", "Topic", "#475569", type_counts.get("topic", 0)),
                     _legend_item(
                         "●", "Person", "#3b82f6", type_counts.get("person", 0)
                     ),
@@ -349,20 +324,14 @@ def create_graph_view(graph_data=None) -> html.Div:
                         "#10b981",
                         type_counts.get("organization", 0),
                     ),
-                    _legend_item("●", "Topic", "#ec4899", type_counts.get("topic", 0)),
-                    _legend_item(
-                        "■", "Category", "#8b5cf6", type_counts.get("category", 0)
-                    ),
-                    _legend_item(
-                        "▪", "Recording", "#14b8a6", type_counts.get("recording", 0)
-                    ),
-                    _legend_item(
-                        "⬠", "Location", "#f97316", type_counts.get("location", 0)
-                    ),
+                    _legend_item("■", "Date", "#475569", type_counts.get("date", 0)),
                 ],
             ),
             # Node detail panel (populated by callback)
-            html.Div(id="graph-node-detail", className="graph-node-detail"),
+            html.Div(
+                id="graph-node-detail",
+                className="graph-node-detail",
+            ),
         ],
     )
 

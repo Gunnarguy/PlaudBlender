@@ -121,10 +121,20 @@ class ChronosEvent(BaseModel):
     @field_validator("end_ts")
     @classmethod
     def end_after_start(cls, v: datetime, info) -> datetime:
-        """Ensure event time range is valid."""
+        """Ensure event time range is valid and capped at 4 hours.
+
+        Gemini sometimes hallucinates end_ts months into the future
+        (e.g., confusing hour "10:00" with October). Cap duration at
+        4 hours — no single event should be longer than that.
+        """
         start = info.data.get("start_ts")
         if start and v < start:
             raise ValueError("end_ts must be >= start_ts")
+        MAX_EVENT_SECONDS = 4 * 3600  # 4 hours
+        if start and (v - start).total_seconds() > MAX_EVENT_SECONDS:
+            from datetime import timedelta
+
+            v = start + timedelta(seconds=MAX_EVENT_SECONDS)
         return v
 
     @field_validator("clean_text")

@@ -12,6 +12,7 @@ from datetime import datetime
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
+    FilterSelector,
     VectorParams,
     PointStruct,
     Filter,
@@ -51,7 +52,7 @@ class ChronosQdrantClient:
         self.client = QdrantClient(
             url=self.settings.qdrant_url,
             api_key=self.settings.qdrant_api_key,
-            timeout=self.settings.qdrant_timeout_seconds,
+            timeout=int(self.settings.qdrant_timeout_seconds),
         )
 
         logger.info(
@@ -59,14 +60,16 @@ class ChronosQdrantClient:
         )
 
     def create_collection(
-        self, vector_size: int = 768, force_recreate: bool = False
+        self, vector_size: int | None = None, force_recreate: bool = False
     ) -> None:
         """Create Chronos collection with temporal payload indexes.
 
         Args:
-            vector_size: Embedding dimension (768 for Gemini text-embedding-004)
+            vector_size: Embedding dimension (default from CHRONOS_EMBEDDING_DIM config)
             force_recreate: Delete existing collection if present
         """
+        if vector_size is None:
+            vector_size = self.settings.chronos_embedding_dim
         # Check if collection exists
         collections = self.client.get_collections().collections
         exists = any(c.name == self.collection_name for c in collections)
@@ -124,7 +127,7 @@ class ChronosQdrantClient:
 
         Args:
             event: ChronosEvent with metadata
-            embedding: Vector embedding (768-dim for Gemini)
+            embedding: Vector embedding (dimensionality from config)
 
         Returns:
             str: Point ID (event_id)
@@ -437,13 +440,15 @@ class ChronosQdrantClient:
         # Delete by filter
         self.client.delete(
             collection_name=self.collection_name,
-            points_selector=Filter(
-                must=[
-                    FieldCondition(
-                        key="recording_id",
-                        match=MatchValue(value=recording_id),
-                    )
-                ]
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="recording_id",
+                            match=MatchValue(value=recording_id),
+                        )
+                    ]
+                )
             ),
         )
 

@@ -10,22 +10,27 @@ def create_sidebar() -> html.Div:
         children=[
             # Logo/Brand
             html.Div(
-                className="sidebar-brand",
+                className="sidebar-header",
                 children=[
-                    html.Span("⏳", className="brand-icon"),
-                    html.Span("Chronos", className="brand-text"),
+                    html.Div(
+                        className="logo",
+                        children=[
+                            html.Span("⏳", className="logo-icon"),
+                            html.Span("Chronos", className="logo-text"),
+                        ],
+                    ),
                 ],
             ),
             # Navigation items
             html.Nav(
-                className="sidebar-nav",
+                className="nav-menu",
                 children=[
                     html.Button(
-                        id={"type": "nav-item", "view": "days"},
+                        id={"type": "nav-item", "view": "timeline"},
                         className="nav-item active",
                         children=[
-                            html.Span("📅", className="nav-icon"),
-                            html.Span("Days", className="nav-label"),
+                            html.Span("⏱️", className="nav-icon"),
+                            html.Span("Timeline", className="nav-label"),
                         ],
                     ),
                     html.Button(
@@ -54,11 +59,9 @@ def create_sidebar() -> html.Div:
                     ),
                 ],
             ),
-            # Spacer
-            html.Div(className="sidebar-spacer"),
             # Bottom actions
             html.Div(
-                className="sidebar-actions",
+                className="sidebar-footer",
                 children=[
                     html.Button(
                         id={"type": "nav-item", "view": "sync"},

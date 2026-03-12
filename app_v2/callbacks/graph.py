@@ -20,30 +20,23 @@ def register_graph_callbacks(app):
         if not layout_name:
             raise PreventUpdate
 
-        # Layout-specific configs
+        # Tuned for a hub-spoke category graph
         layout_configs = {
             "cose-bilkent": {
                 "name": "cose-bilkent",
                 "animate": True,
                 "animationDuration": 500,
                 "nodeDimensionsIncludeLabels": True,
-                "nodeRepulsion": 4500,
-                "idealEdgeLength": 50,
+                "nodeRepulsion": 8000,
+                "idealEdgeLength": 80,
                 "edgeElasticity": 0.45,
-                "gravity": 0.25,
-                "numIter": 2500,
+                "nestingFactor": 0.1,
+                "gravity": 0.15,
+                "gravityRange": 3.8,
+                "numIter": 3000,
+                "tile": True,
                 "fit": True,
-                "padding": 30,
-            },
-            "cose": {
-                "name": "cose",
-                "animate": True,
-                "animationDuration": 500,
-                "nodeRepulsion": 400000,
-                "idealEdgeLength": 100,
-                "gravity": 80,
-                "fit": True,
-                "padding": 30,
+                "padding": 50,
             },
             "dagre": {
                 "name": "dagre",
@@ -51,30 +44,25 @@ def register_graph_callbacks(app):
                 "animationDuration": 500,
                 "rankDir": "TB",
                 "rankerFunction": "tight-tree",
+                "nodeSep": 40,
+                "rankSep": 80,
                 "fit": True,
-                "padding": 30,
+                "padding": 40,
             },
             "circle": {
                 "name": "circle",
                 "animate": True,
                 "animationDuration": 500,
                 "fit": True,
-                "padding": 30,
-            },
-            "grid": {
-                "name": "grid",
-                "animate": True,
-                "animationDuration": 500,
-                "fit": True,
-                "padding": 30,
+                "padding": 40,
             },
             "concentric": {
                 "name": "concentric",
                 "animate": True,
                 "animationDuration": 500,
                 "fit": True,
-                "padding": 30,
-                "minNodeSpacing": 50,
+                "padding": 40,
+                "minNodeSpacing": 60,
             },
         }
 
@@ -92,29 +80,41 @@ def register_graph_callbacks(app):
 
         node_type = node_data.get("type", "unknown")
         label = node_data.get("full_label") or node_data.get("label", "Unknown")
-        description = node_data.get("description", "")
         count = node_data.get("count", node_data.get("mention_count", 0))
+        categories = node_data.get("categories", "")
+        sentiment = node_data.get("sentiment")
 
         type_icons = {
-            "person": "👤",
-            "project": "📁",
-            "organization": "🏢",
-            "topic": "💬",
-            "category": "🏷️",
-            "recording": "🎙️",
-            "location": "📍",
-            "action": "⚡",
-            "date": "📅",
-            "metric": "📊",
+            "topic": "●",
+            "category": "■",
+            "date": "◼",
+            "person": "●",
+            "project": "◆",
+            "organization": "■",
+            "location": "⬠",
+        }
+        type_colors = {
+            "topic": "#475569",
+            "category": "#8b5cf6",
+            "date": "#475569",
+            "person": "#3b82f6",
+            "project": "#f59e0b",
+            "organization": "#10b981",
+            "location": "#f97316",
         }
 
         icon = type_icons.get(node_type.lower(), "●")
+        color = type_colors.get(node_type.lower(), "#6366f1")
 
-        children = [
+        children: list = [
             html.Div(
                 className="node-detail-header",
                 children=[
-                    html.Span(icon, className="node-detail-icon"),
+                    html.Span(
+                        icon,
+                        className="node-detail-icon",
+                        style={"color": color, "fontSize": "1.2rem"},
+                    ),
                     html.H4(label, className="node-detail-name"),
                     html.Span(
                         node_type.capitalize(),
@@ -124,14 +124,35 @@ def register_graph_callbacks(app):
             ),
         ]
 
-        if description:
-            children.append(html.P(description, className="node-detail-desc"))
-
         if count:
+            unit = "event" if node_type == "category" else "mention"
             children.append(
                 html.P(
-                    f"Mentioned {count} time{'s' if count != 1 else ''}",
+                    f"{count} {unit}{'s' if count != 1 else ''}",
                     className="node-detail-count",
+                )
+            )
+
+        if categories:
+            children.append(
+                html.P(
+                    f"Categories: {categories}",
+                    className="node-detail-desc",
+                    style={"color": "#94a3b8", "fontSize": "0.8rem"},
+                )
+            )
+
+        if sentiment is not None and sentiment != 0:
+            sentiment_label = (
+                "positive"
+                if sentiment > 0.1
+                else ("negative" if sentiment < -0.1 else "neutral")
+            )
+            children.append(
+                html.P(
+                    f"Avg. sentiment: {sentiment} ({sentiment_label})",
+                    className="node-detail-desc",
+                    style={"color": "#94a3b8", "fontSize": "0.8rem"},
                 )
             )
 

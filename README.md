@@ -20,12 +20,12 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
 # 2. Configure
-cp .env.example .env  # Add GEMINI_API_KEY, PLAUD_ACCESS_TOKEN, etc.
+cp .env.example .env  # Add GEMINI_API_KEY, PLAUD_CLIENT_ID, PLAUD_CLIENT_SECRET, etc.
 
 # 3. Start Qdrant (Docker)
 docker compose up -d
 
-# 4. Authenticate with Plaud (one-time)
+# 4. Authenticate with Plaud (one-time OAuth flow)
 python plaud_setup.py
 
 # 5. Run the pipeline
@@ -82,9 +82,11 @@ scripts/               → CLI tools
 src/chronos/           → Core engine
   ingest_service.py    → Fetch recordings from Plaud, store in SQLite
   transcript_processor → Process transcripts through Gemini AI
-  embedding_service.py → Gemini embedding batch processing
+  embedding_service.py — Gemini Embedding 2 multimodal (text+audio), L2 norm, MRL
   qdrant_client.py     → Native Qdrant client with temporal payload indexes
   graph_service.py     → Entity extraction and NetworkX graph building
+  graph_rag.py         → Graph-enhanced RAG with community detection
+  openai_service.py    → OpenAI Responses API wrapper (GPT-5.4 RAG)
 
 src/plaud_*.py         → Plaud API clients (OAuth, device, webhook, USB watcher)
 src/database/          → SQLAlchemy models & repositories
@@ -117,22 +119,28 @@ Configure in your MCP client:
 
 ## Key Technologies
 
-- **Gemini AI** — gemini-3-flash-preview (processing), gemini-embedding-001 (embeddings, 768-dim)
+- **Gemini AI** — `gemini-3-flash-preview` (processing), `gemini-3.1-pro-preview` (deep analysis), `gemini-embedding-2-preview` (multimodal embeddings)
+- **Gemini Embedding 2** — Multimodal (text + audio + image + video + PDF), MRL dims 128–3072, L2-normalized at 768-dim
+- **OpenAI GPT-5.4** — Flagship model for RAG responses (Responses API), 1.05M context, 128K output, reasoning levels
 - **Qdrant** — Vector database with temporal metadata indexes
 - **Dash + Cytoscape** — Interactive web UI with knowledge graph visualization
-- **FastMCP** — Model Context Protocol server for AI tool integration
+- **FastMCP** — Model Context Protocol server for AI tool integration (11 tools)
 - **SQLAlchemy + SQLite** — Local metadata storage (`data/brain.db`)
 
 ## Environment Variables
 
-| Variable              | Required | Description                      |
-| --------------------- | -------- | -------------------------------- |
-| `GEMINI_API_KEY`      | Yes      | Google Gemini API key            |
-| `PLAUD_ACCESS_TOKEN`  | Yes      | Plaud API access token           |
-| `QDRANT_HOST`         | No       | Qdrant host (default: localhost) |
-| `QDRANT_PORT`         | No       | Qdrant port (default: 6333)      |
-| `PLAUD_REFRESH_TOKEN` | No       | For automatic token refresh      |
-| `PLAUD_APP_ID`        | No       | Plaud OAuth app ID               |
+| Variable                  | Required | Description                                                |
+| ------------------------- | -------- | ---------------------------------------------------------- |
+| `GEMINI_API_KEY`          | Yes      | Google Gemini API key                                      |
+| `PLAUD_CLIENT_ID`         | Yes      | Plaud OAuth client ID                                      |
+| `PLAUD_CLIENT_SECRET`     | Yes      | Plaud OAuth client secret                                  |
+| `PLAUD_REDIRECT_URI`      | No       | OAuth callback (default: `http://localhost:8080/callback`) |
+| `QDRANT_URL`              | No       | Qdrant URL (default: `http://localhost:6333`)              |
+| `QDRANT_COLLECTION_NAME`  | No       | Collection name (default: `chronos_events`)                |
+| `CHRONOS_EMBEDDING_MODEL` | No       | Embedding model (default: `gemini-embedding-2-preview`)    |
+| `CHRONOS_EMBEDDING_DIM`   | No       | Embedding dim (default: 768, range 128–3072)               |
+| `OPENAI_API_KEY`          | No       | OpenAI API key for RAG responses (Responses API)           |
+| `OPENAI_MODEL`            | No       | OpenAI model (default: `gpt-5.4`)                          |
 
 ## Commands
 
@@ -145,6 +153,9 @@ python scripts/chronos_pipeline.py --ingest
 python scripts/chronos_pipeline.py --process
 python scripts/chronos_pipeline.py --index
 python scripts/chronos_pipeline.py --graph
+
+# Re-embed all events (after changing embedding model/dim)
+python scripts/chronos_pipeline.py --reindex
 
 # Launch UI
 python scripts/launch_app.py

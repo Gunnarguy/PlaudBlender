@@ -1,13 +1,77 @@
 """Search callbacks."""
 
-from dash import Input, Output, State, html, no_update, ALL, ctx
+from dash import Input, Output, State, html, dcc, no_update, ALL, ctx
 from dash.exceptions import PreventUpdate
 import logging
+import time
 
 from app_v2.services import get_data_service
 from app_v2.components import create_search_results
 
 logger = logging.getLogger(__name__)
+
+
+def _build_ai_answer_section(question: str, results) -> html.Div:
+    """Try OpenAI Responses API for a conversational answer. Returns Div or None."""
+    from src.config import get_settings
+
+    settings = get_settings()
+    if not settings.openai_api_key:
+        return None
+
+    try:
+        from src.chronos.openai_service import OpenAIResponseService
+
+        svc = OpenAIResponseService()
+        if not svc.available:
+            return None
+
+        context_events = []
+        for r in results:
+            e = r.event
+            context_events.append(
+                {
+                    "date": e.start_ts.strftime("%Y-%m-%d"),
+                    "time": f"{e.start_ts.strftime('%H:%M')}-{e.end_ts.strftime('%H:%M')}",
+                    "category": e.category,
+                    "text": e.clean_text,
+                }
+            )
+
+        t0 = time.time()
+        result = svc.ask(question, context_events)
+        latency_ms = int((time.time() - t0) * 1000)
+
+        if "error" in result:
+            logger.warning(f"OpenAI ask failed: {result['error']}")
+            return None
+
+        usage = result.get("usage", {})
+        model = result.get("model", settings.openai_model)
+
+        return html.Div(
+            className="ai-answer-section",
+            children=[
+                html.Div(
+                    className="ai-answer-header",
+                    children=[
+                        html.Span("🧠", className="ai-icon"),
+                        html.Span("Chronos AI", className="ai-label"),
+                        html.Span(
+                            f"{model} · {latency_ms}ms · {usage.get('total_tokens', '?')} tokens",
+                            className="ai-meta",
+                        ),
+                    ],
+                ),
+                dcc.Markdown(
+                    result["answer"],
+                    className="ai-answer-body",
+                ),
+            ],
+        )
+    except Exception as exc:
+        logger.warning(f"AI answer generation failed: {exc}")
+        return None
 
 
 def register_search_callbacks(app):
@@ -84,7 +148,14 @@ def register_search_callbacks(app):
             )
 
         # Create results UI
-        results_ui = [create_search_results(results, query)]
+        results_ui = []
+
+        # Add AI conversational answer (if OpenAI configured)
+        ai_section = _build_ai_answer_section(query, results)
+        if ai_section:
+            results_ui.append(ai_section)
+
+        results_ui.append(create_search_results(results, query))
 
         return query, results_ui, {"display": "block"}
 
@@ -92,15 +163,27 @@ def register_search_callbacks(app):
         Output("search-results-container", "style", allow_duplicate=True),
         Output("search-input", "value"),
         Output("clear-search-btn", "style"),
+        Output("filter-category", "value"),
+        Output("filter-date-range", "start_date"),
+        Output("filter-date-range", "end_date"),
+        Output("search-filters", "style", allow_duplicate=True),
         Input("clear-search-btn", "n_clicks"),
         prevent_initial_call=True,
     )
     def clear_search(n_clicks):
-        """Clear search results."""
+        """Clear search results and reset all filters."""
         if not n_clicks:
             raise PreventUpdate
 
-        return {"display": "none"}, "", {"display": "none"}
+        return (
+            {"display": "none"},  # hide results
+            "",  # clear input
+            {"display": "none"},  # hide clear button
+            [],  # reset category filter
+            None,  # reset start date
+            None,  # reset end date
+            {"display": "none"},  # hide filters panel
+        )
 
     @app.callback(
         Output("selected-recording", "data", allow_duplicate=True),

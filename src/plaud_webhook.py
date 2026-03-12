@@ -27,6 +27,7 @@ import os
 import hmac
 import hashlib
 import logging
+import uuid
 from typing import Optional, Dict, Any, Callable, List
 from dataclasses import dataclass, field
 from enum import Enum
@@ -128,8 +129,21 @@ class PlaudWebhookHandler:
 
         if not self.webhook_secret:
             logger.warning(
-                "PLAUD_WEBHOOK_SECRET not set - signature verification will be skipped"
+                "PLAUD_WEBHOOK_SECRET not set - signature verification is disabled"
             )
+
+    @staticmethod
+    def _normalize_signature(signature_header: str) -> str:
+        """Normalize Plaud signature header value.
+
+        Supports both raw hex and prefixed formats like `sha256=<hex>`.
+        """
+        value = signature_header.strip()
+        if "=" in value:
+            prefix, maybe_sig = value.split("=", 1)
+            if prefix.lower() in {"sha256", "hmac-sha256", "v1"} and maybe_sig:
+                return maybe_sig.strip()
+        return value
 
     def verify_signature(
         self, payload_body: bytes, signature_header: Optional[str]
@@ -159,8 +173,9 @@ class PlaudWebhookHandler:
                 digestmod=hashlib.sha256,
             )
             expected_signature = hash_object.hexdigest()
+            provided_signature = self._normalize_signature(signature_header)
 
-            if hmac.compare_digest(expected_signature, signature_header):
+            if hmac.compare_digest(expected_signature, provided_signature):
                 return True
             else:
                 logger.warning("Signature mismatch")
@@ -179,7 +194,12 @@ class PlaudWebhookHandler:
         Returns:
             Parsed PlaudEvent
         """
-        event_type_str = payload.get("event_type", "unknown")
+        event_type_str = (
+            payload.get("event_type")
+            or payload.get("type")
+            or payload.get("event")
+            or "unknown"
+        )
 
         # Try to match event type
         try:
@@ -200,9 +220,14 @@ class PlaudWebhookHandler:
 
         return PlaudEvent(
             event_type=event_type,
-            event_id=payload.get("event_id") or payload.get("id") or "",
+            event_id=(
+                payload.get("event_id")
+                or payload.get("id")
+                or payload.get("request_id")
+                or str(uuid.uuid4())
+            ),
             timestamp=timestamp,
-            data=payload.get("data", {}),
+            data=payload.get("data") or payload.get("payload") or {},
             raw_payload=payload,
         )
 

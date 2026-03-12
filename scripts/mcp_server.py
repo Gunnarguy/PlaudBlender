@@ -126,19 +126,24 @@ async def search_events(
 
         output = []
         for r in results:
-            if date_from and r.date < date_from:
+            e = r.event
+            date_str = e.start_ts.strftime("%Y-%m-%d")
+            if date_from and date_str < date_from:
                 continue
-            if date_to and r.date > date_to:
+            if date_to and date_str > date_to:
                 continue
+            time_str = f"{e.start_ts.strftime('%H:%M')}-{e.end_ts.strftime('%H:%M')}"
+            # Title: first sentence or first 80 chars of clean_text
+            title = e.clean_text.split(".")[0][:80] if e.clean_text else "Untitled"
             output.append(
                 {
-                    "title": r.title,
-                    "summary": r.summary,
-                    "date": r.date,
-                    "time": r.time_range_formatted,
-                    "category": r.category,
+                    "title": title,
+                    "summary": e.clean_text[:300] if e.clean_text else "",
+                    "date": date_str,
+                    "time": time_str,
+                    "category": e.category,
                     "score": round(r.score, 3) if r.score else None,
-                    "recording_id": r.recording_id,
+                    "recording_id": e.recording_id,
                 }
             )
 
@@ -164,22 +169,24 @@ async def get_recording(recording_id: str) -> str:
 
         events = []
         for ev in detail.events:
+            title = ev.clean_text.split(".")[0][:80] if ev.clean_text else "Untitled"
             events.append(
                 {
-                    "title": ev.title,
-                    "summary": ev.summary,
+                    "title": title,
+                    "summary": ev.clean_text[:300] if ev.clean_text else "",
                     "category": ev.category,
-                    "start_time": ev.start_ts,
-                    "end_time": ev.end_ts,
+                    "start_time": ev.start_ts.isoformat(),
+                    "end_time": ev.end_ts.isoformat(),
                 }
             )
 
+        s = detail.summary
         result = {
-            "recording_id": detail.recording_id,
-            "date": detail.date,
-            "duration": detail.duration_formatted,
+            "recording_id": s.recording_id,
+            "date": s.start_time.strftime("%Y-%m-%d"),
+            "duration": s.duration_formatted,
             "event_count": len(events),
-            "top_category": detail.top_category,
+            "top_category": s.top_category,
             "categories": detail.category_percentages,
             "events": events,
         }
@@ -277,21 +284,28 @@ async def get_timeline(date: str = "", days: int = 1) -> str:
             if detail:
                 day_data = {"date": d, "recordings": []}
                 for rec in detail.recordings:
+                    # Fetch actual events for this recording
+                    rec_events = ds.get_events_for_recording(rec.recording_id)
                     events = []
-                    for ev in rec.events:
+                    for ev in rec_events:
+                        title = (
+                            ev.clean_text.split(".")[0][:80]
+                            if ev.clean_text
+                            else "Untitled"
+                        )
                         events.append(
                             {
-                                "title": ev.title,
-                                "summary": ev.summary,
+                                "title": title,
+                                "summary": ev.clean_text[:300] if ev.clean_text else "",
                                 "category": ev.category,
-                                "time": ev.time_range_formatted,
+                                "time": f"{ev.start_ts.strftime('%H:%M')}-{ev.end_ts.strftime('%H:%M')}",
                             }
                         )
                     day_data["recordings"].append(
                         {
                             "recording_id": rec.recording_id,
                             "duration": rec.duration_formatted,
-                            "event_count": len(events),
+                            "event_count": rec.event_count,
                             "top_category": rec.top_category,
                             "events": events,
                         }
@@ -319,26 +333,27 @@ async def get_stats() -> str:
         stats = ds.get_stats()
         db_stats = ds.get_recording_db_stats()
 
+        avg_per_day = (
+            round(stats.total_events / max(stats.total_days, 1), 1)
+            if stats.total_days
+            else 0
+        )
+
         result = {
             "recordings": {
-                "total": db_stats.get("total", 0),
+                "total": sum(db_stats.values()),
                 "completed": db_stats.get("completed", 0),
                 "failed": db_stats.get("failed", 0),
                 "pending": db_stats.get("pending", 0),
             },
             "events": {
                 "total": stats.total_events,
-                "total_hours": round(stats.total_hours, 1),
-                "categories": stats.category_counts,
+                "total_hours": round(stats.total_duration_hours, 1),
+                "categories": stats.categories,
             },
-            "top_day": stats.most_active_day,
-            "avg_events_per_day": (
-                round(stats.avg_events_per_day, 1) if stats.avg_events_per_day else 0
-            ),
-            "date_range": {
-                "earliest": stats.earliest_date,
-                "latest": stats.latest_date,
-            },
+            "top_day": stats.most_productive_day,
+            "avg_events_per_day": avg_per_day,
+            "total_days": stats.total_days,
         }
         return json.dumps(result, indent=2)
     except Exception as e:
@@ -510,15 +525,11 @@ async def system_status() -> str:
 
     # Gemini
     try:
-        import google.generativeai as genai
+        from src.chronos.genai_helpers import get_genai_client
 
-        api_key = os.getenv("GEMINI_API_KEY")
-        if api_key:
-            genai.configure(api_key=api_key)
-            models = list(genai.list_models())
-            status["gemini"] = {"status": "ok", "models_available": len(models)}
-        else:
-            status["gemini"] = {"status": "error", "message": "GEMINI_API_KEY not set"}
+        client = get_genai_client()
+        models = list(client.models.list())
+        status["gemini"] = {"status": "ok", "models_available": len(models)}
     except Exception as e:
         status["gemini"] = {"status": "error", "message": str(e)}
 
@@ -527,12 +538,12 @@ async def system_status() -> str:
         from src.config import get_settings
 
         settings = get_settings()
-        if settings.plaud_access_token:
-            status["plaud"] = {"status": "ok", "token_configured": True}
+        if settings.plaud_client_id and settings.plaud_client_secret:
+            status["plaud"] = {"status": "ok", "oauth_configured": True}
         else:
             status["plaud"] = {
                 "status": "warning",
-                "message": "No access token configured",
+                "message": "Plaud OAuth credentials not configured",
             }
     except Exception as e:
         status["plaud"] = {"status": "error", "message": str(e)}
@@ -541,27 +552,23 @@ async def system_status() -> str:
 
 
 @server.tool()
-async def ask_chronos(question: str) -> str:
+async def ask_chronos(question: str, reasoning: str = "none") -> str:
     """Ask a natural language question about your recordings and get an AI answer.
 
-    Uses semantic search to find relevant events, then synthesizes an answer
-    using Gemini AI. Good for questions like:
-    - "What did I discuss in meetings last week?"
-    - "What action items do I have?"
-    - "Summarize my work activities from January"
+    Uses semantic search to find relevant events, then synthesizes an answer.
+    Prefers OpenAI Responses API when available, falls back to Gemini.
 
     Args:
         question: Natural language question about your recordings
+        reasoning: Reasoning effort level for GPT-5.4: none, low, medium, high, xhigh
     """
     try:
-        import google.generativeai as genai
+        from src.config import get_settings
 
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            return json.dumps({"error": "GEMINI_API_KEY not set"})
+        settings = get_settings()
 
         ds = _get_data_service()
-        results = ds.search(question, limit=15)
+        results = ds.search(question, limit=15, task_type="QUESTION_ANSWERING")
 
         if not results:
             return json.dumps(
@@ -572,25 +579,68 @@ async def ask_chronos(question: str) -> str:
             )
 
         # Build context from search results
-        context_parts = []
+        context_events = []
         sources = []
         for r in results:
-            context_parts.append(
-                f"[{r.date} {r.time_range_formatted}] ({r.category}) {r.title}: {r.summary}"
+            e = r.event
+            date_str = e.start_ts.strftime("%Y-%m-%d")
+            time_str = f"{e.start_ts.strftime('%H:%M')}-{e.end_ts.strftime('%H:%M')}"
+            title = e.clean_text.split(".")[0][:80] if e.clean_text else "Untitled"
+            context_events.append(
+                {
+                    "date": date_str,
+                    "time": time_str,
+                    "category": e.category,
+                    "text": e.clean_text,
+                }
             )
             sources.append(
                 {
-                    "date": r.date,
-                    "title": r.title,
-                    "category": r.category,
+                    "date": date_str,
+                    "title": title,
+                    "category": e.category,
                     "score": round(r.score, 3) if r.score else None,
                 }
             )
 
-        context = "\n".join(context_parts)
+        # Try OpenAI Responses API first (avoids Gemini free tier cap)
+        if settings.openai_api_key:
+            try:
+                from src.chronos.openai_service import OpenAIResponseService
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
+                openai_svc = OpenAIResponseService()
+                result = openai_svc.ask(question, context_events, reasoning=reasoning)
+                if "error" not in result:
+                    return json.dumps(
+                        {
+                            "answer": result["answer"],
+                            "sources": sources[:5],
+                            "events_searched": len(results),
+                            "model": result.get("model", settings.openai_model),
+                            "usage": result.get("usage"),
+                        },
+                        indent=2,
+                    )
+                logger.warning(
+                    f"OpenAI failed, falling back to Gemini: {result['error']}"
+                )
+            except Exception as oe:
+                logger.warning(f"OpenAI unavailable, falling back to Gemini: {oe}")
+
+        # Fallback: Gemini
+        if not settings.gemini_api_key:
+            return json.dumps(
+                {
+                    "error": "No AI provider configured (set OPENAI_API_KEY or GEMINI_API_KEY)"
+                }
+            )
+
+        from src.chronos.genai_helpers import get_genai_client
+
+        context = "\n".join(
+            f"[{evt['date']} {evt['time']}] ({evt['category']}) {evt['text']}"
+            for evt in context_events
+        )
 
         prompt = f"""Based on the following events from the user's voice recordings,
 answer their question concisely and accurately. Only reference information that
@@ -604,7 +654,11 @@ QUESTION: {question}
 
 ANSWER:"""
 
-        response = model.generate_content(prompt)
+        client = get_genai_client()
+        response = client.models.generate_content(
+            model=settings.chronos_analyst_model,
+            contents=prompt,
+        )
         answer = response.text if response.text else "Unable to generate answer."
 
         return json.dumps(
@@ -612,6 +666,7 @@ ANSWER:"""
                 "answer": answer,
                 "sources": sources[:5],
                 "events_searched": len(results),
+                "model": settings.chronos_analyst_model,
             },
             indent=2,
         )

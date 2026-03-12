@@ -120,6 +120,9 @@ class ChronosRecording(Base):
     error_message = Column(Text, nullable=True)
     processed_at = Column(DateTime, nullable=True)
 
+    # Plaud AI Summary (fetched from Plaud cloud after workflow processing)
+    plaud_ai_summary = Column(Text, nullable=True)
+
     # Provenance
     ingested_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -159,6 +162,8 @@ class ChronosEvent(Base):
     category = Column(
         String, default="unknown", nullable=False
     )  # work, personal, meeting, etc.
+    # User-overridden category (takes precedence over Gemini-assigned)
+    user_category_override = Column(String, nullable=True)
 
     # Optional enrichment
     sentiment = Column(Float, nullable=True)  # -1.0 to 1.0

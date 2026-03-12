@@ -164,7 +164,32 @@ class ChronosIngestService:
         # Check if already ingested
         existing = get_chronos_recording(self.db, recording_id)
         if existing and not force_redownload:
-            logger.info(f"Recording {recording_id} already ingested, skipping")
+            # Even if already ingested, update the timestamp if it changed
+            # (e.g. we previously used created_at but now use start_at)
+            existing_ts = existing.created_at  # type: ignore[union-attr]
+            if (
+                existing_ts
+                and created_at
+                and abs((existing_ts - created_at).total_seconds()) > 3600
+            ):
+                logger.info(
+                    f"Recording {recording_id[:16]}: updating timestamp "
+                    f"{existing_ts.isoformat()[:10]} → {created_at.isoformat()[:10]}"
+                )
+                upsert_chronos_recording(
+                    session=self.db,
+                    recording_id=recording_id,
+                    created_at=created_at,
+                    duration_seconds=duration_ms // 1000,
+                    local_audio_path=str(existing.local_audio_path or ""),
+                    source=str(existing.source or "plaud"),
+                    device_id=device_id
+                    or (str(existing.device_id) if existing.device_id else None),
+                    title=title,
+                    checksum=str(existing.checksum) if existing.checksum else None,
+                )
+            else:
+                logger.debug(f"Recording {recording_id} already ingested, skipping")
             return (True, None)
 
         # Plaud currently does not reliably provide downloadable audio URLs.
@@ -255,11 +280,10 @@ class ChronosIngestService:
         try:
             if fetch_all_pages:
                 # Paginate through all recordings (using built-in pagination)
-                logger.info("Fetching ALL recordings...")
+                logger.info("Fetching ALL recordings from Plaud...")
                 recordings = self.plaud.list_recordings(fetch_all=True)
-                if limit:
-                    recordings = recordings[:limit]
-                    logger.info(f"Limited to {limit} recordings")
+                logger.info(f"Plaud returned {len(recordings)} total recordings")
+                # Do NOT cap with limit when fetching all — we want everything
             else:
                 # Single page fetch (most recent N only, max 20 per API)
                 page_size = min(limit, 20) if limit else 20
@@ -274,10 +298,16 @@ class ChronosIngestService:
         for rec_data in recordings:
             # Extract required fields from Plaud API list response
             recording_id = rec_data.get("id")
+            # Prefer start_at (actual recording time) over created_at (cloud sync time).
+            # The Plaud device batch-syncs recordings, so created_at is often days
+            # after the recording was actually made.
+            start_at_str = rec_data.get("start_at")
             created_at_str = rec_data.get("created_at")
+            timestamp_str = start_at_str or created_at_str
             # Duration is in milliseconds from API
             duration_ms = rec_data.get("duration", 0)
             serial_number = rec_data.get("serial_number")
+            title = rec_data.get("name")
 
             if not recording_id:
                 logger.warning(f"Skipping record with no ID: {rec_data}")
@@ -286,22 +316,29 @@ class ChronosIngestService:
 
             # Parse timestamp
             try:
-                created_at = datetime.fromisoformat(
-                    (created_at_str or "").replace("Z", "+00:00")
+                recording_time = datetime.fromisoformat(
+                    (timestamp_str or "").replace("Z", "+00:00")
                 )
             except Exception as e:
                 logger.error(f"Invalid timestamp for {recording_id}: {e}")
                 failure_count += 1
                 continue
 
+            if start_at_str and created_at_str and start_at_str != created_at_str:
+                logger.info(
+                    f"Recording {recording_id[:16]}: using start_at={start_at_str[:10]} "
+                    f"(created_at was {created_at_str[:10]})"
+                )
+
             # Store recording metadata (no audio download - we'll use transcripts)
             # Plaud doesn't provide audio downloads via API (presigned_url is null)
             # We process transcripts instead
             success, error = self.ingest_recording(
                 recording_id=recording_id,
-                created_at=created_at,
+                created_at=recording_time,
                 duration_ms=duration_ms,
                 device_id=serial_number,
+                title=title,
             )
 
             if success:
