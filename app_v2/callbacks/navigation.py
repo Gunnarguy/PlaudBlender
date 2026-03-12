@@ -320,6 +320,117 @@ def create_sync_view(service) -> html.Div:
 
     workflow_last_run = workflow_stats.get("last_submitted_at") or "Never"
 
+    # --- Plaud auth status ---
+    auth_connected = False
+    auth_detail = "Not configured"
+    auth_expiry_text = ""
+    try:
+        from src.plaud_oauth import PlaudOAuthClient
+
+        _oauth = PlaudOAuthClient()
+        _ts = _oauth.token_status
+        auth_connected = _ts.get("is_authenticated", False)
+        if auth_connected:
+            mins = _ts.get("expires_in_minutes")
+            if mins is not None:
+                auth_expiry_text = f"Token expires in {int(mins)} min"
+            else:
+                auth_expiry_text = "Token active"
+            auth_detail = auth_expiry_text
+        else:
+            auth_detail = "Not connected — click Connect to authenticate"
+    except Exception as _ae:
+        auth_detail = f"Config error: {_ae}"
+
+    auth_section = html.Div(
+        className="sync-status-card plaud-auth-card",
+        children=[
+            html.H4("🔐 Plaud Account"),
+            html.Div(
+                className="plaud-auth-row",
+                children=[
+                    html.Div(
+                        className="plaud-auth-status",
+                        children=[
+                            html.Span(
+                                "●",
+                                className="auth-dot",
+                                style={
+                                    "color": "#10b981" if auth_connected else "#ef4444",
+                                    "fontSize": "1.2rem",
+                                    "marginRight": "8px",
+                                },
+                            ),
+                            html.Span(
+                                "Connected" if auth_connected else "Disconnected",
+                                className="auth-status-text",
+                                style={
+                                    "fontWeight": "600",
+                                    "color": "#10b981" if auth_connected else "#ef4444",
+                                },
+                            ),
+                        ],
+                    ),
+                    html.Span(
+                        auth_detail,
+                        className="auth-detail-text",
+                        style={
+                            "color": "#94a3b8",
+                            "fontSize": "0.85rem",
+                        },
+                    ),
+                ],
+            ),
+            html.Div(
+                className="plaud-auth-actions",
+                children=[
+                    html.A(
+                        className="sync-action-btn plaud-connect-btn"
+                        + (" connected" if auth_connected else ""),
+                        href="/auth/plaud",
+                        target="_blank",
+                        children=[
+                            html.Span(
+                                "🔗" if not auth_connected else "🔄",
+                                className="btn-icon",
+                            ),
+                            html.Span(
+                                (
+                                    "Connect Plaud Account"
+                                    if not auth_connected
+                                    else "Reconnect"
+                                ),
+                                className="btn-text",
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            *(
+                [
+                    html.P(
+                        [
+                            "First time? Register ",
+                            html.Code("http://localhost:8050/auth/plaud/callback"),
+                            " as a redirect URI in your ",
+                            html.A(
+                                "Plaud Developer Portal",
+                                href="https://platform.plaud.ai/developer/portal",
+                                target="_blank",
+                                style={"color": "#60a5fa"},
+                            ),
+                            ".",
+                        ],
+                        className="sync-note",
+                        style={"marginTop": "10px"},
+                    ),
+                ]
+                if not auth_connected
+                else []
+            ),
+        ],
+    )
+
     return html.Div(
         className="sync-view",
         children=[
@@ -333,6 +444,8 @@ def create_sync_view(service) -> html.Div:
                     ),
                 ],
             ),
+            # Plaud account connection status
+            auth_section,
             # Pipeline status dashboard
             html.Div(
                 className="sync-status-card",

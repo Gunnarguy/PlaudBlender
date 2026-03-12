@@ -3169,6 +3169,43 @@ pre {
   margin: 0 auto;
 }
 
+/* Plaud auth card */
+.plaud-auth-card {
+  border-color: var(--border-primary);
+}
+
+.plaud-auth-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-8);
+  margin-bottom: var(--sp-12);
+}
+
+.plaud-auth-status {
+  display: flex;
+  align-items: center;
+}
+
+.plaud-auth-actions {
+  display: flex;
+  gap: var(--sp-8);
+}
+
+a.plaud-connect-btn {
+  text-decoration: none;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+a.plaud-connect-btn.connected {
+  opacity: 0.7;
+}
+
+a.plaud-connect-btn:hover {
+  opacity: 1;
+}
 .sync-status-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
