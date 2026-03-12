@@ -2174,61 +2174,58 @@ def register_navigation_callbacks(app):
             )
 
         if triggered == "do-sync-btn" and sync_clicks:
-            try:
+            # Launch pipeline in a background thread so the UI stays
+            # responsive and the 2-second progress poller can update live.
+            import threading
+
+            from src.chronos.pipeline_progress import progress, read_progress
+
+            # Don't start a second run if one is already going
+            cur = read_progress()
+            if cur and cur.get("status") == "running":
+                return html.Div(
+                    className="sync-info",
+                    children=[
+                        html.Span("⏳ Pipeline Already Running", className="success-icon"),
+                        html.P("Watch the progress panel below."),
+                    ],
+                )
+
+            _days = days_back or 7
+
+            def _run_pipeline():
                 from src.chronos.ingest_service import ChronosIngestService
                 from src.chronos.transcript_processor import TranscriptProcessor
                 from src.chronos.embedding_service import ChronosEmbeddingService
                 from src.chronos.qdrant_client import ChronosQdrantClient
-                from src.chronos.pipeline_progress import progress
                 from src.database.engine import SessionLocal
-                from src.database.chronos_repository import (
-                    get_pending_chronos_recordings,
-                    get_chronos_events_by_recording,
-                )
+                from src.database.chronos_repository import get_pending_chronos_recordings
                 from src.database.models import ChronosEvent as ChronosEventModel
                 import time as _time
 
                 db = SessionLocal()
-                steps = []
-                timings = []
                 try:
                     active_phases = ["ingest", "process", "index"]
                     progress.start_run(phases=active_phases, trigger="manual")
 
-                    # Phase 1: Ingest from Plaud
-                    t0 = _time.monotonic()
+                    # Phase 1: Ingest
                     progress.start_phase("ingest")
                     progress.update(step="Fetching recording list from Plaud…")
                     ingest_svc = ChronosIngestService(db_session=db)
-                    auth_warning = None
                     try:
                         success, failed = ingest_svc.ingest_recent_recordings(
-                            days_back=days_back or 7, fetch_all_pages=True
+                            days_back=_days, fetch_all_pages=True
                         )
+                        progress.finish_phase(summary=f"{success} ingested, {failed} failed")
                     except Exception as auth_err:
-                        # Catch ALL ingest errors (auth, network, API) —
-                        # don't let ingest failure kill process/index phases.
-                        auth_warning = str(auth_err)
-                        success, failed = 0, 0
-                    t_ingest = _time.monotonic() - t0
-                    timings.append(("Ingest", t_ingest))
-                    if auth_warning:
-                        steps.append(f"⚠️ Plaud Auth Failed: {auth_warning}")
-                    else:
-                        steps.append(f"📥 Ingested: {success} new, {failed} failed")
-                    progress.finish_phase(
-                        summary=f"{success} ingested, {failed} failed"
-                    )
+                        progress.finish_phase(summary=f"⚠️ {auth_err}")
 
-                    # Phase 2: Process pending through Gemini
-                    t0 = _time.monotonic()
+                    # Phase 2: Process
                     pending = get_pending_chronos_recordings(db)
                     progress.start_phase("process", total_items=len(pending))
                     if pending:
                         processor = TranscriptProcessor(db_session=db)
-                        processed = 0
-                        proc_failed = 0
-                        proc_errors = []
+                        processed = proc_failed = 0
                         for i, rec in enumerate(pending):
                             rec_id = str(rec.recording_id)
                             progress.update(
@@ -2236,195 +2233,87 @@ def register_navigation_callbacks(app):
                                 item=rec_id[:20],
                             )
                             try:
-                                ok = processor.process_recording_id(rec_id)
-                                if ok:
+                                if processor.process_recording_id(rec_id):
                                     processed += 1
-                                    progress.advance(
-                                        item=rec_id[:20], step=f"✅ {processed} done"
-                                    )
                                 else:
                                     proc_failed += 1
-                                    proc_errors.append(rec_id[:16])
-                                    progress.advance(
-                                        item=rec_id[:20], step=f"❌ failed"
-                                    )
-                            except Exception as e:
-                                logger.error(f"Process error: {e}")
+                            except Exception:
                                 proc_failed += 1
-                                proc_errors.append(f"{rec_id[:16]}: {str(e)[:40]}")
-                                progress.advance(item=rec_id[:20])
-                        t_process = _time.monotonic() - t0
-                        timings.append(("Process", t_process))
-                        step_msg = f"🧠 Processed: {processed} recordings"
-                        if proc_failed:
-                            step_msg += f" ({proc_failed} failed)"
-                        steps.append(step_msg)
-                        if proc_errors:
-                            steps.append(f"   └ Errors: {'; '.join(proc_errors[:3])}")
-                        progress.finish_phase(
-                            summary=f"{processed} processed, {proc_failed} failed"
-                        )
+                            progress.advance(item=rec_id[:20])
+                        progress.finish_phase(summary=f"{processed} processed, {proc_failed} failed")
                     else:
-                        t_process = _time.monotonic() - t0
-                        timings.append(("Process", t_process))
-                        steps.append("🧠 No pending recordings to process")
                         progress.finish_phase(summary="No pending recordings")
 
-                    # Phase 3: Index to Qdrant
-                    t0 = _time.monotonic()
+                    # Phase 3: Index
                     progress.start_phase("index")
                     try:
                         embedder = ChronosEmbeddingService()
                         qdrant = ChronosQdrantClient()
-
-                        # Find events not yet in Qdrant
-                        all_events = (
+                        unindexed = (
                             db.query(ChronosEventModel)
                             .filter(ChronosEventModel.qdrant_point_id.is_(None))
                             .all()
                         )
-                        unindexed = all_events
-                        progress.update(
-                            total=len(unindexed), step="Generating embeddings…"
-                        )
-
+                        progress.update(total=len(unindexed), step="Generating embeddings…")
                         if unindexed:
                             texts = [str(e.clean_text) for e in unindexed]
-                            vectors = embedder.embed_batch(
-                                texts, task_type="RETRIEVAL_DOCUMENT"
-                            )
-
+                            vectors = embedder.embed_batch(texts, task_type="RETRIEVAL_DOCUMENT")
                             from src.models.chronos_schemas import ChronosEvent as CE
-
                             indexed = 0
                             for event, vector in zip(unindexed, vectors):
                                 try:
                                     schema_event = CE(
                                         event_id=str(event.event_id),
                                         recording_id=str(event.recording_id),
-                                        start_ts=event.start_ts,  # type: ignore[arg-type]
-                                        end_ts=event.end_ts,  # type: ignore[arg-type]
-                                        day_of_week=str(event.day_of_week),  # type: ignore[arg-type]
-                                        hour_of_day=int(event.hour_of_day),  # type: ignore[arg-type]
+                                        start_ts=event.start_ts,
+                                        end_ts=event.end_ts,
+                                        day_of_week=str(event.day_of_week),
+                                        hour_of_day=int(event.hour_of_day),
                                         clean_text=str(event.clean_text),
-                                        category=str(event.category),  # type: ignore[arg-type]
-                                        sentiment=float(event.sentiment or 0.0),  # type: ignore[arg-type]
-                                        keywords=list(event.keywords or []),  # type: ignore[arg-type]
-                                        speaker=str(event.speaker or "unknown"),  # type: ignore[arg-type]
-                                        raw_transcript_snippet=str(event.raw_transcript_snippet) if event.raw_transcript_snippet else None,  # type: ignore[truthy-bool]
-                                        gemini_reasoning=str(event.gemini_reasoning) if event.gemini_reasoning else None,  # type: ignore[truthy-bool]
+                                        category=str(event.category),
+                                        sentiment=float(event.sentiment or 0.0),
+                                        keywords=list(event.keywords or []),
+                                        speaker=str(event.speaker or "unknown"),
+                                        raw_transcript_snippet=str(event.raw_transcript_snippet) if event.raw_transcript_snippet else None,
+                                        gemini_reasoning=str(event.gemini_reasoning) if event.gemini_reasoning else None,
                                     )
                                     point_id = qdrant.upsert_event(schema_event, vector)
-                                    event.qdrant_point_id = point_id  # type: ignore[assignment]
+                                    event.qdrant_point_id = point_id
                                     db.commit()
                                     indexed += 1
+                                    progress.advance(item=f"{indexed} indexed")
                                 except Exception as e:
                                     logger.error(f"Index error: {e}")
-                            steps.append(f"📊 Indexed: {indexed} events to Qdrant")
+                                    progress.advance(item=f"error: {e}")
                             progress.finish_phase(summary=f"{indexed} events indexed")
                         else:
-                            steps.append("📊 All events already indexed")
                             progress.finish_phase(summary="All events already indexed")
-                        t_index = _time.monotonic() - t0
-                        timings.append(("Index", t_index))
                     except Exception as e:
-                        t_index = _time.monotonic() - t0
-                        timings.append(("Index", t_index))
-                        steps.append(f"📊 Indexing error: {str(e)[:60]}")
                         progress.finish_phase(error=str(e)[:100])
 
-                    # Refresh the data service cache
-                    service = get_data_service()
-                    service.refresh_cache()
-                    progress.finish_run()
-
-                    # Build telemetry section
-                    total_time = sum(t for _, t in timings)
-                    telemetry_children = [
-                        html.Div(
-                            className="sync-telemetry",
-                            children=[
-                                html.Span("⏱ ", className="telemetry-icon"),
-                                html.Span(
-                                    " · ".join(
-                                        f"{name}: {t:.1f}s" for name, t in timings
-                                    )
-                                    + f" · Total: {total_time:.1f}s",
-                                    className="telemetry-text",
-                                ),
-                            ],
-                        )
-                    ]
-
-                    # Build failed recording details (if any)
-                    failed_details = []
+                    # Refresh cache
                     try:
-                        import sqlalchemy as sa
-
-                        failed_rows = db.execute(
-                            sa.text(
-                                "SELECT recording_id, error_message FROM chronos_recordings "
-                                "WHERE processing_status = 'failed' LIMIT 5"
-                            )
-                        ).fetchall()
-                        if failed_rows:
-                            failed_details = [
-                                html.Div(
-                                    className="sync-failed-details",
-                                    children=[
-                                        html.Span(
-                                            "🔍 Failed recordings:",
-                                            style={"fontWeight": "600"},
-                                        ),
-                                        html.Ul(
-                                            [
-                                                html.Li(
-                                                    f"{row[0][:16]}… — {(row[1] or 'Unknown error')[:80]}",
-                                                    className="failed-detail-item",
-                                                )
-                                                for row in failed_rows
-                                            ]
-                                        ),
-                                    ],
-                                )
-                            ]
+                        service = get_data_service()
+                        service.refresh_cache()
                     except Exception:
                         pass
-
-                    return html.Div(
-                        className="sync-success",
-                        children=[
-                            html.Span(
-                                "✅ Full Pipeline Complete!", className="success-icon"
-                            ),
-                        ]
-                        + [html.P(step) for step in steps]
-                        + telemetry_children
-                        + failed_details
-                        + [
-                            html.P(
-                                "Refresh the page to see updated data.",
-                                className="sync-note",
-                            ),
-                        ],
-                    )
+                    progress.finish_run()
+                except Exception as e:
+                    logger.error(f"Pipeline thread error: {e}")
+                    progress.finish_run(error=str(e))
                 finally:
                     db.close()
-            except Exception as e:
-                logger.error(f"Sync error: {e}")
-                try:
-                    from src.chronos.pipeline_progress import progress as _p
 
-                    _p.finish_run(error=str(e))
-                except Exception:
-                    pass
-                return html.Div(
-                    className="sync-error",
-                    children=[
-                        html.Span("❌ Pipeline Failed", className="error-icon"),
-                        html.P(str(e)),
-                    ],
-                )
+            t = threading.Thread(target=_run_pipeline, daemon=True, name="pipeline-sync")
+            t.start()
+
+            return html.Div(
+                className="sync-info",
+                children=[
+                    html.Span("🚀 Pipeline Started!", className="success-icon"),
+                    html.P("Watch the live progress panel below."),
+                ],
+            )
 
         raise PreventUpdate
 
