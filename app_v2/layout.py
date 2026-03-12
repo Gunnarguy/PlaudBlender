@@ -12,13 +12,21 @@ def create_layout() -> html.Div:
         className="chronos-app",
         children=[
             # Stores for state management
-            dcc.Store(id="current-view", data="days"),
+            dcc.Store(id="current-view", data="timeline"),
             dcc.Store(id="selected-recording", data=None),
             dcc.Store(id="selected-topic", data=None),
             dcc.Store(id="search-query", data=None),
             dcc.Store(id="days-data", data=None),
+            dcc.Store(id="app-preferences", storage_type="local", data=None),
             # Auto-refresh interval (every 60 seconds)
             dcc.Interval(id="auto-refresh", interval=60000, n_intervals=0),
+            # Pipeline progress polling (2s while running, self-disables when idle)
+            dcc.Interval(
+                id="pipeline-progress-poll",
+                interval=2000,
+                n_intervals=0,
+                disabled=False,
+            ),
             # Sidebar navigation
             create_sidebar(),
             # Main content area
@@ -56,6 +64,8 @@ def create_layout() -> html.Div:
                 id="detail-panel",
                 className="detail-panel",
             ),
+            # Category save status toast
+            html.Div(id="category-save-status", className="save-status-toast"),
             # Loading overlay
             dcc.Loading(
                 id="loading-overlay",

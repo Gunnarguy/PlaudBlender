@@ -44,6 +44,7 @@ from src.chronos.genai_helpers import (
     list_model_names,
     pick_first_available,
 )
+from src.chronos.pipeline_progress import progress as pipeline_progress
 
 logging.basicConfig(
     level=logging.INFO,
@@ -218,6 +219,8 @@ def run_ingest(session, limit: int = 100, *, fetch_all_pages: bool = False) -> i
     print("Fetching recordings from Plaud...")
 
     start_time = time.time()
+    pipeline_progress.start_phase("ingest")
+    pipeline_progress.update(step="Fetching recording list from Plaud…")
 
     service = ChronosIngestService(db_session=session)
 
@@ -231,6 +234,9 @@ def run_ingest(session, limit: int = 100, *, fetch_all_pages: bool = False) -> i
 
     elapsed = time.time() - start_time
     print_phase_complete("Ingest", success_count, elapsed)
+    pipeline_progress.finish_phase(
+        summary=f"{success_count} ingested, {failure_count} failed"
+    )
 
     if failure_count > 0:
         print(f"⚠️  {failure_count} recordings failed to ingest")
@@ -250,6 +256,7 @@ def run_process(
 
     start_time = time.time()
     processor = TranscriptProcessor(db_session=session)
+    pipeline_progress.start_phase("process")
 
     if recording_id:
         print(f"Processing single recording: {recording_id[:20]}...")
@@ -266,6 +273,7 @@ def run_process(
         total = len(pending)
 
         print(f"Found {total} pending recordings")
+        pipeline_progress.update(total=total, step=f"Found {total} pending recordings")
 
         if not pending:
             print("✓ No pending recordings to process")
@@ -285,10 +293,15 @@ def run_process(
                 flush=True,
             )
             print(f"   🔄 Fetching transcript from Plaud...", flush=True)
+            pipeline_progress.update(
+                step=f"Recording {i+1}/{total}: fetching transcript…",
+                item=rec_id[:20],
+            )
 
             try:
                 # This is the slow part - show we're calling Gemini
                 print(f"   🧠 Sending to Gemini AI...", flush=True)
+                pipeline_progress.update(step=f"Recording {i+1}/{total}: Gemini AI…")
                 proc_start = time.time()
 
                 # Heartbeat thread to show we're still alive
@@ -320,14 +333,19 @@ def run_process(
                     print(
                         f"   ✅ Done! Extracted events in {proc_time:.1f}s", flush=True
                     )
+                    pipeline_progress.advance(
+                        item=rec_id[:20], step=f"✅ {success_count} done"
+                    )
                 else:
                     failure_count += 1
                     print(f"   ❌ Failed after {proc_time:.1f}s", flush=True)
+                    pipeline_progress.advance(item=rec_id[:20], step=f"❌ failed")
                     session.rollback()  # Clear any failed transaction state
             except Exception as e:
                 logger.error(f"Error processing {rec_id}: {e}")
                 failure_count += 1
                 print(f"   ❌ Error: {str(e)[:60]}", flush=True)
+                pipeline_progress.advance(item=rec_id[:20])
                 session.rollback()  # Clear any failed transaction state
 
             # Overall progress bar
@@ -341,6 +359,9 @@ def run_process(
 
     elapsed = time.time() - start_time
     print_phase_complete("Process", success_count, elapsed)
+    pipeline_progress.finish_phase(
+        summary=f"{success_count} processed, {failure_count} failed"
+    )
 
     if failure_count > 0:
         print(f"⚠️  {failure_count} recordings failed")
@@ -362,6 +383,7 @@ def run_index(
     print_phase_header("PHASE 3: INDEX (Qdrant)", "📤")
 
     start_time = time.time()
+    pipeline_progress.start_phase("index")
 
     from src.database.models import ChronosEvent as ChronosEventDB
     from src.chronos.qdrant_client import ChronosQdrantClient
@@ -375,7 +397,7 @@ def run_index(
     # Ensure collection exists
     print("Ensuring collection exists...")
     try:
-        qdrant.create_collection(vector_size=768, force_recreate=False)
+        qdrant.create_collection(force_recreate=False)
     except Exception as e:
         logger.warning(f"Collection may already exist: {e}")
 
@@ -388,10 +410,12 @@ def run_index(
 
     if not events_to_index:
         print("✓ No events to index")
+        pipeline_progress.finish_phase(summary="No events to index")
         return 0
 
     total = len(events_to_index)
     print(f"Found {total} events to index")
+    pipeline_progress.update(total=total, step=f"Validating {total} events…")
 
     # Convert to Pydantic for validation
     from src.models.chronos_schemas import (
@@ -440,24 +464,74 @@ def run_index(
         return 0
 
     # Generate embeddings with progress
+    #
+    # When using gemini-embedding-2-preview with audio files available,
+    # we create fused text+audio embeddings per-event. Otherwise we
+    # fall back to the fast text-only batch path.
     print(f"\n\n🔮 Generating embeddings for {len(pydantic_events)} events...")
+    pipeline_progress.update(
+        step=f"Generating embeddings for {len(pydantic_events)} events…"
+    )
     embed_start = time.time()
-    texts = [event.clean_text for event in pydantic_events]
 
-    # Batch embedding with progress
-    batch_size = 20
-    embeddings = []
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
-        print_progress(
-            "Embed",
-            i,
-            len(texts),
-            f"batch {i//batch_size + 1}",
-            time.time() - embed_start,
+    use_multimodal = embedder.supports_multimodal
+    if use_multimodal:
+        # Build a map of recording_id → local_audio_path for audio lookup
+        from src.database.models import (
+            ChronosRecording as ChronosRecordingDB,
         )
-        batch_embeddings = embedder.embed_batch(batch, task_type="RETRIEVAL_DOCUMENT")
-        embeddings.extend(batch_embeddings)
+
+        rec_ids = {e.recording_id for e in pydantic_events}
+        audio_map: dict[str, str] = {}
+        for rec in (
+            session.query(ChronosRecordingDB)
+            .filter(ChronosRecordingDB.recording_id.in_(rec_ids))
+            .all()
+        ):
+            if rec.local_audio_path:
+                audio_map[rec.recording_id] = rec.local_audio_path
+
+        audio_count = sum(1 for e in pydantic_events if e.recording_id in audio_map)
+        print(
+            f"  Multimodal mode: {audio_count}/{len(pydantic_events)} events "
+            f"have audio → fused text+audio embeddings"
+        )
+
+        embeddings = []
+        for i, event in enumerate(pydantic_events):
+            if (i + 1) % 5 == 0 or i == 0:
+                print_progress(
+                    "Embed",
+                    i,
+                    len(pydantic_events),
+                    "multimodal" if event.recording_id in audio_map else "text",
+                    time.time() - embed_start,
+                )
+            audio_path = audio_map.get(event.recording_id, "")
+            vec = embedder.embed_text_with_audio(
+                text=event.clean_text,
+                audio_path=audio_path,
+                task_type="RETRIEVAL_DOCUMENT",
+            )
+            embeddings.append(vec)
+    else:
+        # Text-only batch path (fast, works with embedding-001 too)
+        texts = [event.clean_text for event in pydantic_events]
+        batch_size = 20
+        embeddings = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            print_progress(
+                "Embed",
+                i,
+                len(texts),
+                f"batch {i//batch_size + 1}",
+                time.time() - embed_start,
+            )
+            batch_embeddings = embedder.embed_batch(
+                batch, task_type="RETRIEVAL_DOCUMENT"
+            )
+            embeddings.extend(batch_embeddings)
 
     print_progress(
         "Embed", len(texts), len(texts), "complete", time.time() - embed_start
@@ -488,6 +562,7 @@ def run_index(
 
     elapsed = time.time() - start_time
     print_phase_complete("Index", indexed_count, elapsed)
+    pipeline_progress.finish_phase(summary=f"{indexed_count} events indexed")
     return indexed_count
 
 
@@ -528,10 +603,14 @@ def run_graph(
 
     events_to_process = q.limit(limit * 10).all()
 
+    pipeline_progress.start_phase("graph", total_items=0)
+
     if not events_to_process:
         logger.info("No events to process for graph extraction")
+        pipeline_progress.finish_phase(summary="No events to process")
         return 0
 
+    pipeline_progress.update(total=len(events_to_process), step="Converting events")
     logger.info(f"Processing {len(events_to_process)} events for graph extraction")
 
     # Convert to Pydantic
@@ -561,9 +640,13 @@ def run_graph(
             continue
 
     # Extract entities and build graph
+    pipeline_progress.update(
+        step="Extracting entities", item=f"{len(pydantic_events)} events"
+    )
     entities, graph = graph_extractor.extract_from_events(pydantic_events)
 
     # Detect communities
+    pipeline_progress.update(step="Detecting communities")
     communities = graph_extractor.detect_communities(graph)
 
     # Save graph to cache
@@ -585,8 +668,44 @@ def run_graph(
     logger.info(
         f"Graph stats: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges"
     )
+    pipeline_progress.finish_phase(
+        summary=f"{graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges"
+    )
 
     return len(pydantic_events)
+
+
+def run_refresh_workflows(session, *, days_back: int = 30, limit: int = 10) -> int:
+    """Refresh pending Plaud workflow statuses and persist artifacts.
+
+    Returns:
+        int: Number of workflows checked
+    """
+    print_phase_header("PLAUD WORKFLOW REFRESH", "🔄")
+    print(f"Checking workflow statuses (last {days_back} days, limit {limit})...")
+    pipeline_progress.start_phase("refresh-workflows")
+    pipeline_progress.update(step="Checking workflow statuses")
+
+    start_time = time.time()
+
+    from app_v2.services.data_service import ChronosDataService
+
+    service = ChronosDataService()
+    result = service.refresh_plaud_workflow_statuses(days_back=days_back, limit=limit)
+
+    completed = len(result.get("completed", []))
+    pending = len(result.get("pending", []))
+    failed = len(result.get("failed", []))
+    total = completed + pending + failed
+
+    elapsed = time.time() - start_time
+    print(f"  ✅ Completed: {completed} | ⏳ Pending: {pending} | ❌ Failed: {failed}")
+    print(f"  ⏱️  {elapsed:.1f}s")
+    pipeline_progress.finish_phase(
+        summary=f"{completed} completed, {pending} pending, {failed} failed"
+    )
+
+    return total
 
 
 def main():
@@ -626,6 +745,17 @@ def main():
         action="store_true",
         help="For --ingest: paginate through ALL recordings in Plaud account (not just most recent 100)",
     )
+    parser.add_argument(
+        "--reindex",
+        action="store_true",
+        help="Recreate Qdrant collection and re-embed ALL events. "
+        "Required when switching embedding models (e.g. embedding-001 → embedding-2-preview).",
+    )
+    parser.add_argument(
+        "--refresh-workflows",
+        action="store_true",
+        help="Check pending Plaud cloud workflow statuses and persist completed results.",
+    )
 
     args = parser.parse_args()
 
@@ -639,6 +769,8 @@ def main():
             args.index,
             args.graph,
             args.full,
+            args.reindex,
+            args.refresh_workflows,
         ]
     ):
         parser.print_help()
@@ -653,13 +785,55 @@ def main():
         if code != 0:
             raise SystemExit(code)
 
+    # Determine which phases will run
+    phases = []
+    if args.reindex:
+        phases.append("index")
+    if args.full or args.ingest:
+        phases.append("ingest")
+    if args.full or args.process:
+        phases.append("process")
+    if args.full or args.index:
+        phases.append("index")
+    if args.full or args.graph:
+        phases.append("graph")
+    if args.full or args.refresh_workflows:
+        phases.append("refresh-workflows")
+    # Deduplicate while preserving order
+    phases = list(dict.fromkeys(phases))
+    pipeline_progress.start_run(phases=phases, trigger="cli")
+
     # Initialize database
     init_db()
     session = SessionLocal()
 
     try:
+        if args.reindex:
+            from src.database.models import ChronosEvent as ChronosEventDB
+
+            print_phase_header("REINDEX: Rebuild Qdrant with new embedding model", "🔄")
+            print(
+                "  Clearing all qdrant_point_id values so every event gets re-embedded."
+            )
+            count = (
+                session.query(ChronosEventDB)
+                .filter(ChronosEventDB.qdrant_point_id.isnot(None))
+                .update({ChronosEventDB.qdrant_point_id: None})
+            )
+            session.commit()
+            print(f"  Cleared {count} events — they will be re-indexed.")
+
+            from src.chronos.qdrant_client import ChronosQdrantClient
+
+            qdrant = ChronosQdrantClient()
+            qdrant.create_collection(force_recreate=True)
+            print("  Qdrant collection recreated. Running index phase now...\n")
+            run_index(session, limit=999_999)
+
         if args.full or args.ingest:
-            run_ingest(session, limit=args.limit, fetch_all_pages=bool(args.fetch_all))
+            # --full always fetches all pages; --ingest alone respects --fetch-all flag
+            fetch_all = True if args.full else bool(args.fetch_all)
+            run_ingest(session, limit=args.limit, fetch_all_pages=fetch_all)
 
         if args.full or args.process:
             run_process(
@@ -675,10 +849,17 @@ def main():
         if args.full or args.graph:
             run_graph(session, limit=args.limit, recording_id=args.recording_id)
 
+        if args.full or args.refresh_workflows:
+            run_refresh_workflows(session, days_back=30, limit=args.limit)
+
         logger.info("=" * 60)
         logger.info("PIPELINE COMPLETE")
         logger.info("=" * 60)
+        pipeline_progress.finish_run()
 
+    except Exception as e:
+        pipeline_progress.finish_run(error=str(e))
+        raise
     finally:
         session.close()
 
