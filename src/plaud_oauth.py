@@ -196,8 +196,9 @@ class PlaudOAuthClient:
             "Accept": "application/json",
         }
 
-        # Plaud docs: body is just code + redirect_uri (NO grant_type)
-        data = f"code={code}&redirect_uri={self.redirect_uri}"
+        # Plaud docs: body is code + redirect_uri (NO grant_type).
+        # Pass as dict so requests URL-encodes the values (colons, slashes).
+        data = {"code": code, "redirect_uri": self.redirect_uri}
 
         logger.info(
             "Token exchange → %s  redirect_uri=%s  code=%s…",
