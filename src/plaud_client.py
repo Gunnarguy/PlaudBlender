@@ -551,6 +551,252 @@ class PlaudClient:
 
         return stored
 
+    # -------------------- File Upload --------------------
+    def upload_file(
+        self,
+        file_path: str,
+        name: Optional[str] = None,
+        chunk_size: int = 5 * 1024 * 1024,  # 5MB chunks per Plaud spec
+        on_progress: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Upload a local audio file to Plaud cloud via multipart chunked upload.
+
+        Supports Opus and MP3 formats. Large files are uploaded in 5MB chunks.
+
+        Args:
+            file_path: Path to the audio file (opus/mp3)
+            name: Optional display name (defaults to filename)
+            chunk_size: Upload chunk size in bytes (default 5MB, Plaud spec)
+            on_progress: Optional callback(bytes_sent, total_bytes) for progress
+
+        Returns:
+            Dict with file_id and metadata from Plaud API
+
+        Raises:
+            FileNotFoundError: If file_path doesn't exist
+            ValueError: If file format not supported
+        """
+        import mimetypes
+        import hashlib
+
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        file_size = os.path.getsize(file_path)
+        filename = os.path.basename(file_path)
+        display_name = name or os.path.splitext(filename)[0]
+
+        # Validate format
+        ext = os.path.splitext(filename)[1].lower()
+        allowed_extensions = {".opus", ".mp3", ".wav", ".m4a", ".ogg"}
+        if ext not in allowed_extensions:
+            raise ValueError(
+                f"Unsupported format '{ext}'. Supported: {', '.join(sorted(allowed_extensions))}"
+            )
+
+        content_type = mimetypes.guess_type(filename)[0] or "audio/mpeg"
+
+        # Compute SHA256 for integrity
+        sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for block in iter(lambda: f.read(8192), b""):
+                sha256.update(block)
+        file_hash = sha256.hexdigest()
+
+        logger.info(
+            f"📤 Uploading {filename} ({file_size / 1024 / 1024:.1f} MB, {ext}) "
+            f"hash={file_hash[:16]}…"
+        )
+
+        # Single-request upload for small files, chunked for large
+        if file_size <= chunk_size:
+            return self._upload_single(file_path, display_name, content_type, file_hash)
+        else:
+            return self._upload_chunked(
+                file_path,
+                display_name,
+                content_type,
+                file_hash,
+                file_size,
+                chunk_size,
+                on_progress,
+            )
+
+    def _upload_single(
+        self, file_path: str, name: str, content_type: str, file_hash: str
+    ) -> Dict[str, Any]:
+        """Upload a small file in a single request."""
+        headers = self._get_headers()
+        # Remove Content-Type for multipart — requests sets it with boundary
+        headers.pop("Content-Type", None)
+
+        with open(file_path, "rb") as f:
+            files = {"file": (os.path.basename(file_path), f, content_type)}
+            data = {"name": name, "checksum": file_hash}
+            response = requests.post(
+                f"{PLAUD_API_BASE}/files/upload",
+                headers=headers,
+                files=files,
+                data=data,
+                timeout=120,
+            )
+
+        if response.status_code in (401, 422):
+            self.oauth.refresh_access_token()
+            headers = self._get_headers()
+            headers.pop("Content-Type", None)
+            with open(file_path, "rb") as f:
+                files = {"file": (os.path.basename(file_path), f, content_type)}
+                data = {"name": name, "checksum": file_hash}
+                response = requests.post(
+                    f"{PLAUD_API_BASE}/files/upload",
+                    headers=headers,
+                    files=files,
+                    data=data,
+                    timeout=120,
+                )
+
+        response.raise_for_status()
+        result = response.json()
+        file_id = result.get("id") or result.get("file_id")
+        logger.info(f"✅ Uploaded {name} → file_id={file_id}")
+        return result
+
+    def _upload_chunked(
+        self,
+        file_path: str,
+        name: str,
+        content_type: str,
+        file_hash: str,
+        file_size: int,
+        chunk_size: int,
+        on_progress: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Upload a large file in chunks (resumable multipart)."""
+        total_chunks = (file_size + chunk_size - 1) // chunk_size
+
+        # Step 1: Initiate multipart upload
+        init_resp = self._request(
+            "POST",
+            "/files/upload/init",
+            json={
+                "name": name,
+                "content_type": content_type,
+                "file_size": file_size,
+                "total_chunks": total_chunks,
+                "checksum": file_hash,
+            },
+        )
+        upload_id = init_resp.get("upload_id") or init_resp.get("id")
+
+        # Step 2: Upload each chunk
+        bytes_sent = 0
+        with open(file_path, "rb") as f:
+            for chunk_num in range(total_chunks):
+                chunk_data = f.read(chunk_size)
+                if not chunk_data:
+                    break
+
+                headers = self._get_headers()
+                headers.pop("Content-Type", None)
+
+                files = {
+                    "chunk": (
+                        f"chunk_{chunk_num}",
+                        chunk_data,
+                        "application/octet-stream",
+                    )
+                }
+                data = {
+                    "upload_id": upload_id,
+                    "chunk_number": chunk_num,
+                    "total_chunks": total_chunks,
+                }
+
+                resp = requests.post(
+                    f"{PLAUD_API_BASE}/files/upload/chunk",
+                    headers=headers,
+                    files=files,
+                    data=data,
+                    timeout=120,
+                )
+                resp.raise_for_status()
+
+                bytes_sent += len(chunk_data)
+                logger.info(
+                    f"  📦 Chunk {chunk_num + 1}/{total_chunks} "
+                    f"({bytes_sent / 1024 / 1024:.1f} MB)"
+                )
+                if on_progress:
+                    on_progress(bytes_sent, file_size)
+
+        # Step 3: Complete the upload
+        complete_resp = self._request(
+            "POST",
+            "/files/upload/complete",
+            json={"upload_id": upload_id, "checksum": file_hash},
+        )
+
+        file_id = complete_resp.get("id") or complete_resp.get("file_id")
+        logger.info(f"✅ Chunked upload complete: {name} → file_id={file_id}")
+        return complete_resp
+
+    def get_upload_candidates(
+        self, data_dir: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Find local audio files that exist only locally (USB-imported, not in cloud).
+
+        Scans the USB import directory and compares against cloud recordings.
+
+        Args:
+            data_dir: Directory to scan (defaults to data/raw/usb_import/)
+
+        Returns:
+            List of dicts with path, name, size_mb, format, and cloud_status
+        """
+        if data_dir is None:
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            data_dir = os.path.join(project_root, "data", "raw", "usb_import")
+
+        if not os.path.isdir(data_dir):
+            return []
+
+        # Get cloud recording names for dedup
+        cloud_names = set()
+        try:
+            cloud_recs = self.list_recordings(fetch_all=True)
+            for rec in cloud_recs:
+                n = rec.get("name") or rec.get("title") or ""
+                cloud_names.add(n.strip().lower())
+        except Exception:
+            pass
+
+        candidates = []
+        audio_extensions = {".opus", ".mp3", ".wav", ".m4a", ".ogg"}
+        for entry in os.scandir(data_dir):
+            if not entry.is_file():
+                continue
+            ext = os.path.splitext(entry.name)[1].lower()
+            if ext not in audio_extensions:
+                continue
+
+            display_name = os.path.splitext(entry.name)[0]
+            in_cloud = display_name.strip().lower() in cloud_names
+
+            candidates.append(
+                {
+                    "path": entry.path,
+                    "name": display_name,
+                    "filename": entry.name,
+                    "size_mb": round(entry.stat().st_size / 1024 / 1024, 2),
+                    "format": ext.lstrip("."),
+                    "in_cloud": in_cloud,
+                }
+            )
+
+        candidates.sort(key=lambda x: x["name"])
+        return candidates
+
     # -------------------- Helpers --------------------
     def _extract_summary(self, rec: dict) -> Optional[str]:
         """Best-effort extraction of Plaud-provided summary text from a recording payload."""

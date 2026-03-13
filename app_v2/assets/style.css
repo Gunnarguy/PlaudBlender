@@ -1970,6 +1970,29 @@ pre {
     background: var(--bg-tertiary);
 }
 
+/* Category confidence badge */
+.confidence-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono, monospace);
+}
+
+.confidence-badge.high {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.confidence-badge.medium {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.confidence-badge.low {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+}
 .event-text {
   font-size: var(--text-sm);
     line-height: 1.6;
@@ -3632,6 +3655,65 @@ a.plaud-connect-btn:hover {
     background: #0550ae;
   }
 
+/* Category definitions grid */
+.category-def-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.category-def-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-tertiary, #0d1117);
+  border-radius: 6px;
+}
+
+.category-color-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.category-def-label {
+  font-size: 0.82rem;
+  color: var(--text-primary, #e2e8f0);
+  font-weight: 500;
+}
+
+.category-def-key {
+  font-size: 0.7rem;
+  color: var(--text-muted, #94a3b8);
+  font-family: var(--font-mono, monospace);
+  margin-left: auto;
+}
+
+.settings-subsection-title {
+  font-size: 0.92rem;
+  color: var(--text-primary, #e2e8f0);
+  margin: 8px 0 4px;
+}
+
+.settings-divider {
+  border: none;
+  border-top: 1px solid var(--border-primary, #30363d);
+  margin: 14px 0;
+}
+
+.settings-input.wide {
+  width: 100%;
+  max-width: 400px;
+  padding: 6px 10px;
+  background: var(--bg-primary, #0d1117);
+  border: 1px solid var(--border-primary, #30363d);
+  border-radius: 6px;
+  color: var(--text-primary, #e2e8f0);
+  font-size: 0.85rem;
+}
   .settings-save-section {
     border-color: var(--accent-primary) !important;
     background: linear-gradient(135deg,
@@ -4203,6 +4285,27 @@ a.plaud-connect-btn:hover {
     font-style: italic;
 }
 
+.day-ai-summary-line {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.ai-summary-icon {
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+
+.day-ai-summary-text {
+  font-size: 0.76rem;
+  color: var(--text-secondary, #cbd5e1);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 420px;
+}
 /* ── Ambient context tags ──────────────────────────────────────────────────── */
 .recording-ambient {
   display: flex;
@@ -4766,4 +4869,512 @@ a.plaud-connect-btn:hover {
   font-size: 0.78rem;
   color: #f87171;
   font-style: italic;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SYNC VIEW — Template/Model Dropdowns, Workflow Monitor, Upload Section
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.sync-dropdown {
+  margin-bottom: 10px;
+}
+
+.sync-dropdown .Select-control {
+  background: var(--bg-secondary, #1e293b) !important;
+  border: 1px solid var(--border-color, #334155) !important;
+  border-radius: 6px;
+  color: var(--text-primary, #e2e8f0) !important;
+}
+
+.sync-dropdown .Select-menu-outer {
+  background: var(--bg-secondary, #1e293b) !important;
+  border: 1px solid var(--border-color, #334155) !important;
+}
+
+.sync-dropdown .Select-option {
+  background: var(--bg-secondary, #1e293b) !important;
+  color: var(--text-primary, #e2e8f0) !important;
+}
+
+.sync-dropdown .Select-option.is-focused {
+  background: var(--bg-tertiary, #334155) !important;
+}
+
+/* Workflow Monitor Cards */
+.workflow-monitor-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.workflow-monitor-card {
+  background: var(--bg-tertiary, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.wf-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.wf-card-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary, #e2e8f0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  margin-right: 8px;
+}
+
+.wf-status-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.wf-card-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-primary, #0f172a);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.wf-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #10b981);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.wf-progress-text {
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  white-space: nowrap;
+}
+
+.wf-card-detail {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  margin-top: 4px;
+}
+
+/* Upload Section */
+.upload-section {
+  border: 1px dashed var(--border-color, #334155) !important;
+}
+
+.upload-candidates-list {
+  margin: 10px 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.upload-candidate-row {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-color, #1e293b);
+}
+
+.upload-candidate-name {
+  font-size: 0.85rem;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.upload-checkbox label {
+  color: var(--text-primary, #e2e8f0) !important;
+  font-size: 0.85rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RECORDING DETAIL — Workflow Status, Extracted Data, Enhanced Summary
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Workflow Status Section */
+.workflow-status-section {
+  background: var(--bg-secondary, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+
+.workflow-status-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.workflow-status-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+  color: #fff;
+  letter-spacing: 0.3px;
+}
+
+.workflow-template-tag {
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  background: var(--bg-tertiary, #334155);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.workflow-submitted-text {
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.workflow-error-text {
+  display: block;
+  font-size: 0.78rem;
+  color: #f87171;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 4px;
+}
+
+/* Extracted Data (AI ETL) Section */
+.extracted-data-section {
+  background: var(--bg-secondary, #1e293b);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.extracted-data-section .section-title {
+  color: #60a5fa;
+  margin-bottom: 10px;
+}
+
+.etl-fields-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.etl-field {
+  padding: 8px 12px;
+  background: var(--bg-tertiary, #0f172a);
+  border-radius: 6px;
+  border-left: 3px solid #3b82f6;
+}
+
+.etl-field-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #60a5fa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.etl-field-value {
+  font-size: 0.85rem;
+  color: var(--text-primary, #e2e8f0);
+  line-height: 1.5;
+}
+
+.etl-field-list {
+  margin: 4px 0 0 16px;
+  padding: 0;
+  list-style: disc;
+  font-size: 0.83rem;
+  color: var(--text-primary, #e2e8f0);
+  line-height: 1.6;
+}
+
+.etl-nested {
+  margin-top: 4px;
+}
+
+.etl-nested-row {
+  font-size: 0.83rem;
+  padding: 2px 0;
+}
+
+.etl-nested-key {
+  font-weight: 600;
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.etl-nested-value {
+  color: var(--text-primary, #e2e8f0);
+}
+
+/* ============================================================
+   Recording Actions Bar (Per-recording Plaud AI workflow)
+   ============================================================ */
+
+.recording-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 10px 0;
+  background: var(--bg-card, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  white-space: nowrap;
+}
+
+.action-btn:active {
+  transform: scale(0.97);
+}
+
+.plaud-ai-btn {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+}
+
+.plaud-ai-btn:hover {
+  background: linear-gradient(135deg, #818cf8, #a78bfa);
+}
+
+.action-dropdown {
+  min-width: 130px;
+  max-width: 180px;
+}
+
+.action-dropdown .Select-control {
+  background: var(--bg-elevated, #0f172a) !important;
+  border: 1px solid var(--border-color, #334155) !important;
+  border-radius: 6px !important;
+  min-height: 32px !important;
+  height: 32px !important;
+}
+
+.action-dropdown .Select-value-label,
+.action-dropdown .Select-placeholder {
+  color: var(--text-secondary, #94a3b8) !important;
+  font-size: 0.8rem !important;
+}
+
+.workflow-inline-result {
+  flex: 1;
+  min-width: 120px;
+}
+
+.workflow-inline-success {
+  color: #34d399;
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  background: rgba(52, 211, 153, 0.08);
+  border-radius: 6px;
+}
+
+.workflow-inline-error {
+  color: #f87171;
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  background: rgba(248, 113, 113, 0.08);
+  border-radius: 6px;
+}
+
+/* ============================================================
+   Source Badges (cloud / local on recording cards)
+   ============================================================ */
+
+.source-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  margin-left: 6px;
+  vertical-align: middle;
+  opacity: 0.85;
+  cursor: help;
+}
+
+.source-badge.cloud {
+  filter: drop-shadow(0 0 3px rgba(99, 102, 241, 0.5));
+}
+
+.source-badge.cloud-only {
+  opacity: 0.55;
+}
+
+.source-badge.local {
+  opacity: 0.65;
+}
+
+/* ============================================================
+   Narrative Tab
+   ============================================================ */
+
+.narrative-tab-content {
+  padding: 12px 0;
+}
+
+.narrative-block {
+  background: var(--bg-secondary, #1e293b);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  border-left: 3px solid var(--accent, #3b82f6);
+}
+
+.narrative-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.narrative-category-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid;
+}
+
+.narrative-time {
+  font-size: 0.78rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.narrative-count {
+  font-size: 0.72rem;
+  color: var(--text-muted, #94a3b8);
+  opacity: 0.7;
+}
+
+.narrative-text {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--text-primary, #e2e8f0);
+  margin: 0;
+}
+
+.narrative-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.empty-narrative {
+  color: var(--text-muted, #94a3b8);
+  font-style: italic;
+  text-align: center;
+  padding: 40px 0;
+}
+
+/* ============================================================
+   Transcript Comparison Tab
+   ============================================================ */
+
+.comparison-tab-content {
+  padding: 12px 0;
+}
+
+.comparison-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  background: var(--bg-elevated, #0f172a);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+.comparison-stat {
+  font-weight: 600;
+}
+
+.comparison-stat.local {
+  color: #60a5fa;
+}
+
+.comparison-stat.plaud {
+  color: #c084fc;
+}
+
+.comparison-sep {
+  color: var(--text-muted, #64748b);
+  font-size: 0.75rem;
+}
+
+.comparison-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.comparison-panel {
+  background: var(--bg-elevated, #0f172a);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.comparison-panel-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary, #94a3b8);
+  margin: 0 0 8px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color, #334155);
+}
+
+.comparison-local {
+  color: #60a5fa;
+  border-left: 3px solid #3b82f6;
+  padding-left: 10px;
+}
+
+.comparison-plaud {
+  color: #c084fc;
+  border-left: 3px solid #8b5cf6;
+  padding-left: 10px;
+}
+
+.transcript-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  max-height: 500px;
+  overflow-y: auto;
+  margin: 0;
+  background: transparent;
 }

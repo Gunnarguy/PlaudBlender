@@ -98,6 +98,9 @@ class ChronosEvent(BaseModel):
     category: EventCategory = Field(
         default=EventCategory.UNKNOWN, description="Semantic category"
     )
+    category_confidence: Optional[float] = Field(
+        None, ge=0.0, le=1.0, description="Confidence in category assignment (0-1)"
+    )
 
     # Optional enrichment
     sentiment: Optional[float] = Field(

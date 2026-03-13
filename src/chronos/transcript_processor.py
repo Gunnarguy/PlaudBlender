@@ -137,6 +137,7 @@ BROKEN_JSON:
         max_retries: int = 3,
         verbose: bool = True,
         recording_date: str = "",
+        plaud_context: Optional[str] = None,
     ) -> Optional[GeminiEventOutput]:
         """Process transcript text through Gemini (modified for text input).
 
@@ -145,6 +146,8 @@ BROKEN_JSON:
             recording_id: Recording ID
             max_retries: Number of retries on failure
             verbose: Print detailed progress to stdout
+            recording_date: ISO date for temporal anchoring
+            plaud_context: Optional Plaud AI Summary/ETL output to guide extraction
 
         Returns:
             GeminiEventOutput with extracted events
@@ -165,8 +168,18 @@ BROKEN_JSON:
         # Build prompt (same as audio version)
         prompt = self.engine._build_prompt(recording_id, recording_date)
 
+        # Inject Plaud AI context if available (improves categorization accuracy)
+        plaud_section = ""
+        if plaud_context:
+            plaud_section = (
+                "\n\n**PLAUD AI CONTEXT** (use this to guide categorization, "
+                "sentiment, and structure — but always extract events from the "
+                "raw transcript below):\n\n"
+                f"{plaud_context}\n"
+            )
+
         # Combine prompt with transcript
-        full_prompt = f"""{prompt}
+        full_prompt = f"""{prompt}{plaud_section}
 
 **RAW TRANSCRIPT:**
 
@@ -519,8 +532,31 @@ Extract events from this transcript following the schema exactly."""
                         recording_date = rec.created_at.strftime("%Y-%m-%d")
                 except Exception:
                     pass
+
+            # Build Plaud AI context if available (summary + extracted data)
+            plaud_context = None
+            try:
+                parts = []
+                ai_summary = getattr(rec, "plaud_ai_summary", None)
+                if ai_summary:
+                    parts.append(f"AI Summary: {ai_summary}")
+                extracted = getattr(rec, "plaud_extracted_data", None)
+                if extracted and isinstance(extracted, dict):
+                    import json as _json
+
+                    parts.append(
+                        f"Extracted Data: {_json.dumps(extracted, default=str)[:2000]}"
+                    )
+                if parts:
+                    plaud_context = "\n\n".join(parts)
+            except Exception:
+                pass
+
             output = self.process_transcript_text(
-                transcript_text, rec.recording_id, recording_date=recording_date
+                transcript_text,
+                rec.recording_id,
+                recording_date=recording_date,
+                plaud_context=plaud_context,
             )
 
             if not output or not output.events:

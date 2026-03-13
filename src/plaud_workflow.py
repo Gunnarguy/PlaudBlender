@@ -370,6 +370,330 @@ def get_workflow_client() -> PlaudWorkflowClient:
     return PlaudWorkflowClient()
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# AI Summary Templates & Batch Operations
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class SummaryTemplate:
+    """Pre-configured AI Summary template."""
+
+    id: str
+    name: str
+    description: str
+    prompt: Optional[str] = None
+    model: str = "gemini"
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "model": self.model,
+        }
+        if self.prompt:
+            d["prompt"] = self.prompt
+        return d
+
+
+# Built-in templates for common recording types
+BUILTIN_TEMPLATES: List[SummaryTemplate] = [
+    SummaryTemplate(
+        id="general",
+        name="General Summary",
+        description="Concise overview of recording content, key points, and action items",
+        prompt=(
+            "Provide a concise summary of this recording. Include:\n"
+            "1. Main topic(s) discussed\n"
+            "2. Key points and takeaways (bullet list)\n"
+            "3. Any action items or follow-ups mentioned\n"
+            "4. Overall tone and context\n"
+            "Keep the summary clear and scannable. Use 3-5 sentences for the overview, "
+            "then bullet points for details."
+        ),
+    ),
+    SummaryTemplate(
+        id="meeting",
+        name="Meeting Notes",
+        description="Meeting attendees, agenda items, decisions made, and action items with owners",
+        prompt=(
+            "Extract structured meeting notes from this recording:\n"
+            "## Attendees\n"
+            "List all participants/speakers identified.\n\n"
+            "## Agenda Items\n"
+            "List each topic discussed, in order.\n\n"
+            "## Key Decisions\n"
+            "List every decision made, with context.\n\n"
+            "## Action Items\n"
+            "For each action item: what needs to be done, who owns it, "
+            "and any deadline mentioned.\n\n"
+            "## Open Questions\n"
+            "List unresolved questions or items deferred to later."
+        ),
+    ),
+    SummaryTemplate(
+        id="brainstorm",
+        name="Brainstorm / Ideas",
+        description="Capture all ideas discussed, group by theme, highlight most promising",
+        prompt=(
+            "This is a brainstorming or ideation session. Extract:\n"
+            "## Ideas Generated\n"
+            "List EVERY idea mentioned, no matter how small or speculative. "
+            "Group related ideas together under theme headings.\n\n"
+            "## Most Promising Ideas\n"
+            "Identify the 2-3 ideas that received the most discussion, "
+            "enthusiasm, or follow-up questions.\n\n"
+            "## Constraints & Concerns\n"
+            "Note any limitations, blockers, or concerns raised.\n\n"
+            "## Next Steps\n"
+            "Any concrete actions to explore ideas further."
+        ),
+    ),
+    SummaryTemplate(
+        id="daily_log",
+        name="Daily Log",
+        description="Stream-of-consciousness daily recording → structured timeline with key activities",
+        prompt=(
+            "This is a stream-of-consciousness daily recording. Transform it into a structured log:\n"
+            "## Timeline\n"
+            "Create a chronological timeline of activities, tasks, and events "
+            "mentioned. Use approximate timestamps where possible.\n\n"
+            "## Key Activities\n"
+            "Summarize the main things accomplished or worked on.\n\n"
+            "## Thoughts & Reflections\n"
+            "Capture any reflective moments, plans, or ideas for the future.\n\n"
+            "## People & Interactions\n"
+            "Note any people mentioned or conversations referenced.\n\n"
+            "## Mood & Energy\n"
+            "Brief note on overall energy level and mood throughout the recording."
+        ),
+    ),
+    SummaryTemplate(
+        id="interview",
+        name="Interview / Conversation",
+        description="Q&A format, key statements from each speaker, notable quotes",
+        prompt=(
+            "This is an interview or structured conversation. Extract:\n"
+            "## Participants\n"
+            "Identify each speaker and their role (interviewer, interviewee, etc.).\n\n"
+            "## Q&A Summary\n"
+            "For each major question asked, provide:\n"
+            "- The question (paraphrased)\n"
+            "- Key points from the answer\n"
+            "- Any notable direct quotes\n\n"
+            "## Key Takeaways\n"
+            "The most important insights or information shared.\n\n"
+            "## Notable Quotes\n"
+            "Direct quotes that are particularly interesting, insightful, or important.\n\n"
+            "## Follow-Up Items\n"
+            "Anything that needs follow-up or was left unresolved."
+        ),
+    ),
+]
+
+
+def get_builtin_templates() -> List[SummaryTemplate]:
+    """Return all built-in summary templates."""
+    return list(BUILTIN_TEMPLATES)
+
+
+def get_template_by_id(template_id: str) -> Optional[SummaryTemplate]:
+    """Look up a built-in template by ID."""
+    for t in BUILTIN_TEMPLATES:
+        if t.id == template_id:
+            return t
+    return None
+
+
+class PlaudWorkflowManager:
+    """High-level workflow orchestration over PlaudWorkflowClient.
+
+    Adds:
+    - Template-aware submission
+    - Batch summary generation
+    - Active workflow tracking
+    - Upload → workflow chaining
+    """
+
+    def __init__(self, workflow_client: Optional[PlaudWorkflowClient] = None):
+        self.client = workflow_client or PlaudWorkflowClient()
+        self._active_workflows: Dict[str, Dict[str, Any]] = {}  # workflow_id → metadata
+
+    @property
+    def active_workflows(self) -> Dict[str, Dict[str, Any]]:
+        return dict(self._active_workflows)
+
+    def submit_summary(
+        self,
+        file_id: str,
+        template: Optional[SummaryTemplate] = None,
+        language: Optional[str] = None,
+        model: str = "gemini",
+    ) -> str:
+        """Submit an AI Summary workflow for a recording.
+
+        Args:
+            file_id: Plaud file ID
+            template: Optional SummaryTemplate to use
+            language: Language code
+            model: LLM provider (gemini/openai/claude)
+
+        Returns:
+            workflow_id
+        """
+        template_id = None
+        if template and template.id not in ("general",):
+            # Only pass template_id for non-default templates that need ETL
+            template_id = template.id if template.prompt else None
+
+        workflow_id = self.client.submit_workflow(
+            file_id=file_id,
+            template_id=template_id,
+            language=language,
+            include_summary=True,
+            workflow_name=f"summary_{file_id[:8]}",
+            model=model,
+        )
+
+        self._active_workflows[workflow_id] = {
+            "file_id": file_id,
+            "template": template.to_dict() if template else None,
+            "status": "PENDING",
+            "submitted_at": time.time(),
+        }
+        return workflow_id
+
+    def submit_full_pipeline(
+        self,
+        file_id: str,
+        template_id: str,
+        language: Optional[str] = None,
+        model: str = "gemini",
+    ) -> str:
+        """Submit full AUDIO_TRANSCRIBE → AI_ETL → AI_SUMMARY workflow.
+
+        Args:
+            file_id: Plaud file ID
+            template_id: ETL template ID for structured extraction
+            language: Language code
+            model: LLM provider
+
+        Returns:
+            workflow_id
+        """
+        workflow_id = self.client.submit_workflow(
+            file_id=file_id,
+            template_id=template_id,
+            language=language,
+            include_summary=True,
+            workflow_name=f"full_pipeline_{file_id[:8]}",
+            model=model,
+        )
+
+        self._active_workflows[workflow_id] = {
+            "file_id": file_id,
+            "template_id": template_id,
+            "type": "full_pipeline",
+            "status": "PENDING",
+            "submitted_at": time.time(),
+        }
+        return workflow_id
+
+    def poll_active(self) -> Dict[str, Dict[str, Any]]:
+        """Poll all active workflows and return current statuses.
+
+        Returns:
+            Dict mapping workflow_id → {status, completed_tasks, total_tasks, ...}
+        """
+        results = {}
+        completed_ids = []
+
+        for wf_id, meta in self._active_workflows.items():
+            try:
+                status_info = self.client.get_workflow_status(wf_id)
+                status = status_info.get("status", "PENDING")
+                meta["status"] = status
+                meta["completed_tasks"] = status_info.get("completed_tasks", 0)
+                meta["total_tasks"] = status_info.get("total_tasks", 0)
+                meta["current_task"] = status_info.get("current_task")
+                meta["error"] = status_info.get("error")
+
+                results[wf_id] = dict(meta)
+
+                if status in ("SUCCESS", "FAILED", "CANCELLED"):
+                    completed_ids.append(wf_id)
+
+                    if status == "SUCCESS":
+                        try:
+                            wf_result = self.client.get_workflow_results(wf_id)
+                            meta["result"] = {
+                                "summary": wf_result.summary,
+                                "transcript": wf_result.transcript,
+                                "extracted_data": wf_result.extracted_data,
+                            }
+                            results[wf_id] = dict(meta)
+                        except Exception as e:
+                            logger.warning(f"Failed to get results for {wf_id}: {e}")
+
+            except Exception as e:
+                logger.error(f"Failed to poll workflow {wf_id}: {e}")
+                meta["error"] = str(e)
+                results[wf_id] = dict(meta)
+
+        return results
+
+    def upload_and_process(
+        self,
+        plaud_client,
+        file_path: str,
+        name: Optional[str] = None,
+        template: Optional[SummaryTemplate] = None,
+        language: Optional[str] = None,
+        model: str = "gemini",
+    ) -> Dict[str, Any]:
+        """Upload a local file to Plaud cloud, then submit AI workflow.
+
+        This chains: local file → cloud upload → AI workflow submission.
+
+        Args:
+            plaud_client: PlaudClient instance with upload capability
+            file_path: Path to local audio file
+            name: Display name for the recording
+            template: Optional summary template
+            language: Language code
+            model: LLM provider
+
+        Returns:
+            Dict with file_id, workflow_id, and upload metadata
+        """
+        # Step 1: Upload
+        upload_result = plaud_client.upload_file(file_path, name=name)
+        file_id = upload_result.get("id") or upload_result.get("file_id")
+
+        if not file_id:
+            raise RuntimeError(f"Upload returned no file_id: {upload_result}")
+
+        logger.info(f"📤 Uploaded {file_path} → {file_id}")
+
+        # Step 2: Submit workflow
+        workflow_id = self.submit_summary(
+            file_id=file_id,
+            template=template,
+            language=language,
+            model=model,
+        )
+
+        logger.info(f"🔄 Workflow submitted for {file_id}: {workflow_id}")
+
+        return {
+            "file_id": file_id,
+            "workflow_id": workflow_id,
+            "upload": upload_result,
+            "template": template.to_dict() if template else None,
+        }
+
+
 if __name__ == "__main__":
     # Quick test
     client = get_workflow_client()

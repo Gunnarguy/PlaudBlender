@@ -2,7 +2,16 @@
 
 import logging
 
-from dash import Input, Output, State, callback_context, ALL, no_update, ClientsideFunction
+from dash import (
+    Input,
+    Output,
+    State,
+    callback_context,
+    ALL,
+    no_update,
+    ClientsideFunction,
+    html,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,3 +86,36 @@ def register_recording_detail_callbacks(app):
         Input("event-filter-input", "value"),
         prevent_initial_call=True,
     )
+
+    @app.callback(
+        Output("single-workflow-result", "children"),
+        Input("run-single-workflow-btn", "n_clicks"),
+        State("detail-recording-id", "data"),
+        State("single-workflow-template", "value"),
+        State("single-workflow-model", "value"),
+        prevent_initial_call=True,
+    )
+    def submit_single_workflow(n_clicks, recording_id, template_id, model):
+        """Submit a Plaud AI workflow for the currently viewed recording."""
+        if not n_clicks or not recording_id:
+            return no_update
+
+        from app_v2.services.data_service import get_data_service
+
+        svc = get_data_service()
+        result = svc.submit_single_recording_workflow(
+            recording_id=recording_id,
+            template_id=template_id or None,
+            model=model or "gemini",
+        )
+
+        if result.get("error"):
+            return html.Span(
+                f"❌ {result['error']}",
+                className="workflow-inline-error",
+            )
+
+        return html.Span(
+            f"☁️ Submitted → {result.get('workflow_id', '')[:12]}…",
+            className="workflow-inline-success",
+        )

@@ -85,6 +85,11 @@ CHRONOS_CLEAN_PROMPT = """You are an expert cognitive editor processing a voice 
      * reflection: thinking about past decisions or future plans
      * idea: brainstorming, creative thinking
      * unknown: unclear or transitional moments
+   - Also assign a category_confidence score from 0.0 to 1.0:
+     * 1.0 = certain (clearly a meeting with multiple speakers)
+     * 0.7+ = confident (fits the category well)
+     * 0.4-0.7 = moderate (could be another category)
+     * <0.4 = low confidence (ambiguous content)
 
 6. **SENTIMENT (OPTIONAL BUT ENCOURAGED)**
    - Assign a sentiment score from -1.0 (very negative/frustrated) to 1.0 (very positive/excited)
@@ -107,6 +112,7 @@ Return a JSON object with this EXACT structure:
       "hour_of_day": 9,
       "clean_text": "Reviewed the Sprint planning doc. The team agreed to prioritize the authentication refactor. I'm concerned about the timeline but optimistic about the new architecture.",
       "category": "work",
+      "category_confidence": 0.85,
       "sentiment": 0.3,
       "keywords": ["sprint", "authentication", "refactor", "architecture"],
       "speaker": "self_talk"

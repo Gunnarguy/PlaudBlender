@@ -2,7 +2,7 @@
 
 from dash import html, dcc
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app_v2.services.data_service import RecordingDetail, Event
 from app_v2.components import CATEGORIES, CATEGORY_COLORS, CATEGORY_LABELS
@@ -119,6 +119,17 @@ def create_event_card(event: Event, index: int, highlighted: bool = False) -> ht
                                 className="event-category-dropdown",
                                 style={"borderColor": cat_color},
                             ),
+                            *(
+                                [
+                                    html.Span(
+                                        f"{int(event.category_confidence * 100)}%",
+                                        className=f"confidence-badge {'high' if event.category_confidence >= 0.7 else 'medium' if event.category_confidence >= 0.4 else 'low'}",
+                                        title=f"Category confidence: {event.category_confidence:.0%}",
+                                    )
+                                ]
+                                if event.category_confidence is not None
+                                else []
+                            ),
                             html.Span(
                                 f"{sentiment_icon} {event.sentiment:.1f}",
                                 className=f"event-sentiment {sentiment_class}",
@@ -158,12 +169,102 @@ def create_event_card(event: Event, index: int, highlighted: bool = False) -> ht
     )
 
 
+def _build_narrative_sections(events: List[Event]) -> List[html.Div]:
+    """Group events into flowing narrative sections based on time gaps and category shifts."""
+    if not events:
+        return [html.Div(html.P("No events to narrate.", className="empty-narrative"))]
+
+    sorted_events = sorted(events, key=lambda e: e.start_ts)
+    sections: List[html.Div] = []
+    current_group: List[Event] = [sorted_events[0]]
+
+    for prev, cur in zip(sorted_events, sorted_events[1:]):
+        gap = (cur.start_ts - prev.end_ts).total_seconds()
+        category_shift = cur.category != prev.category
+        # Break on 10+ minute gap or category change
+        if gap > 600 or category_shift:
+            sections.append(_render_narrative_group(current_group))
+            current_group = [cur]
+        else:
+            current_group.append(cur)
+
+    if current_group:
+        sections.append(_render_narrative_group(current_group))
+
+    return sections
+
+
+def _render_narrative_group(events: List[Event]) -> html.Div:
+    """Render a group of related events as a narrative block."""
+    first = events[0]
+    last = events[-1]
+    start = first.start_ts.strftime("%I:%M %p")
+    end = last.end_ts.strftime("%I:%M %p")
+    category = first.category
+    cat_color = CATEGORY_COLORS.get(category, "#374151")
+    cat_label = CATEGORY_LABELS.get(category, category)
+
+    # Merge event texts into flowing paragraphs
+    paragraphs = " ".join(e.clean_text for e in events)
+
+    # Gather unique keywords
+    all_kw = []
+    seen = set()
+    for e in events:
+        for kw in e.keywords:
+            if kw.lower() not in seen:
+                seen.add(kw.lower())
+                all_kw.append(kw)
+
+    return html.Div(
+        className="narrative-block",
+        children=[
+            html.Div(
+                className="narrative-header",
+                children=[
+                    html.Span(
+                        cat_label,
+                        className="narrative-category-pill",
+                        style={
+                            "background": f"{cat_color}22",
+                            "color": cat_color,
+                            "borderColor": f"{cat_color}44",
+                        },
+                    ),
+                    html.Span(f"{start} – {end}", className="narrative-time"),
+                    html.Span(
+                        f"{len(events)} event{'s' if len(events) != 1 else ''}",
+                        className="narrative-count",
+                    ),
+                ],
+            ),
+            html.P(paragraphs, className="narrative-text"),
+            *(
+                [
+                    html.Div(
+                        className="narrative-keywords",
+                        children=[
+                            html.Span(kw, className="keyword-tag small")
+                            for kw in all_kw[:8]
+                        ],
+                    )
+                ]
+                if all_kw
+                else []
+            ),
+        ],
+    )
+
+
 def create_recording_detail(
     detail: RecordingDetail,
     back_date: str,
     transcript: Optional[str] = None,
     highlight_event_id: Optional[str] = None,
     ai_summary: Optional[str] = None,
+    extracted_data: Optional[dict] = None,
+    workflow_status: Optional[dict] = None,
+    plaud_transcript: Optional[str] = None,
 ) -> html.Div:
     """Create the full recording detail view with tabbed layout."""
     summary = detail.summary
@@ -187,6 +288,146 @@ def create_recording_detail(
     # Overview tab
     overview_children = []
 
+    # Per-recording workflow actions
+    wf_running = False
+    if workflow_status:
+        wf_st = str(workflow_status.get("status", "")).upper()
+        wf_running = wf_st in ("PENDING", "PROCESSING", "RUNNING")
+    show_run_btn = not wf_running  # Show "Run Plaud AI" when no workflow is active
+
+    if show_run_btn:
+        overview_children.append(
+            html.Div(
+                className="recording-actions-bar",
+                children=[
+                    html.Button(
+                        "☁️ Run Plaud AI",
+                        id="run-single-workflow-btn",
+                        className="action-btn plaud-ai-btn",
+                        n_clicks=0,
+                    ),
+                    dcc.Dropdown(
+                        id="single-workflow-template",
+                        options=[
+                            {"label": "Summary Only", "value": ""},
+                            {"label": "📋 General Summary", "value": "general"},
+                            {"label": "📝 Meeting Notes", "value": "meeting"},
+                            {"label": "💡 Brainstorm / Ideas", "value": "brainstorm"},
+                            {"label": "📅 Daily Log", "value": "daily_log"},
+                            {"label": "🎤 Interview", "value": "interview"},
+                        ],
+                        value="",
+                        clearable=False,
+                        className="action-dropdown",
+                        style={"width": "180px"},
+                    ),
+                    dcc.Dropdown(
+                        id="single-workflow-model",
+                        options=[
+                            {"label": "Gemini", "value": "gemini"},
+                            {"label": "OpenAI", "value": "openai"},
+                            {"label": "Claude", "value": "claude"},
+                        ],
+                        value="gemini",
+                        clearable=False,
+                        className="action-dropdown",
+                        style={"width": "120px"},
+                    ),
+                    html.Div(
+                        id="single-workflow-result", className="workflow-inline-result"
+                    ),
+                ],
+            )
+        )
+    else:
+        # Hidden placeholders so callbacks don't break
+        overview_children.append(
+            html.Div(
+                style={"display": "none"},
+                children=[
+                    html.Button(
+                        id="run-single-workflow-btn",
+                        n_clicks=0,
+                        style={"display": "none"},
+                    ),
+                    dcc.Dropdown(
+                        id="single-workflow-template",
+                        value="",
+                        style={"display": "none"},
+                    ),
+                    dcc.Dropdown(
+                        id="single-workflow-model",
+                        value="gemini",
+                        style={"display": "none"},
+                    ),
+                    html.Div(id="single-workflow-result"),
+                ],
+            )
+        )
+
+    # Workflow status badge
+    if workflow_status:
+        wf_st = str(workflow_status.get("status", "")).upper()
+        wf_color = {
+            "SUCCESS": "#10b981",
+            "COMPLETED": "#10b981",
+            "FAILED": "#ef4444",
+            "ERROR": "#ef4444",
+            "PROCESSING": "#3b82f6",
+            "RUNNING": "#3b82f6",
+            "PENDING": "#f59e0b",
+        }.get(wf_st, "#94a3b8")
+        wf_template = workflow_status.get("template_id")
+        wf_submitted = workflow_status.get("submitted_at", "")
+
+        overview_children.append(
+            html.Div(
+                className="workflow-status-section",
+                children=[
+                    html.Div(
+                        className="workflow-status-header",
+                        children=[
+                            html.Span(
+                                f"☁️ Plaud Workflow: {wf_st}",
+                                className="workflow-status-badge",
+                                style={"backgroundColor": wf_color},
+                            ),
+                            *(
+                                [
+                                    html.Span(
+                                        f"Template: {wf_template}",
+                                        className="workflow-template-tag",
+                                    ),
+                                ]
+                                if wf_template
+                                else []
+                            ),
+                            *(
+                                [
+                                    html.Span(
+                                        f"Submitted: {wf_submitted[:16]}",
+                                        className="workflow-submitted-text",
+                                    ),
+                                ]
+                                if wf_submitted
+                                else []
+                            ),
+                        ],
+                    ),
+                    *(
+                        [
+                            html.Span(
+                                f"Error: {workflow_status.get('error', '')}",
+                                className="workflow-error-text",
+                            ),
+                        ]
+                        if wf_st in ("FAILED", "ERROR") and workflow_status.get("error")
+                        else []
+                    ),
+                ],
+            )
+        )
+
     # AI Summary
     if ai_summary:
         overview_children.append(
@@ -198,6 +439,90 @@ def create_recording_detail(
                 ],
             )
         )
+
+    # Extracted Data (AI_ETL output)
+    if extracted_data and isinstance(extracted_data, dict):
+        etl_children = []
+        for key, value in extracted_data.items():
+            if isinstance(value, list):
+                etl_children.append(
+                    html.Div(
+                        className="etl-field",
+                        children=[
+                            html.Span(
+                                key.replace("_", " ").title(),
+                                className="etl-field-label",
+                            ),
+                            html.Ul(
+                                className="etl-field-list",
+                                children=[
+                                    html.Li(str(item)[:200]) for item in value[:20]
+                                ],
+                            ),
+                        ],
+                    )
+                )
+            elif isinstance(value, dict):
+                etl_children.append(
+                    html.Div(
+                        className="etl-field",
+                        children=[
+                            html.Span(
+                                key.replace("_", " ").title(),
+                                className="etl-field-label",
+                            ),
+                            html.Div(
+                                className="etl-nested",
+                                children=[
+                                    html.Div(
+                                        [
+                                            html.Span(
+                                                f"{k}: ",
+                                                className="etl-nested-key",
+                                            ),
+                                            html.Span(
+                                                str(v)[:200],
+                                                className="etl-nested-value",
+                                            ),
+                                        ],
+                                        className="etl-nested-row",
+                                    )
+                                    for k, v in value.items()
+                                ],
+                            ),
+                        ],
+                    )
+                )
+            else:
+                etl_children.append(
+                    html.Div(
+                        className="etl-field",
+                        children=[
+                            html.Span(
+                                key.replace("_", " ").title(),
+                                className="etl-field-label",
+                            ),
+                            html.Span(str(value)[:500], className="etl-field-value"),
+                        ],
+                    )
+                )
+
+        if etl_children:
+            overview_children.append(
+                html.Div(
+                    className="extracted-data-section",
+                    children=[
+                        html.H4(
+                            "🔬 Extracted Data (AI ETL)",
+                            className="section-title",
+                        ),
+                        html.Div(
+                            className="etl-fields-grid",
+                            children=etl_children,
+                        ),
+                    ],
+                )
+            )
 
     # Key Moments
     if key_moments:
@@ -404,16 +729,85 @@ def create_recording_detail(
             ],
         )
 
+    # Narrative tab — flowing paragraphs grouped by time & category
+    narrative_sections = _build_narrative_sections(events)
+    narrative_tab = html.Div(
+        className="narrative-tab-content",
+        children=narrative_sections,
+    )
+
     # Tab labels with counts
     tab_labels = {
         "overview": "Overview",
         "events": f"Events ({len(events)})",
+        "narrative": "Narrative",
         "transcript": f"Transcript{'  ✓' if transcript else ''}",
     }
+
+    # Build optional comparison tab (when Plaud workflow transcript exists)
+    comparison_tab = None
+    if plaud_transcript and transcript:
+        local_words = len(transcript.split())
+        plaud_words = len(plaud_transcript.split())
+        word_diff = plaud_words - local_words
+        diff_sign = "+" if word_diff > 0 else ""
+        comparison_tab = html.Div(
+            className="comparison-tab-content",
+            children=[
+                html.Div(
+                    className="comparison-stats",
+                    children=[
+                        html.Span(
+                            f"Local: {local_words:,} words",
+                            className="comparison-stat local",
+                        ),
+                        html.Span("vs", className="comparison-sep"),
+                        html.Span(
+                            f"Plaud AI: {plaud_words:,} words ({diff_sign}{word_diff:,})",
+                            className="comparison-stat plaud",
+                        ),
+                    ],
+                ),
+                html.Div(
+                    className="comparison-panels",
+                    children=[
+                        html.Div(
+                            className="comparison-panel",
+                            children=[
+                                html.H5(
+                                    "📝 Plaud-Fetched Transcript",
+                                    className="comparison-panel-title",
+                                ),
+                                html.Pre(
+                                    transcript,
+                                    className="transcript-text comparison-local",
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            className="comparison-panel",
+                            children=[
+                                html.H5(
+                                    "☁️ Plaud AI Transcript",
+                                    className="comparison-panel-title",
+                                ),
+                                html.Pre(
+                                    plaud_transcript,
+                                    className="transcript-text comparison-plaud",
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        )
+        tab_labels["comparison"] = "Compare ↔"
 
     return html.Div(
         className="recording-detail",
         children=[
+            # Store recording ID for per-recording callbacks
+            dcc.Store(id="detail-recording-id", data=summary.recording_id),
             # Back button
             html.Button(
                 id={"type": "back-btn", "date": back_date},
@@ -494,6 +888,18 @@ def create_recording_detail(
                         ],
                     ),
                     dcc.Tab(
+                        label=tab_labels["narrative"],
+                        value="narrative",
+                        className="detail-tab",
+                        selected_className="detail-tab--selected",
+                        children=[
+                            html.Div(
+                                className="detail-tab-content",
+                                children=[narrative_tab],
+                            )
+                        ],
+                    ),
+                    dcc.Tab(
                         label=tab_labels["transcript"],
                         value="transcript",
                         className="detail-tab",
@@ -504,6 +910,24 @@ def create_recording_detail(
                                 children=[transcript_tab],
                             )
                         ],
+                    ),
+                    *(
+                        [
+                            dcc.Tab(
+                                label=tab_labels["comparison"],
+                                value="comparison",
+                                className="detail-tab",
+                                selected_className="detail-tab--selected",
+                                children=[
+                                    html.Div(
+                                        className="detail-tab-content",
+                                        children=[comparison_tab],
+                                    )
+                                ],
+                            )
+                        ]
+                        if comparison_tab
+                        else []
                     ),
                 ],
             ),

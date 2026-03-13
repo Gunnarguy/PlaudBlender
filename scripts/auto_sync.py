@@ -118,6 +118,35 @@ class ChronosAutoSync:
             if recording_id:
                 self._queue_for_processing(recording_id, "webhook")
 
+        @self._webhook_server.on_workflow_complete
+        def on_workflow_done(event: PlaudEvent):
+            workflow_id = event.workflow_id
+            recording_id = event.recording_id
+            self._log_activity(
+                "webhook",
+                "workflow_completed",
+                f"workflow={workflow_id or 'unknown'} recording={recording_id or 'unknown'}",
+            )
+            # Refresh workflow statuses to pull results into DB
+            try:
+                from app_v2.services.data_service import get_service
+
+                svc = get_service()
+                svc.refresh_plaud_workflow_statuses()
+                logger.info("Refreshed workflow statuses after webhook notification")
+            except Exception as e:
+                logger.error(f"Failed to refresh workflow statuses: {e}")
+
+        @self._webhook_server.on_workflow_failed
+        def on_workflow_err(event: PlaudEvent):
+            workflow_id = event.workflow_id
+            recording_id = event.recording_id
+            self._log_activity(
+                "webhook",
+                "workflow_failed",
+                f"workflow={workflow_id or 'unknown'} recording={recording_id or 'unknown'}",
+            )
+
         self._webhook_server.start()
         self._log_activity("system", "webhook_started", f"port={self.webhook_port}")
 

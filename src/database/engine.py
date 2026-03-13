@@ -83,10 +83,28 @@ def _ensure_sqlite_additive_schema(eng: Engine) -> None:
         if "plaud_ai_summary" not in cols:
             _add_column("chronos_recordings", "plaud_ai_summary TEXT")
 
+        # Plaud Cloud Workflow tracking columns
+        if "plaud_workflow_id" not in cols:
+            _add_column("chronos_recordings", "plaud_workflow_id VARCHAR")
+        if "plaud_workflow_status" not in cols:
+            _add_column("chronos_recordings", "plaud_workflow_status VARCHAR")
+        if "plaud_workflow_submitted_at" not in cols:
+            _add_column("chronos_recordings", "plaud_workflow_submitted_at DATETIME")
+        if "plaud_workflow_completed_at" not in cols:
+            _add_column("chronos_recordings", "plaud_workflow_completed_at DATETIME")
+        if "plaud_workflow_template_id" not in cols:
+            _add_column("chronos_recordings", "plaud_workflow_template_id VARCHAR")
+        if "plaud_workflow_error" not in cols:
+            _add_column("chronos_recordings", "plaud_workflow_error TEXT")
+        if "plaud_extracted_data" not in cols:
+            _add_column("chronos_recordings", "plaud_extracted_data JSON")
+
         # ChronosEvent: user-editable category override
         event_cols = _columns_for("chronos_events")
         if event_cols and "user_category_override" not in event_cols:
             _add_column("chronos_events", "user_category_override VARCHAR")
+        if event_cols and "category_confidence" not in event_cols:
+            _add_column("chronos_events", "category_confidence REAL")
     except Exception:
         # Never block app startup due to a best-effort migration.
         return

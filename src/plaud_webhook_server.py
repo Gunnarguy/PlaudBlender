@@ -273,6 +273,20 @@ class PlaudWebhookServer:
         self.handler.register_handler(PlaudEventType.DEVICE_CONNECTED, callback)
         return callback
 
+    def on_workflow_complete(
+        self, callback: Callable[[PlaudEvent], None]
+    ) -> Callable[[PlaudEvent], None]:
+        """Decorator to register a workflow complete handler."""
+        self.handler.register_handler(PlaudEventType.WORKFLOW_COMPLETED, callback)
+        return callback
+
+    def on_workflow_failed(
+        self, callback: Callable[[PlaudEvent], None]
+    ) -> Callable[[PlaudEvent], None]:
+        """Decorator to register a workflow failure handler."""
+        self.handler.register_handler(PlaudEventType.WORKFLOW_FAILED, callback)
+        return callback
+
     def start(self) -> None:
         """Start the webhook server in a background thread."""
         if self._running:
@@ -394,6 +408,18 @@ if __name__ == "__main__":
     @server.on_device_connected
     def handle_device(event: PlaudEvent):
         print(f"📱 Device connected: {event.data}")
+
+    @server.on_workflow_complete
+    def handle_workflow(event: PlaudEvent):
+        print(
+            f"✅ Workflow complete: {event.workflow_id} (recording={event.recording_id})"
+        )
+
+    @server.on_workflow_failed
+    def handle_workflow_fail(event: PlaudEvent):
+        print(
+            f"❌ Workflow failed: {event.workflow_id} (recording={event.recording_id})"
+        )
 
     # Start in foreground (not as daemon)
     server.app.run(host="0.0.0.0", port=port, debug=True)

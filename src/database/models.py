@@ -123,6 +123,17 @@ class ChronosRecording(Base):
     # Plaud AI Summary (fetched from Plaud cloud after workflow processing)
     plaud_ai_summary = Column(Text, nullable=True)
 
+    # Plaud Cloud Workflow tracking
+    plaud_workflow_id = Column(String, nullable=True)  # Active workflow ID
+    plaud_workflow_status = Column(
+        String, nullable=True
+    )  # PENDING/PROCESSING/SUCCESS/FAILED
+    plaud_workflow_submitted_at = Column(DateTime, nullable=True)
+    plaud_workflow_completed_at = Column(DateTime, nullable=True)
+    plaud_workflow_template_id = Column(String, nullable=True)
+    plaud_workflow_error = Column(Text, nullable=True)
+    plaud_extracted_data = Column(JSON, nullable=True)  # AI_ETL structured output
+
     # Provenance
     ingested_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -162,6 +173,7 @@ class ChronosEvent(Base):
     category = Column(
         String, default="unknown", nullable=False
     )  # work, personal, meeting, etc.
+    category_confidence = Column(Float, nullable=True)  # 0.0 to 1.0
     # User-overridden category (takes precedence over Gemini-assigned)
     user_category_override = Column(String, nullable=True)
 

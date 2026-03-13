@@ -49,6 +49,7 @@ class Event:
     duration_seconds: float
     day_of_week: str
     hour_of_day: int
+    category_confidence: Optional[float] = None
 
     @classmethod
     def from_qdrant(cls, point_id: str, payload: Dict[str, Any]) -> "Event":
@@ -91,6 +92,7 @@ class Event:
             duration_seconds=capped_duration,
             day_of_week=payload.get("day_of_week", ""),
             hour_of_day=payload.get("hour_of_day", 0),
+            category_confidence=payload.get("category_confidence"),
         )
 
 
@@ -106,6 +108,8 @@ class RecordingSummary:
     categories: Dict[str, int] = field(default_factory=dict)
     keywords: List[str] = field(default_factory=list)
     avg_sentiment: float = 0.0
+    source: str = "plaud_cloud"  # plaud_cloud | usb_import | local
+    has_plaud_ai: bool = False  # True if Plaud cloud AI summary exists
 
     @property
     def duration_formatted(self) -> str:
@@ -144,6 +148,7 @@ class DaySummary:
     recordings: List[RecordingSummary] = field(default_factory=list)
     categories: Dict[str, int] = field(default_factory=dict)
     top_keywords: List[str] = field(default_factory=list)
+    ai_summary: Optional[str] = None  # One-line day summary from AI
 
     @property
     def duration_formatted(self) -> str:
@@ -427,6 +432,14 @@ class ChronosDataService:
                 categories=dict(categories),
                 keywords=top_keywords,
                 avg_sentiment=total_sentiment / len(rec_events) if rec_events else 0,
+                source=(
+                    str(getattr(db_rec, "source", "plaud_cloud") or "plaud_cloud")
+                    if db_rec
+                    else "plaud_cloud"
+                ),
+                has_plaud_ai=(
+                    bool(getattr(db_rec, "plaud_ai_summary", None)) if db_rec else False
+                ),
             )
 
         return summaries
@@ -504,6 +517,36 @@ class ChronosDataService:
             except:
                 date_display = day_key
 
+            # Build one-line AI summary from recording-level summaries
+            day_ai_summary = None
+            try:
+                from src.database.models import ChronosRecording
+
+                db = SessionLocal()
+                try:
+                    snippets = []
+                    for rec in day_recordings:
+                        db_rec = (
+                            db.query(ChronosRecording)
+                            .filter(
+                                ChronosRecording.recording_id == rec.recording_id,
+                            )
+                            .first()
+                        )
+                        if db_rec and getattr(db_rec, "plaud_ai_summary", None):
+                            text = str(db_rec.plaud_ai_summary).strip()
+                            first_sentence = text.split(".")[0].strip()
+                            if first_sentence:
+                                snippets.append(first_sentence[:120])
+                    if snippets:
+                        day_ai_summary = ". ".join(snippets[:3])
+                        if not day_ai_summary.endswith("."):
+                            day_ai_summary += "."
+                finally:
+                    db.close()
+            except Exception:
+                pass
+
             result.append(
                 DaySummary(
                     date=day_key,
@@ -514,6 +557,7 @@ class ChronosDataService:
                     recordings=day_recordings,
                     categories=dict(categories),
                     top_keywords=top_keywords,
+                    ai_summary=day_ai_summary,
                 )
             )
 
@@ -1278,6 +1322,83 @@ class ChronosDataService:
             logger.error(f"Error fetching AI summary: {e}")
         return None
 
+    def get_extracted_data(self, recording_id: str) -> Optional[Dict[str, Any]]:
+        """Get the Plaud AI_ETL extracted data for a recording."""
+        try:
+            db = SessionLocal()
+            try:
+                rec = (
+                    db.query(_ChronosRecordingModel)
+                    .filter_by(recording_id=recording_id)
+                    .first()
+                )
+                if rec and rec.plaud_extracted_data:
+                    import json as _json
+
+                    data = rec.plaud_extracted_data
+                    if isinstance(data, str):
+                        data = _json.loads(data)
+                    return data if isinstance(data, dict) else None
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error fetching extracted data: {e}")
+        return None
+
+    def get_plaud_workflow_transcript(self, recording_id: str) -> Optional[str]:
+        """Get the Plaud cloud workflow transcript (if different from local cached)."""
+        try:
+            db = SessionLocal()
+            try:
+                legacy = (
+                    db.query(_RecordingModel).filter_by(id=str(recording_id)).first()
+                )
+                if legacy and legacy.extra:
+                    extra = legacy.extra if isinstance(legacy.extra, dict) else {}
+                    return extra.get("plaud_workflow_transcript")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error fetching workflow transcript: {e}")
+        return None
+
+    def get_workflow_status_for_recording(
+        self, recording_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get the current Plaud workflow status for a recording."""
+        try:
+            db = SessionLocal()
+            try:
+                rec = (
+                    db.query(_ChronosRecordingModel)
+                    .filter_by(recording_id=recording_id)
+                    .first()
+                )
+                if rec and rec.plaud_workflow_id:
+                    return {
+                        "workflow_id": rec.plaud_workflow_id,
+                        "status": rec.plaud_workflow_status,
+                        "submitted_at": (
+                            str(rec.plaud_workflow_submitted_at)
+                            if rec.plaud_workflow_submitted_at
+                            else None
+                        ),
+                        "completed_at": (
+                            str(rec.plaud_workflow_completed_at)
+                            if rec.plaud_workflow_completed_at
+                            else None
+                        ),
+                        "template_id": rec.plaud_workflow_template_id,
+                        "error": rec.plaud_workflow_error,
+                        "has_summary": bool(rec.plaud_ai_summary),
+                        "has_extracted_data": bool(rec.plaud_extracted_data),
+                    }
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error fetching workflow status: {e}")
+        return None
+
     @staticmethod
     def _coerce_recording_extra(record: Optional[_RecordingModel]) -> Dict[str, Any]:
         """Return a safe mutable copy of Recording.extra."""
@@ -1302,7 +1423,11 @@ class ChronosDataService:
         extracted_data: Optional[Dict[str, Any]] = None,
         transcript: Optional[str] = None,
     ) -> None:
-        """Persist Plaud workflow metadata and outputs into SQLite."""
+        """Persist Plaud workflow metadata and outputs into SQLite.
+
+        Writes to both the new dedicated columns on ChronosRecording AND
+        the legacy Recording.extra JSON for backward compatibility.
+        """
         chronos_record = (
             db.query(_ChronosRecordingModel)
             .filter_by(recording_id=recording_id)
@@ -1310,9 +1435,44 @@ class ChronosDataService:
         )
         legacy_record = db.query(_RecordingModel).filter_by(id=recording_id).first()
 
-        if chronos_record and summary:
-            chronos_record.plaud_ai_summary = summary.strip()
+        # Write to new dedicated columns on ChronosRecording
+        if chronos_record:
+            if summary:
+                chronos_record.plaud_ai_summary = summary.strip()
+            wf_id = workflow_metadata.get("workflow_id")
+            if wf_id:
+                chronos_record.plaud_workflow_id = str(wf_id)
+            wf_status = workflow_metadata.get("status")
+            if wf_status:
+                chronos_record.plaud_workflow_status = str(wf_status).upper()
+            submitted_at = workflow_metadata.get("submitted_at")
+            if submitted_at and isinstance(submitted_at, str):
+                try:
+                    chronos_record.plaud_workflow_submitted_at = datetime.fromisoformat(
+                        submitted_at
+                    )
+                except Exception:
+                    pass
+            completed_at = workflow_metadata.get("completed_at")
+            if completed_at and isinstance(completed_at, str):
+                try:
+                    chronos_record.plaud_workflow_completed_at = datetime.fromisoformat(
+                        completed_at
+                    )
+                except Exception:
+                    pass
+            template_id = workflow_metadata.get("template_id")
+            if template_id:
+                chronos_record.plaud_workflow_template_id = str(template_id)
+            error = workflow_metadata.get("error")
+            if error:
+                chronos_record.plaud_workflow_error = str(error)[:500]
+            elif wf_status and str(wf_status).upper() == "SUCCESS":
+                chronos_record.plaud_workflow_error = None
+            if extracted_data is not None:
+                chronos_record.plaud_extracted_data = extracted_data
 
+        # Also write to legacy Recording.extra for backward compat
         if legacy_record:
             extra = self._coerce_recording_extra(legacy_record)
             extra["plaud_workflow"] = workflow_metadata
@@ -1328,7 +1488,7 @@ class ChronosDataService:
 
     def get_plaud_workflow_stats(self, days_back: int = 30) -> Dict[str, Any]:
         """Summarize Plaud workflow coverage and current workflow state."""
-        stats = {
+        stats: Dict[str, Any] = {
             "recent_recordings": 0,
             "with_ai_summary": 0,
             "missing_ai_summary": 0,
@@ -1337,6 +1497,7 @@ class ChronosDataService:
             "workflow_failed": 0,
             "workflow_success": 0,
             "last_submitted_at": None,
+            "active_workflows": [],  # NEW: list of in-flight workflows
         }
 
         try:
@@ -1353,23 +1514,16 @@ class ChronosDataService:
                 )
                 stats["recent_recordings"] = len(recent)
 
-                record_ids = [str(rec.recording_id) for rec in recent]
-                legacy_records = {}
-                if record_ids:
-                    legacy_records = {
-                        str(rec.id): rec
-                        for rec in db.query(_RecordingModel)
-                        .filter(_RecordingModel.id.in_(record_ids))
-                        .all()
-                    }
-
                 for rec in recent:
-                    legacy = legacy_records.get(str(rec.recording_id))
-                    workflow = self._get_workflow_metadata(legacy)
-                    workflow_status = str(workflow.get("status") or "").upper()
                     has_summary = bool(rec.plaud_ai_summary)
 
+                    # Fallback to legacy extra for summary check
                     if not has_summary:
+                        legacy = (
+                            db.query(_RecordingModel)
+                            .filter_by(id=str(rec.recording_id))
+                            .first()
+                        )
                         extra = self._coerce_recording_extra(legacy)
                         has_summary = bool(
                             isinstance(extra.get("plaud_summary"), str)
@@ -1381,8 +1535,30 @@ class ChronosDataService:
                     else:
                         stats["missing_ai_summary"] += 1
 
+                    # Use new dedicated columns first, fallback to legacy
+                    workflow_status = ""
+                    if rec.plaud_workflow_status:
+                        workflow_status = str(rec.plaud_workflow_status).upper()
+                    else:
+                        legacy = (
+                            db.query(_RecordingModel)
+                            .filter_by(id=str(rec.recording_id))
+                            .first()
+                        )
+                        workflow = self._get_workflow_metadata(legacy)
+                        workflow_status = str(workflow.get("status") or "").upper()
+
                     if workflow_status in _PLAUD_WORKFLOW_ACTIVE_STATUSES:
                         stats["workflow_pending"] += 1
+                        stats["active_workflows"].append(
+                            {
+                                "recording_id": str(rec.recording_id),
+                                "workflow_id": rec.plaud_workflow_id,
+                                "status": workflow_status,
+                                "template_id": rec.plaud_workflow_template_id,
+                                "title": rec.title or str(rec.recording_id)[:16],
+                            }
+                        )
                     elif workflow_status == "FAILED":
                         stats["workflow_failed"] += 1
                     elif workflow_status == "SUCCESS":
@@ -1393,8 +1569,12 @@ class ChronosDataService:
                     ) and workflow_status not in _PLAUD_WORKFLOW_ACTIVE_STATUSES:
                         stats["ready_for_enrichment"] += 1
 
-                    submitted_at = workflow.get("submitted_at")
-                    if isinstance(submitted_at, str):
+                    submitted_at = (
+                        str(rec.plaud_workflow_submitted_at)
+                        if rec.plaud_workflow_submitted_at
+                        else None
+                    )
+                    if submitted_at:
                         last_submitted = stats["last_submitted_at"]
                         if not last_submitted or submitted_at > last_submitted:
                             stats["last_submitted_at"] = submitted_at
@@ -1410,6 +1590,7 @@ class ChronosDataService:
         days_back: int = 7,
         limit: int = 3,
         template_id: Optional[str] = None,
+        model: str = "gemini",
     ) -> Dict[str, Any]:
         """Submit Plaud cloud workflows for recent recordings missing AI summaries."""
         try:
@@ -1426,6 +1607,7 @@ class ChronosDataService:
                 "skipped": [],
                 "errors": [],
                 "template_id": template_id,
+                "model": model,
             }
 
             db = SessionLocal()
@@ -1436,21 +1618,20 @@ class ChronosDataService:
                     .order_by(_ChronosRecordingModel.created_at.desc())
                     .all()
                 )
-                record_ids = [str(rec.recording_id) for rec in recent]
-                legacy_records = {}
-                if record_ids:
-                    legacy_records = {
-                        str(rec.id): rec
-                        for rec in db.query(_RecordingModel)
-                        .filter(_RecordingModel.id.in_(record_ids))
-                        .all()
-                    }
 
                 candidates: List[_ChronosRecordingModel] = []
                 for rec in recent:
-                    legacy = legacy_records.get(str(rec.recording_id))
-                    workflow = self._get_workflow_metadata(legacy)
-                    workflow_status = str(workflow.get("status") or "").upper()
+                    # Check new columns first, then fall back to legacy
+                    workflow_status = str(rec.plaud_workflow_status or "").upper()
+                    if not workflow_status:
+                        legacy = (
+                            db.query(_RecordingModel)
+                            .filter_by(id=str(rec.recording_id))
+                            .first()
+                        )
+                        workflow = self._get_workflow_metadata(legacy)
+                        workflow_status = str(workflow.get("status") or "").upper()
+
                     if rec.plaud_ai_summary is not None:
                         result["skipped"].append(
                             {
@@ -1479,6 +1660,7 @@ class ChronosDataService:
                             template_id=template_id,
                             include_summary=True,
                             workflow_name=f"chronos_sync_{recording_id[:8]}",
+                            model=model,
                         )
                         workflow_metadata = {
                             "workflow_id": workflow_id,
@@ -1498,6 +1680,7 @@ class ChronosDataService:
                             {
                                 "recording_id": recording_id,
                                 "workflow_id": workflow_id,
+                                "title": rec.title or recording_id[:16],
                             }
                         )
                     except Exception as exc:
@@ -1759,6 +1942,118 @@ class ChronosDataService:
         except Exception as e:
             logger.error(f"Error saving category override: {e}")
         return False
+
+    def get_upload_candidates(self) -> List[Dict[str, Any]]:
+        """Return list of local audio files in data/raw/usb_import/ that can be uploaded."""
+        try:
+            from src.plaud_client import PlaudClient
+
+            client = PlaudClient()
+            return client.get_upload_candidates()
+        except Exception as e:
+            logger.error(f"Error getting upload candidates: {e}")
+            return []
+
+    def upload_and_process_files(
+        self,
+        file_paths: List[str],
+        template_id: Optional[str] = None,
+        model: str = "gemini",
+    ) -> Dict[str, Any]:
+        """Upload local audio files to Plaud cloud and submit full workflow pipeline.
+
+        Returns dict with 'uploaded', 'errors' lists.
+        """
+        from src.plaud_client import PlaudClient
+        from src.plaud_workflow import PlaudWorkflowManager, get_template_by_id
+
+        result: Dict[str, Any] = {"uploaded": [], "errors": []}
+
+        try:
+            client = PlaudClient()
+            manager = PlaudWorkflowManager()
+            template = get_template_by_id(template_id) if template_id else None
+
+            for path in file_paths:
+                try:
+                    upload_result = manager.upload_and_process(
+                        plaud_client=client,
+                        file_path=path,
+                        template=template,
+                        model=model,
+                    )
+                    result["uploaded"].append(
+                        {
+                            "path": path,
+                            "file_id": upload_result.get("file_id"),
+                            "workflow_id": upload_result.get("workflow_id"),
+                        }
+                    )
+                except Exception as exc:
+                    logger.error(f"Upload failed for {path}: {exc}")
+                    result["errors"].append({"path": path, "error": str(exc)})
+        except Exception as e:
+            result["errors"].append({"path": "init", "error": str(e)})
+
+        return result
+
+    def submit_single_recording_workflow(
+        self,
+        recording_id: str,
+        template_id: Optional[str] = None,
+        model: str = "gemini",
+    ) -> Dict[str, Any]:
+        """Submit a Plaud cloud workflow for a single specific recording.
+
+        Returns dict with workflow_id, status, or error.
+        """
+        try:
+            from src.plaud_workflow import PlaudWorkflowClient
+            from src.database.engine import SessionLocal
+
+            db = SessionLocal()
+            try:
+                rec = (
+                    db.query(_ChronosRecordingModel)
+                    .filter_by(recording_id=recording_id)
+                    .first()
+                )
+                if not rec:
+                    return {"error": f"Recording {recording_id} not found"}
+
+                workflow_client = PlaudWorkflowClient()
+                effective_template = (template_id or "").strip() or None
+                workflow_id = workflow_client.submit_workflow(
+                    file_id=recording_id,
+                    template_id=effective_template,
+                    include_summary=True,
+                    workflow_name=f"single_{recording_id[:8]}",
+                    model=model,
+                )
+                workflow_metadata = {
+                    "workflow_id": workflow_id,
+                    "status": "PENDING",
+                    "submitted_at": datetime.utcnow().isoformat(),
+                    "source": "recording_detail",
+                    "template_id": effective_template,
+                    "completed_tasks": 0,
+                    "total_tasks": 3 if effective_template else 2,
+                }
+                self._persist_plaud_workflow_artifacts(
+                    db,
+                    recording_id=recording_id,
+                    workflow_metadata=workflow_metadata,
+                )
+                return {
+                    "workflow_id": workflow_id,
+                    "status": "PENDING",
+                    "recording_id": recording_id,
+                }
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error submitting workflow for {recording_id}: {e}")
+            return {"error": str(e), "recording_id": recording_id}
 
     def get_category_overrides(self, recording_id: str) -> Dict[str, str]:
         """Get all user category overrides for events in a recording.

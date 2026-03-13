@@ -22,6 +22,31 @@ document.addEventListener("keydown", function (e) {
   }
 });
 
+/* ── Auto-scroll to highlighted event card ───────────────────────────── */
+(function () {
+  var observer = new MutationObserver(function () {
+    var el = document.querySelector(".event-card.highlighted");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      observer.disconnect();
+    }
+  });
+  /* Watch for detail panel opening (content changes) */
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  /* Re-attach after Dash re-renders */
+  document.addEventListener("DOMContentLoaded", function () {
+    new MutationObserver(function () {
+      var highlighted = document.querySelector(".event-card.highlighted");
+      if (highlighted) {
+        setTimeout(function () {
+          highlighted.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 100);
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+})();
+
 /* ── Topic grid: live search + sort ──────────────────────────────────────── */
 (function () {
   function filterTopics() {

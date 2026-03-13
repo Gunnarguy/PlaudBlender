@@ -234,6 +234,34 @@ def create_recording_card(recording: RecordingSummary, day_date: str) -> html.Di
                     html.Div(
                         className="recording-header-right",
                         children=[
+                            # Cloud/Local indicator
+                            *(
+                                [
+                                    html.Span(
+                                        "☁️",
+                                        className="source-badge cloud",
+                                        title="Plaud Cloud + AI",
+                                    )
+                                ]
+                                if recording.has_plaud_ai
+                                else (
+                                    [
+                                        html.Span(
+                                            "☁️",
+                                            className="source-badge cloud-only",
+                                            title="Plaud Cloud",
+                                        )
+                                    ]
+                                    if recording.source == "plaud_cloud"
+                                    else [
+                                        html.Span(
+                                            "💾",
+                                            className="source-badge local",
+                                            title="Local only (USB import)",
+                                        )
+                                    ]
+                                )
+                            ),
                             html.Span(
                                 recording.duration_formatted,
                                 className="recording-duration",
@@ -319,6 +347,9 @@ def create_day_card(day: DaySummary, expanded: bool = False) -> html.Div:
     else:
         day_summary_text = "No recordings"
 
+    # One-line AI summary (from recording-level Plaud summaries)
+    ai_summary_line = getattr(day, "ai_summary", None)
+
     return html.Div(
         className=f"day-card {'expanded' if expanded else ''}",
         children=[
@@ -339,6 +370,24 @@ def create_day_card(day: DaySummary, expanded: bool = False) -> html.Div:
                                         day_summary_text, className="day-summary-text"
                                     ),
                                 ],
+                            ),
+                            *(
+                                [
+                                    html.Div(
+                                        className="day-ai-summary-line",
+                                        children=[
+                                            html.Span(
+                                                "✨ ", className="ai-summary-icon"
+                                            ),
+                                            html.Span(
+                                                ai_summary_line,
+                                                className="day-ai-summary-text",
+                                            ),
+                                        ],
+                                    )
+                                ]
+                                if ai_summary_line
+                                else []
                             ),
                             html.Div(
                                 className="day-stats",

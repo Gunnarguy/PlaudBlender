@@ -27,6 +27,14 @@ def create_layout() -> html.Div:
                 n_intervals=0,
                 disabled=False,
             ),
+            # Workflow status polling (10s, active when workflows are in flight)
+            dcc.Interval(
+                id="workflow-poll",
+                interval=10000,
+                n_intervals=0,
+                disabled=True,
+            ),
+            dcc.Store(id="active-workflows-count", data=0),
             # Sidebar navigation
             create_sidebar(),
             # Main content area

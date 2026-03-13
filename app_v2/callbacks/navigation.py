@@ -1,5 +1,6 @@
 """Navigation callbacks - view switching and main content updates."""
 
+import os
 from dash import Input, Output, State, callback, ctx, html, no_update, ALL, dcc
 from dash.exceptions import PreventUpdate
 import logging
@@ -431,6 +432,147 @@ def create_sync_view(service) -> html.Div:
         ],
     )
 
+    # Build active workflows list for monitoring dashboard
+    active_workflows = workflow_stats.get("active_workflows", [])
+    active_workflow_cards = []
+    for wf in active_workflows[:10]:
+        wf_status = str(wf.get("status", "PENDING")).upper()
+        completed_tasks = wf.get("completed_tasks", 0)
+        total_tasks = wf.get("total_tasks", 0)
+        pct = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+        status_color = {
+            "SUCCESS": "#10b981",
+            "COMPLETED": "#10b981",
+            "FAILED": "#ef4444",
+            "ERROR": "#ef4444",
+            "PROCESSING": "#3b82f6",
+            "RUNNING": "#3b82f6",
+        }.get(wf_status, "#f59e0b")
+
+        active_workflow_cards.append(
+            html.Div(
+                className="workflow-monitor-card",
+                children=[
+                    html.Div(
+                        className="wf-card-header",
+                        children=[
+                            html.Span(
+                                wf.get("title", wf.get("recording_id", "")[:16]),
+                                className="wf-card-title",
+                            ),
+                            html.Span(
+                                wf_status,
+                                className="wf-status-badge",
+                                style={"backgroundColor": status_color},
+                            ),
+                        ],
+                    ),
+                    html.Div(
+                        className="wf-card-progress",
+                        children=[
+                            html.Div(
+                                className="wf-progress-bar",
+                                children=[
+                                    html.Div(
+                                        className="wf-progress-fill",
+                                        style={"width": f"{pct:.0f}%"},
+                                    ),
+                                ],
+                            ),
+                            html.Span(
+                                f"{completed_tasks}/{total_tasks} tasks",
+                                className="wf-progress-text",
+                            ),
+                        ],
+                    ),
+                    *(
+                        [
+                            html.Span(
+                                f"Template: {wf.get('template_id', 'summary-only')}",
+                                className="wf-card-detail",
+                            ),
+                        ]
+                        if wf.get("template_id")
+                        else []
+                    ),
+                ],
+            )
+        )
+
+    workflow_monitor_section = []
+    if active_workflow_cards:
+        workflow_monitor_section = [
+            html.Div(
+                className="sync-status-card workflow-monitor-card-container",
+                children=[
+                    html.H4("🔄 Active Workflows"),
+                    html.Div(
+                        className="workflow-monitor-grid",
+                        children=active_workflow_cards,
+                    ),
+                ],
+            ),
+        ]
+
+    # Upload candidates section
+    upload_section = []
+    try:
+        upload_candidates = service.get_upload_candidates()
+        if upload_candidates:
+            upload_section = [
+                html.Div(
+                    className="sync-status-card upload-section",
+                    children=[
+                        html.H4("📤 Upload Local Recordings"),
+                        html.P(
+                            f"Found {len(upload_candidates)} local audio file(s) in data/raw/usb_import/ not yet in Plaud cloud.",
+                            className="sync-note",
+                        ),
+                        html.Div(
+                            className="upload-candidates-list",
+                            children=[
+                                html.Div(
+                                    className="upload-candidate-row",
+                                    children=[
+                                        html.Span(
+                                            f"📎 {f.get('name', 'Unknown')} ({f.get('size_mb', 0):.1f} MB, {f.get('format', '?')})",
+                                            className="upload-candidate-name",
+                                        ),
+                                    ],
+                                )
+                                for f in upload_candidates[:20]
+                            ],
+                        ),
+                        html.Button(
+                            id="upload-files-btn",
+                            className="sync-action-btn",
+                            children=[
+                                html.Span("📤", className="btn-icon"),
+                                html.Span(
+                                    f"Upload & Process ({len(upload_candidates)} files)",
+                                    className="btn-text",
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ]
+        else:
+            # Hidden button so Dash callbacks don't fail
+            upload_section = [
+                html.Button(
+                    id="upload-files-btn",
+                    style={"display": "none"},
+                ),
+            ]
+    except Exception:
+        upload_section = [
+            html.Button(
+                id="upload-files-btn",
+                style={"display": "none"},
+            ),
+        ]
+
     return html.Div(
         className="sync-view",
         children=[
@@ -553,10 +695,11 @@ def create_sync_view(service) -> html.Div:
                     *failed_details_children,
                 ],
             ),
+            # Plaud Cloud Enrichment card
             html.Div(
                 className="sync-status-card",
                 children=[
-                    html.H4("Plaud Cloud Enrichment"),
+                    html.H4("☁️ Plaud Cloud Enrichment"),
                     html.Div(
                         className="status-stats",
                         children=[
@@ -626,8 +769,12 @@ def create_sync_view(service) -> html.Div:
                     ),
                 ],
             ),
+            # Active workflow monitor
+            *workflow_monitor_section,
             # Auto-sync status (if available)
             *auto_sync_children,
+            # Upload local files section
+            *upload_section,
             # Action buttons
             html.Div(
                 className="sync-options",
@@ -660,11 +807,12 @@ def create_sync_view(service) -> html.Div:
                             ),
                         ],
                     ),
+                    # Plaud cloud enrichment section
                     html.Div(
                         className="sync-action-group",
                         style={"marginTop": "15px"},
                         children=[
-                            html.Label("Plaud cloud enrichment batch size:"),
+                            html.Label("Enrichment batch size:"),
                             dcc.Slider(
                                 id="plaud-workflow-limit",
                                 min=1,
@@ -674,11 +822,54 @@ def create_sync_view(service) -> html.Div:
                                 marks={1: "1", 3: "3", 5: "5", 10: "10"},
                                 className="sync-slider",
                             ),
+                            html.Label("Summary Template:"),
+                            dcc.Dropdown(
+                                id="plaud-template-select",
+                                options=[
+                                    {"label": "Summary Only (no ETL)", "value": ""},
+                                    {
+                                        "label": "📋 General Summary — Key points and action items",
+                                        "value": "general",
+                                    },
+                                    {
+                                        "label": "📝 Meeting Notes — Attendees, decisions, action items",
+                                        "value": "meeting",
+                                    },
+                                    {
+                                        "label": "💡 Brainstorm — Ideas grouped by theme",
+                                        "value": "brainstorm",
+                                    },
+                                    {
+                                        "label": "📅 Daily Log — Timeline of activities",
+                                        "value": "daily_log",
+                                    },
+                                    {
+                                        "label": "🎤 Interview — Q&A format with key quotes",
+                                        "value": "interview",
+                                    },
+                                ],
+                                value="",
+                                clearable=False,
+                                className="sync-dropdown",
+                                placeholder="Select a template…",
+                            ),
+                            html.Label("AI Model:"),
+                            dcc.Dropdown(
+                                id="plaud-model-select",
+                                options=[
+                                    {"label": "Gemini (Google)", "value": "gemini"},
+                                    {"label": "OpenAI (GPT)", "value": "openai"},
+                                    {"label": "Claude (Anthropic)", "value": "claude"},
+                                ],
+                                value="gemini",
+                                clearable=False,
+                                className="sync-dropdown",
+                            ),
                             html.Label("Custom ETL template ID (optional):"),
                             dcc.Input(
                                 id="plaud-template-id",
                                 type="text",
-                                placeholder="tpl_your_template_id",
+                                placeholder="tpl_your_template_id (overrides dropdown)",
                                 className="sync-text-input",
                             ),
                             html.Div(
@@ -713,7 +904,8 @@ def create_sync_view(service) -> html.Div:
                                 ],
                             ),
                             html.P(
-                                "This targets recent recordings missing a Plaud AI summary. Add a template only when you want AI_ETL structured output too.",
+                                "Targets recent recordings missing a Plaud AI summary. "
+                                "Select a template for AI_ETL structured extraction, or leave on 'Summary Only' for just the AI summary.",
                                 className="sync-note",
                             ),
                         ],
@@ -1445,6 +1637,66 @@ def create_settings_view(preferences=None) -> html.Div:
         ],
     )
 
+    # ── Section: Categories ─────────────────────────────────────────────
+    from app_v2.components import CATEGORIES, CATEGORY_COLORS, CATEGORY_LABELS
+
+    builtin_cat_rows = []
+    for cat in CATEGORIES:
+        color = CATEGORY_COLORS.get(cat, "#374151")
+        label = CATEGORY_LABELS.get(cat, cat)
+        builtin_cat_rows.append(
+            html.Div(
+                className="category-def-row",
+                children=[
+                    html.Span(
+                        className="category-color-swatch",
+                        style={"backgroundColor": color},
+                    ),
+                    html.Span(label, className="category-def-label"),
+                    html.Span(cat, className="category-def-key"),
+                ],
+            )
+        )
+
+    # Load custom categories from env
+    custom_cats_raw = os.environ.get("CHRONOS_CUSTOM_CATEGORIES", "")
+
+    categories_section = html.Div(
+        className="settings-section",
+        children=[
+            html.H4("📂 Categories"),
+            html.P(
+                "Built-in event categories used by the Gemini processor.",
+                className="setting-note",
+            ),
+            html.Div(
+                className="category-def-grid",
+                children=builtin_cat_rows,
+            ),
+            html.Hr(className="settings-divider"),
+            html.H5("Custom Categories", className="settings-subsection-title"),
+            html.P(
+                "Define custom categories as comma-separated values (e.g. exercise, commute, learning). "
+                "These will be available in the category dropdown. Save to .env to persist.",
+                className="setting-note",
+            ),
+            html.Div(
+                className="setting-control-row",
+                children=[
+                    html.Label("Custom Categories"),
+                    dcc.Input(
+                        id="custom-categories-input",
+                        type="text",
+                        value=custom_cats_raw,
+                        placeholder="exercise, commute, learning, social",
+                        className="settings-input wide",
+                        debounce=True,
+                    ),
+                ],
+            ),
+        ],
+    )
+
     # ── Section: UI Preferences ──────────────────────────────────────────
     ui_prefs_section = html.Div(
         className="settings-section",
@@ -1649,6 +1901,7 @@ def create_settings_view(preferences=None) -> html.Div:
             plaud_section,
             storage_section,
             logging_section,
+            categories_section,
             ui_prefs_section,
             save_section,
             stack_section,
@@ -1804,6 +2057,7 @@ def register_navigation_callbacks(app):
         State("setting-plaud-language", "value"),
         State("setting-plaud-diarization", "value"),
         State("setting-log-level", "value"),
+        State("custom-categories-input", "value"),
         prevent_initial_call=True,
     )
     def save_env_settings(
@@ -1818,6 +2072,7 @@ def register_navigation_callbacks(app):
         plaud_language,
         plaud_diarization,
         log_level,
+        custom_categories,
     ):
         """Write changed settings back to .env file."""
         if not n_clicks:
@@ -1843,6 +2098,7 @@ def register_navigation_callbacks(app):
                 "1" if plaud_diarization and "enabled" in plaud_diarization else "0"
             ),
             "PB_LOG_LEVEL": log_level,
+            "CHRONOS_CUSTOM_CATEGORIES": custom_categories or "",
         }
 
         try:
@@ -1955,14 +2211,23 @@ def register_navigation_callbacks(app):
             detail = get_service().get_recording_detail(selected_recording.get("id"))
             if detail:
                 logger.info(f"Got detail with {len(detail.events)} events")
-                transcript = get_service().get_transcript(selected_recording.get("id"))
-                ai_summary = get_service().get_ai_summary(selected_recording.get("id"))
+                rec_id = selected_recording.get("id")
+                transcript = get_service().get_transcript(rec_id)
+                ai_summary = get_service().get_ai_summary(rec_id)
+                extracted_data = get_service().get_extracted_data(rec_id)
+                workflow_status = get_service().get_workflow_status_for_recording(
+                    rec_id
+                )
+                plaud_transcript = get_service().get_plaud_workflow_transcript(rec_id)
                 detail_content = create_recording_detail(
                     detail,
                     selected_recording.get("date", ""),
                     transcript=transcript,
                     highlight_event_id=selected_recording.get("scroll_to_event"),
                     ai_summary=ai_summary,
+                    extracted_data=extracted_data,
+                    workflow_status=workflow_status,
+                    plaud_transcript=plaud_transcript,
                 )
                 detail_class = "detail-panel open"
             else:
@@ -2045,9 +2310,12 @@ def register_navigation_callbacks(app):
         Input("reset-stuck-btn", "n_clicks"),
         Input("run-plaud-workflows-btn", "n_clicks"),
         Input("refresh-plaud-workflows-btn", "n_clicks"),
+        Input("upload-files-btn", "n_clicks"),
         State("sync-days-slider", "value"),
         State("plaud-workflow-limit", "value"),
         State("plaud-template-id", "value"),
+        State("plaud-template-select", "value"),
+        State("plaud-model-select", "value"),
         prevent_initial_call=True,
     )
     def perform_sync(
@@ -2055,9 +2323,12 @@ def register_navigation_callbacks(app):
         reset_clicks,
         run_plaud_clicks,
         refresh_plaud_clicks,
+        upload_clicks,
         days_back,
         workflow_limit,
         template_id,
+        template_select,
+        model_select,
     ):
         """Perform full pipeline sync or reset stuck recordings."""
         triggered = ctx.triggered_id
@@ -2090,16 +2361,21 @@ def register_navigation_callbacks(app):
 
         if triggered == "run-plaud-workflows-btn" and run_plaud_clicks:
             service = get_data_service()
+            # Custom template ID overrides dropdown selection
+            effective_template = template_id or template_select or None
+            effective_model = model_select or "gemini"
             result = service.submit_plaud_workflows(
                 days_back=days_back or 7,
                 limit=workflow_limit or 3,
-                template_id=template_id,
+                template_id=effective_template,
+                model=effective_model,
             )
 
             submitted = result.get("submitted", [])
             errors = result.get("errors", [])
             skipped = result.get("skipped", [])
             template_text = result.get("template_id") or "summary-only"
+            model_text = effective_model
 
             if errors and not submitted:
                 return html.Div(
@@ -2115,16 +2391,16 @@ def register_navigation_callbacks(app):
                 children=[
                     html.Span("☁️ Plaud Workflows Submitted", className="success-icon"),
                     html.P(
-                        f"Submitted {len(submitted)} workflow(s) using {template_text}."
+                        f"Submitted {len(submitted)} workflow(s) — template: {template_text}, model: {model_text}."
                     ),
                     html.P(
-                        f"Skipped {len(skipped)} recording(s) already summarized or already in flight.",
+                        f"Skipped {len(skipped)} recording(s) already summarized or in flight.",
                         className="sync-note",
                     ),
                 ]
                 + render_detail_list(
                     submitted,
-                    lambda item: f"{item.get('recording_id')} → {item.get('workflow_id')}",
+                    lambda item: f"{item.get('title', item.get('recording_id', '')[:16])} → {item.get('workflow_id')}",
                 )
                 + render_detail_list(
                     errors,
@@ -2170,6 +2446,58 @@ def register_navigation_callbacks(app):
                 + render_detail_list(
                     failed,
                     lambda item: f"{item.get('recording_id') or 'global'}: {item.get('error')}",
+                ),
+            )
+
+        if triggered == "upload-files-btn" and upload_clicks:
+            service = get_data_service()
+            candidates = service.get_upload_candidates()
+            if not candidates:
+                return html.Div(
+                    className="sync-info",
+                    children=[
+                        html.Span("📤 No Files to Upload", className="success-icon"),
+                        html.P("No local audio files found in data/raw/usb_import/."),
+                    ],
+                )
+
+            file_paths = [c["path"] for c in candidates]
+            effective_template = template_id or template_select or None
+            effective_model = model_select or "gemini"
+
+            result = service.upload_and_process_files(
+                file_paths=file_paths,
+                template_id=effective_template,
+                model=effective_model,
+            )
+
+            uploaded = result.get("uploaded", [])
+            errors = result.get("errors", [])
+
+            if errors and not uploaded:
+                return html.Div(
+                    className="sync-error",
+                    children=[
+                        html.Span("❌ Upload Failed", className="error-icon"),
+                        html.P(errors[0].get("error", "Unknown error")),
+                    ],
+                )
+
+            return html.Div(
+                className="sync-success",
+                children=[
+                    html.Span("📤 Upload Complete", className="success-icon"),
+                    html.P(
+                        f"Uploaded {len(uploaded)} file(s), {len(errors)} error(s)."
+                    ),
+                ]
+                + render_detail_list(
+                    uploaded,
+                    lambda item: f"{item.get('path', '').rsplit('/', 1)[-1]} → {item.get('workflow_id', 'submitted')}",
+                )
+                + render_detail_list(
+                    errors,
+                    lambda item: f"{item.get('path', '').rsplit('/', 1)[-1]}: {item.get('error')}",
                 ),
             )
 
@@ -2271,6 +2599,7 @@ def register_navigation_callbacks(app):
                                         hour_of_day=int(event.hour_of_day),
                                         clean_text=str(event.clean_text),
                                         category=str(event.category),
+                                        category_confidence=float(event.category_confidence) if getattr(event, "category_confidence", None) else None,
                                         sentiment=float(event.sentiment or 0.0),
                                         keywords=list(event.keywords or []),
                                         speaker=str(event.speaker or "unknown"),
@@ -2483,3 +2812,35 @@ def register_navigation_callbacks(app):
                 html.Div(className="pp-phases", children=phase_cards),
             ],
         )
+
+    # ------------------------------------------------------------------
+    # Workflow auto-poll: refresh active workflows every 10s
+    # ------------------------------------------------------------------
+    @app.callback(
+        Output("active-workflows-count", "data"),
+        Output("workflow-poll", "disabled"),
+        Input("workflow-poll", "n_intervals"),
+        Input("run-plaud-workflows-btn", "n_clicks"),
+        Input("upload-files-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def poll_workflow_status(n_intervals, run_clicks, upload_clicks):
+        """Auto-refresh active Plaud workflows and enable/disable polling."""
+        try:
+            service = get_data_service()
+            stats = service.get_plaud_workflow_stats()
+            active = stats.get("active_workflows", [])
+            active_count = len(active)
+
+            if active_count > 0:
+                # There are active workflows — keep polling, refresh their statuses
+                try:
+                    service.refresh_plaud_workflow_statuses(days_back=7, limit=20)
+                except Exception:
+                    pass
+                return active_count, False  # keep polling
+            else:
+                # No active workflows — disable polling until next submission
+                return 0, True
+        except Exception:
+            return 0, True

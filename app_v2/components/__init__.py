@@ -1,5 +1,7 @@
 """Components package."""
 
+import os
+
 # ── Canonical category palette (single source of truth) ───────────────────────
 CATEGORIES = [
     "work",
@@ -22,6 +24,14 @@ CATEGORY_COLORS = {
     "break": "#64748b",  # slate
     "unknown": "#374151",  # gray
 }
+
+# Extend with user-defined custom categories from env
+_custom_raw = os.environ.get("CHRONOS_CUSTOM_CATEGORIES", "")
+_CUSTOM_PALETTE = ["#f97316", "#06b6d4", "#84cc16", "#e11d48", "#14b8a6", "#a855f7"]
+for _i, _cat in enumerate(c.strip().lower().replace(" ", "_") for c in _custom_raw.split(",") if c.strip()):
+    if _cat not in CATEGORIES:
+        CATEGORIES.append(_cat)
+        CATEGORY_COLORS[_cat] = _CUSTOM_PALETTE[_i % len(_CUSTOM_PALETTE)]
 
 CATEGORY_LABELS = {k: k.replace("_", " ").title() for k in CATEGORIES}
 
