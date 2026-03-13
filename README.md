@@ -52,26 +52,26 @@ python scripts/launch_app.py
 
 ## UI Views
 
-| View         | Description                                                           |
-| ------------ | --------------------------------------------------------------------- |
-| **Days**     | Date-grouped event timeline with recording detail panel               |
-| **Topics**   | Events grouped by category (work, meeting, personal, health, etc.)    |
-| **Search**   | Semantic vector search with category and date filters                 |
-| **Graph**    | Interactive Cytoscape knowledge graph — 6 layouts, node click details |
-| **Stats**    | 8 stat cards, sentiment trends, productivity insights                 |
-| **Sync**     | Pipeline dashboard with status counts, Full Sync, Reset Stuck         |
-| **Settings** | Real-time connectivity checks for Plaud, Gemini, Qdrant               |
+| View         | Description                                                                    |
+| ------------ | ------------------------------------------------------------------------------ |
+| **Timeline** | Date-grouped event timeline with horizontal strip, heat-map, recording detail  |
+| **Topics**   | Events grouped by category (work, meeting, personal, health, etc.)             |
+| **Search**   | Semantic vector search with category/date filters + AI answers (GPT-5.4)       |
+| **Graph**    | Interactive Cytoscape knowledge graph — 6 layouts, node click details           |
+| **Stats**    | 8 stat cards, sentiment trends, productivity insights                          |
+| **Sync**     | Pipeline dashboard, Full Sync, Reset Stuck, Plaud workflow status monitoring   |
+| **Settings** | 12-section config (29+ params), .env save, live connectivity checks            |
 
 ## Project Structure
 
 ```
 app_v2/                → Dash v2 UI (main application)
   main.py              → App entry point (python scripts/launch_app.py)
-  layout.py            → 3-column layout (sidebar | content | detail)
-  assets/style.css     → Dark theme CSS
+  layout.py            → 3-column layout (sidebar | content | detail) + X-ray drawer
+  assets/style.css     → Dark theme CSS (~5400 lines)
   components/          → sidebar, day_view, search, graph, stats, topics, recording_detail
-  callbacks/           → navigation, search, day_view, graph
-  services/            → data_service.py (data access layer)
+  callbacks/           → navigation, search, day_view, graph, recording_detail, xray
+  services/            → data_service.py (data access), xray.py (telemetry ring buffer)
 
 scripts/               → CLI tools
   chronos_pipeline.py  → Full pipeline: ingest → process → index → graph
@@ -88,10 +88,10 @@ src/chronos/           → Core engine
   graph_rag.py         → Graph-enhanced RAG with community detection
   openai_service.py    → OpenAI Responses API wrapper (GPT-5.4 RAG)
 
-src/plaud_*.py         → Plaud API clients (OAuth, device, webhook, USB watcher)
+src/plaud_*.py         → Plaud API clients (OAuth, device, webhook, USB watcher, workflows)
 src/database/          → SQLAlchemy models & repositories
 src/models/            → Pydantic schemas (chronos_schemas.py)
-tests/                 → 90 tests (pytest)
+tests/                 → 91 tests (pytest)
 ```
 
 ## MCP Server

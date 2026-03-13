@@ -95,7 +95,7 @@ python scripts/launch_app.py
 | `python scripts/fix_recordings.py --fix`       | Reset stuck recordings to pending  |
 | `python scripts/index_unindexed.py`            | Index events missing from Qdrant   |
 | `python scripts/chronos_pipeline.py --reindex` | Re-embed all events (model change) |
-| `python -m pytest tests/`                      | Run test suite (90 tests)          |
+| `python -m pytest tests/`                      | Run test suite (91 tests)          |
 
 ---
 
@@ -242,7 +242,7 @@ PlaudBlender/
 │   └── models/
 │       └── chronos_schemas.py  # Pydantic: ChronosEvent, TemporalFilter, etc.
 │
-├── tests/                      # 90 tests
+├── tests/                      # 91 tests
 │   ├── test_database_models.py
 │   ├── test_device_integration.py
 │   ├── test_processing_engine.py
@@ -325,7 +325,7 @@ The UI runs on **Dash 4.0** at `http://localhost:8050` with a 3-column layout:
 
 | View         | Purpose                                                                          |
 | ------------ | -------------------------------------------------------------------------------- |
-| **Days**     | Date-grouped event timeline, click recording → detail panel                      |
+| **Timeline** | Date-grouped event timeline, click recording → detail panel                      |
 | **Topics**   | Events grouped by category (work, meeting, personal, etc.)                       |
 | **Search**   | Semantic search with category/date filters, results ranked by score              |
 | **Graph**    | Interactive Cytoscape knowledge graph, 6 layout algorithms, node click → details |
@@ -336,7 +336,7 @@ The UI runs on **Dash 4.0** at `http://localhost:8050` with a 3-column layout:
 ### Key Features
 
 - **23 callbacks** registered for full interactivity
-- **Auto-refresh** every 60 seconds on Days view
+- **Auto-refresh** every 60 seconds on Timeline view
 - **Recording detail panel** with transcript viewer (collapsible, word/char count)
 - **Search filters** combine with semantic search (category multi-select + date range)
 - **Dark theme** with consistent color palette
@@ -423,7 +423,7 @@ python scripts/chronos_pipeline.py --reindex            # Re-embed all events (m
 2. **Imports:** Use `from src.X import Y` pattern. All `src/` subdirs have `__init__.py`.
 3. **Schemas:** Validate data with Pydantic (`src/models/chronos_schemas.py`).
 4. **Database field:** `ChronosRecording.processing_status` (NOT `.status`).
-5. **Tests:** Run `pytest tests/` before any commit. Currently 90 tests.
+5. **Tests:** Run `pytest tests/` before any commit. Currently 91 tests.
 
 ### Don't
 
