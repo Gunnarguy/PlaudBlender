@@ -540,8 +540,9 @@ def run_index(
             )
             embeddings.extend(batch_embeddings)
 
+    total_embedded = len(pydantic_events)
     print_progress(
-        "Embed", len(texts), len(texts), "complete", time.time() - embed_start
+        "Embed", total_embedded, total_embedded, "complete", time.time() - embed_start
     )
 
     # Upsert to Qdrant

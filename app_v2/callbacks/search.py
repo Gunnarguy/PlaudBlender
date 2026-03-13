@@ -112,18 +112,32 @@ def register_search_callbacks(app):
         if not query:
             return None, [], {"display": "none"}
 
+        from app_v2.services.xray import xray_log, xray_timer
+
         logger.info(
             f"Search query: {query}, categories={categories}, dates={start_date}-{end_date}"
+        )
+        xray_log(
+            "search", "query", f"Query: '{query}'", detail=f"cats={categories or 'all'}"
         )
 
         # Perform filtered search
         service = get_data_service()
-        results = service.search(
-            query,
-            limit=20,
-            categories=categories or None,
-            start_date=start_date[:10] if start_date else None,
-            end_date=end_date[:10] if end_date else None,
+        with xray_timer("search", "vector", "Qdrant semantic search") as t_search:
+            results = service.search(
+                query,
+                limit=20,
+                categories=categories or None,
+                start_date=start_date[:10] if start_date else None,
+                end_date=end_date[:10] if end_date else None,
+            )
+
+        xray_log(
+            "search",
+            "results",
+            f"{len(results)} matches",
+            duration_ms=round(t_search.ms, 1),
+            detail=f"top={results[0].score:.2f}" if results else None,
         )
 
         if not results:
@@ -151,9 +165,22 @@ def register_search_callbacks(app):
         results_ui = []
 
         # Add AI conversational answer (if OpenAI configured)
-        ai_section = _build_ai_answer_section(query, results)
+        xray_log("search", "ai", "Generating AI answer...")
+        with xray_timer("search", "openai", "OpenAI Responses API") as t_ai:
+            ai_section = _build_ai_answer_section(query, results)
         if ai_section:
             results_ui.append(ai_section)
+            xray_log(
+                "search",
+                "ai",
+                "AI answer ready",
+                duration_ms=round(t_ai.ms, 1),
+                level="perf",
+            )
+        else:
+            xray_log(
+                "search", "ai", "AI answer skipped (no key or failed)", level="warn"
+            )
 
         results_ui.append(create_search_results(results, query))
 

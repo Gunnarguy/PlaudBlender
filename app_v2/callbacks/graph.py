@@ -66,6 +66,9 @@ def register_graph_callbacks(app):
             },
         }
 
+        from app_v2.services.xray import xray_log
+
+        xray_log("graph", "layout", f"Layout changed to {layout_name}")
         return layout_configs.get(layout_name, {"name": layout_name, "fit": True})
 
     @app.callback(
@@ -78,9 +81,12 @@ def register_graph_callbacks(app):
         if not node_data:
             raise PreventUpdate
 
+        from app_v2.services.xray import xray_log
+
         node_type = node_data.get("type", "unknown")
         label = node_data.get("full_label") or node_data.get("label", "Unknown")
         count = node_data.get("count", node_data.get("mention_count", 0))
+        xray_log("graph", "node-tap", f"{node_type}: {label}", detail=f"count={count}")
         categories = node_data.get("categories", "")
         sentiment = node_data.get("sentiment")
         related = node_data.get("related_keywords", "")

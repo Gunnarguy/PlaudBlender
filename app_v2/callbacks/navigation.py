@@ -2153,6 +2153,10 @@ def register_navigation_callbacks(app):
         preferences,
     ):
         """Update main content based on navigation and state."""
+        import time as _time
+        from app_v2.services.xray import xray_log, xray_timer
+
+        _t0 = _time.perf_counter()
         triggered = ctx.triggered_id
         service = None
 
@@ -2177,6 +2181,7 @@ def register_navigation_callbacks(app):
 
         if isinstance(triggered, dict) and triggered.get("type") == "nav-item":
             view = triggered.get("view", "timeline")
+            xray_log("nav", "switch", f"View → {view}")
 
         # Handle search query
         if search_query and triggered == "search-query":
@@ -2191,6 +2196,7 @@ def register_navigation_callbacks(app):
         # Handle topic selection
         if selected_topic and triggered == "selected-topic":
             timeline = get_service().get_topic_timeline(selected_topic)
+            xray_log("nav", "topic", f"Topic: {selected_topic}")
             return (
                 create_topic_timeline_view(timeline),
                 "topic-detail",
@@ -2205,13 +2211,13 @@ def register_navigation_callbacks(app):
         if selected_recording:
             from app_v2.components import create_recording_detail
 
-            logger.info(
-                f"Fetching recording detail for: {selected_recording.get('id')}"
-            )
-            detail = get_service().get_recording_detail(selected_recording.get("id"))
+            rec_id = selected_recording.get("id")
+            xray_log("nav", "detail", f"Opening recording {rec_id}")
+            with xray_timer("nav", "fetch", f"Fetch detail for {rec_id}"):
+                detail = get_service().get_recording_detail(rec_id)
             if detail:
                 logger.info(f"Got detail with {len(detail.events)} events")
-                rec_id = selected_recording.get("id")
+                xray_log("nav", "detail", f"{len(detail.events)} events loaded")
                 transcript = get_service().get_transcript(rec_id)
                 ai_summary = get_service().get_ai_summary(rec_id)
                 extracted_data = get_service().get_extracted_data(rec_id)
@@ -2232,50 +2238,65 @@ def register_navigation_callbacks(app):
                 detail_class = "detail-panel open"
             else:
                 logger.warning("No detail returned!")
+                xray_log("nav", "detail", "No detail returned!", level="warn")
 
         # Render main content based on view
-        if view == "timeline":
-            days = get_service().get_days()
-            content = create_day_view(days)
-        elif view == "days":
-            # Legacy compat — treat 'days' as 'timeline'
-            days = get_service().get_days()
-            content = create_day_view(days)
-            view = "timeline"
-        elif view == "search":
-            # Preserve search results when opening a detail panel
-            if search_query:
-                results = get_service().search(search_query)
-                content = create_search_results(results, search_query)
-            else:
+        with xray_timer("nav", "render", f"Render view: {view}"):
+            if view == "timeline":
+                days = get_service().get_days()
+                content = create_day_view(days)
+                xray_log("nav", "data", f"Timeline: {len(days)} days", level="perf")
+            elif view == "days":
                 days = get_service().get_days()
                 content = create_day_view(days)
                 view = "timeline"
-        elif view == "topic-detail":
-            # Preserve topic timeline when opening a detail panel
-            if selected_topic:
-                timeline = get_service().get_topic_timeline(selected_topic)
-                content = create_topic_timeline_view(timeline)
-            else:
+            elif view == "search":
+                if search_query:
+                    results = get_service().search(search_query)
+                    content = create_search_results(results, search_query)
+                else:
+                    days = get_service().get_days()
+                    content = create_day_view(days)
+                    view = "timeline"
+            elif view == "topic-detail":
+                if selected_topic:
+                    timeline = get_service().get_topic_timeline(selected_topic)
+                    content = create_topic_timeline_view(timeline)
+                else:
+                    topics = get_service().get_all_topics()
+                    content = create_topics_grid(topics)
+                    view = "topics"
+            elif view == "topics":
                 topics = get_service().get_all_topics()
                 content = create_topics_grid(topics)
-                view = "topics"
-        elif view == "topics":
-            topics = get_service().get_all_topics()
-            content = create_topics_grid(topics)
-        elif view == "graph":
-            graph_data = get_service().get_graph_data()
-            content = create_graph_view(graph_data)
-        elif view == "stats":
-            stats = get_service().get_stats()
-            content = create_stats_view(stats)
-        elif view == "sync":
-            content = create_sync_view(get_service())
-        elif view == "settings":
-            content = create_settings_view(preferences=prefs)
-        else:
-            days = get_service().get_days()
-            content = create_day_view(days)
+            elif view == "graph":
+                graph_data = get_service().get_graph_data()
+                content = create_graph_view(graph_data)
+                xray_log(
+                    "nav",
+                    "data",
+                    f"Graph: {len(graph_data.nodes)} nodes, {len(graph_data.edges)} edges",
+                    level="perf",
+                )
+            elif view == "stats":
+                stats = get_service().get_stats()
+                content = create_stats_view(stats)
+            elif view == "sync":
+                content = create_sync_view(get_service())
+            elif view == "settings":
+                content = create_settings_view(preferences=prefs)
+            else:
+                days = get_service().get_days()
+                content = create_day_view(days)
+
+        _total_ms = (_time.perf_counter() - _t0) * 1000
+        xray_log(
+            "nav",
+            "total",
+            f"Navigation complete → {view}",
+            duration_ms=round(_total_ms, 1),
+            level="perf",
+        )
 
         return content, view, detail_content, detail_class
 
@@ -2507,6 +2528,14 @@ def register_navigation_callbacks(app):
             import threading
 
             from src.chronos.pipeline_progress import progress, read_progress
+            from app_v2.services.xray import xray_log
+
+            xray_log(
+                "sync",
+                "start",
+                "Full Sync pipeline initiated",
+                detail=f"days_back={days_back or 7}",
+            )
 
             # Don't start a second run if one is already going
             cur = read_progress()
@@ -2529,6 +2558,7 @@ def register_navigation_callbacks(app):
                 from src.database.engine import SessionLocal
                 from src.database.chronos_repository import get_pending_chronos_recordings
                 from src.database.models import ChronosEvent as ChronosEventModel
+                from app_v2.services.xray import xray_log
                 import time as _time
 
                 db = SessionLocal()
@@ -2539,18 +2569,43 @@ def register_navigation_callbacks(app):
                     # Phase 1: Ingest
                     progress.start_phase("ingest")
                     progress.update(step="Fetching recording list from Plaud…")
+                    xray_log(
+                        "pipeline",
+                        "ingest",
+                        f"Phase 1: Ingest — fetching {_days} days from Plaud",
+                    )
+                    _p1 = _time.perf_counter()
                     ingest_svc = ChronosIngestService(db_session=db)
                     try:
                         success, failed = ingest_svc.ingest_recent_recordings(
                             days_back=_days, fetch_all_pages=True
                         )
                         progress.finish_phase(summary=f"{success} ingested, {failed} failed")
+                        xray_log(
+                            "pipeline",
+                            "ingest",
+                            f"Ingest complete: {success} ok, {failed} failed",
+                            duration_ms=(_time.perf_counter() - _p1) * 1000,
+                        )
                     except Exception as auth_err:
                         progress.finish_phase(summary=f"⚠️ {auth_err}")
+                        xray_log(
+                            "pipeline",
+                            "ingest",
+                            f"Ingest error: {auth_err}",
+                            level="error",
+                            duration_ms=(_time.perf_counter() - _p1) * 1000,
+                        )
 
                     # Phase 2: Process
                     pending = get_pending_chronos_recordings(db)
                     progress.start_phase("process", total_items=len(pending))
+                    xray_log(
+                        "pipeline",
+                        "process",
+                        f"Phase 2: Process — {len(pending)} pending recordings",
+                    )
+                    _p2 = _time.perf_counter()
                     if pending:
                         processor = TranscriptProcessor(db_session=db)
                         processed = proc_failed = 0
@@ -2569,11 +2624,27 @@ def register_navigation_callbacks(app):
                                 proc_failed += 1
                             progress.advance(item=rec_id[:20])
                         progress.finish_phase(summary=f"{processed} processed, {proc_failed} failed")
+                        xray_log(
+                            "pipeline",
+                            "process",
+                            f"Process complete: {processed} ok, {proc_failed} failed",
+                            duration_ms=(_time.perf_counter() - _p2) * 1000,
+                        )
                     else:
                         progress.finish_phase(summary="No pending recordings")
+                        xray_log(
+                            "pipeline",
+                            "process",
+                            "No pending recordings to process",
+                            duration_ms=(_time.perf_counter() - _p2) * 1000,
+                        )
 
                     # Phase 3: Index
                     progress.start_phase("index")
+                    xray_log(
+                        "pipeline", "index", "Phase 3: Index — generating embeddings"
+                    )
+                    _p3 = _time.perf_counter()
                     try:
                         embedder = ChronosEmbeddingService()
                         qdrant = ChronosQdrantClient()
@@ -2615,10 +2686,29 @@ def register_navigation_callbacks(app):
                                     logger.error(f"Index error: {e}")
                                     progress.advance(item=f"error: {e}")
                             progress.finish_phase(summary=f"{indexed} events indexed")
+                            xray_log(
+                                "pipeline",
+                                "index",
+                                f"Index complete: {indexed} events indexed",
+                                duration_ms=(_time.perf_counter() - _p3) * 1000,
+                            )
                         else:
                             progress.finish_phase(summary="All events already indexed")
+                            xray_log(
+                                "pipeline",
+                                "index",
+                                "All events already indexed",
+                                duration_ms=(_time.perf_counter() - _p3) * 1000,
+                            )
                     except Exception as e:
                         progress.finish_phase(error=str(e)[:100])
+                        xray_log(
+                            "pipeline",
+                            "index",
+                            f"Index error: {str(e)[:80]}",
+                            level="error",
+                            duration_ms=(_time.perf_counter() - _p3) * 1000,
+                        )
 
                     # Refresh cache
                     try:
@@ -2627,9 +2717,11 @@ def register_navigation_callbacks(app):
                     except Exception:
                         pass
                     progress.finish_run()
+                    xray_log("pipeline", "done", "Pipeline run finished successfully")
                 except Exception as e:
                     logger.error(f"Pipeline thread error: {e}")
                     progress.finish_run(error=str(e))
+                    xray_log("pipeline", "done", f"Pipeline failed: {e}", level="error")
                 finally:
                     db.close()
 

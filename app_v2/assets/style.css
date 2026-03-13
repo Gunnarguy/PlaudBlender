@@ -5378,3 +5378,224 @@ a.plaud-connect-btn:hover {
   margin: 0;
   background: transparent;
 }
+
+/* ===================================================================
+   X-RAY TELEMETRY DRAWER
+   =================================================================== */
+
+.xray-drawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: #0c0e14;
+  border-top: 2px solid #22d3ee;
+  transition: height 0.25s ease;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.72rem;
+}
+
+.xray-drawer.collapsed {
+  height: 32px;
+}
+
+.xray-drawer.expanded {
+  height: 280px;
+}
+
+.xray-handle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 16px;
+  cursor: pointer;
+  user-select: none;
+  background: linear-gradient(180deg, #131620 0%, #0c0e14 100%);
+  border-bottom: 1px solid #1e293b;
+  height: 32px;
+}
+
+.xray-handle:hover {
+  background: linear-gradient(180deg, #1a1f30 0%, #0c0e14 100%);
+}
+
+.xray-icon {
+  font-size: 0.82rem;
+}
+
+.xray-title {
+  color: #22d3ee;
+  font-weight: 700;
+  font-size: 0.68rem;
+  letter-spacing: 2px;
+}
+
+.xray-badge {
+  background: #22d3ee;
+  color: #0c0e14;
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.xray-badge:empty {
+  display: none;
+}
+
+.xray-chevron {
+  color: #475569;
+  margin-left: auto;
+  font-size: 0.7rem;
+}
+
+.xray-body {
+  height: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.xray-drawer.collapsed .xray-body {
+  display: none;
+}
+
+.xray-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 16px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.xray-btn {
+  background: #1e293b;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 0.65rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.xray-btn:hover {
+  background: #334155;
+  color: #e2e8f0;
+}
+
+.xray-count {
+  color: #475569;
+  font-size: 0.65rem;
+}
+
+.xray-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.xray-log::-webkit-scrollbar {
+  width: 6px;
+}
+
+.xray-log::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.xray-log::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+
+.xray-empty {
+  color: #475569;
+  padding: 16px;
+  text-align: center;
+  font-style: italic;
+}
+
+.xray-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 16px;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.4);
+  line-height: 1.5;
+}
+
+.xray-row:hover {
+  background: rgba(34, 211, 238, 0.04);
+}
+
+.xray-ts {
+  color: #475569;
+  min-width: 58px;
+  flex-shrink: 0;
+}
+
+.xray-source {
+  color: #22d3ee;
+  font-weight: 600;
+  min-width: 52px;
+  flex-shrink: 0;
+}
+
+.xray-op {
+  color: #a78bfa;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.xray-msg {
+  color: #cbd5e1;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xray-dur {
+  font-weight: 700;
+  min-width: 54px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.xray-dur.fast {
+  color: #22c55e;
+}
+
+.xray-dur.med {
+  color: #f59e0b;
+}
+
+.xray-dur.slow {
+  color: #ef4444;
+}
+
+.xray-detail {
+  color: #64748b;
+  font-size: 0.65rem;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Level coloring */
+.xray-level-warn .xray-msg {
+  color: #f59e0b;
+}
+
+.xray-level-error .xray-msg {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.xray-level-perf .xray-source {
+  color: #a78bfa;
+}

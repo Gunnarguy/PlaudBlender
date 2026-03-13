@@ -67,6 +67,11 @@ def register_day_view_callbacks(app):
         date = triggered.get("date")
 
         logger.info(f"Recording selected: {recording_id} from {date}")
+        from app_v2.services.xray import xray_log
+
+        xray_log(
+            "day", "select", f"Recording {recording_id[:12]}…", detail=f"date={date}"
+        )
 
         return {"id": recording_id, "date": date}
 

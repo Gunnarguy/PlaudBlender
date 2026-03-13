@@ -52,15 +52,20 @@ def register_recording_detail_callbacks(app):
             return no_update
 
         from app_v2.services.data_service import get_data_service
+        from app_v2.services.xray import xray_log
 
         svc = get_data_service()
         ok = svc.save_category_override(event_id, new_value)
 
         if ok:
             logger.info(f"Category override saved: event={event_id} → {new_value}")
+            xray_log("detail", "category", f"Override: {event_id[:8]}… → {new_value}")
             return f"✓ Category updated to {new_value}"
         else:
             logger.warning(f"Failed to save category override: event={event_id}")
+            xray_log(
+                "detail", "category", f"FAILED override: {event_id[:8]}…", level="error"
+            )
             return "⚠ Could not save override"
 
     # Clientside callback for instant event filtering (no server round-trip)

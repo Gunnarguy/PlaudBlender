@@ -18,6 +18,10 @@ def create_layout() -> html.Div:
             dcc.Store(id="search-query", data=None),
             dcc.Store(id="days-data", data=None),
             dcc.Store(id="app-preferences", storage_type="local", data=None),
+            # X-ray telemetry store (event bus)
+            dcc.Store(id="xray-events", data=[]),
+            # X-ray refresh ticker (polls server-side buffer every 1s when open)
+            dcc.Interval(id="xray-poll", interval=1000, n_intervals=0, disabled=True),
             # Auto-refresh interval (every 60 seconds)
             dcc.Interval(id="auto-refresh", interval=60000, n_intervals=0),
             # Pipeline progress polling (2s while running, self-disables when idle)
@@ -74,6 +78,43 @@ def create_layout() -> html.Div:
             ),
             # Category save status toast
             html.Div(id="category-save-status", className="save-status-toast"),
+            # X-ray drawer — collapsible diagnostic panel
+            html.Div(
+                className="xray-drawer collapsed",
+                id="xray-drawer",
+                children=[
+                    html.Div(
+                        className="xray-handle",
+                        id="xray-toggle",
+                        children=[
+                            html.Span("🔬", className="xray-icon"),
+                            html.Span("X-RAY", className="xray-title"),
+                            html.Span("", id="xray-badge", className="xray-badge"),
+                            html.Span("▲", id="xray-chevron", className="xray-chevron"),
+                        ],
+                    ),
+                    html.Div(
+                        className="xray-body",
+                        id="xray-body",
+                        children=[
+                            html.Div(
+                                className="xray-toolbar",
+                                children=[
+                                    html.Button(
+                                        "Clear",
+                                        id="xray-clear-btn",
+                                        className="xray-btn",
+                                    ),
+                                    html.Span(
+                                        "", id="xray-count", className="xray-count"
+                                    ),
+                                ],
+                            ),
+                            html.Div(id="xray-log", className="xray-log"),
+                        ],
+                    ),
+                ],
+            ),
             # Loading overlay
             dcc.Loading(
                 id="loading-overlay",
