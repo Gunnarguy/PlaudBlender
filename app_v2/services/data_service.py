@@ -1154,12 +1154,38 @@ class ChronosDataService:
         num_recordings = len(recording_ids)
         avg_sentiment = total_sentiment / len(events) if events else 0.0
         avg_events_per_rec = len(events) / num_recordings if num_recordings else 0.0
-        avg_duration_min = (
-            (sum(recording_durations.values()) / num_recordings / 60)
-            if num_recordings
-            else 0.0
-        )
-        longest_rec_min = max(recording_durations.values(), default=0) / 60
+
+        # Use RECORDING durations from SQLite (not event durations which overlap
+        # and double-count time).  Fall back to event-based sums only if the DB
+        # query fails.
+        real_total_duration_sec = 0.0
+        real_avg_duration_min = 0.0
+        real_longest_rec_min = 0.0
+        real_total_recordings = num_recordings
+        try:
+            from src.database.engine import SessionLocal as _SL
+            from src.database.models import ChronosRecording as _CR
+            _db = _SL()
+            try:
+                db_recs = _db.query(_CR).all()
+                real_total_recordings = len(db_recs)
+                rec_durations = [float(r.duration_seconds or 0) for r in db_recs]  # type: ignore[arg-type]
+                real_total_duration_sec = sum(rec_durations)
+                real_avg_duration_min = (
+                    (real_total_duration_sec / len(db_recs) / 60) if db_recs else 0.0
+                )
+                real_longest_rec_min = max(rec_durations, default=0) / 60
+            finally:
+                _db.close()
+        except Exception:
+            # Fallback to event-based (inaccurate but better than nothing)
+            real_total_duration_sec = total_duration
+            real_avg_duration_min = (
+                (sum(recording_durations.values()) / num_recordings / 60)
+                if num_recordings
+                else 0.0
+            )
+            real_longest_rec_min = max(recording_durations.values(), default=0) / 60
 
         most_productive_day = (
             max(by_day_of_week, key=lambda k: by_day_of_week[k])
@@ -1190,10 +1216,10 @@ class ChronosDataService:
             logger.debug(f"Could not fetch Plaud cloud stats: {e}")
 
         return Stats(
-            total_recordings=num_recordings,
+            total_recordings=real_total_recordings,
             total_events=len(events),
             total_days=len(days),
-            total_duration_hours=total_duration / 3600,
+            total_duration_hours=real_total_duration_sec / 3600,
             categories=dict(categories),
             top_keywords=top_keywords,
             events_by_day_of_week=dict(by_day_of_week),
@@ -1201,10 +1227,10 @@ class ChronosDataService:
             avg_sentiment=avg_sentiment,
             sentiment_distribution=sentiment_counts,
             avg_events_per_recording=avg_events_per_rec,
-            avg_recording_duration_min=avg_duration_min,
+            avg_recording_duration_min=real_avg_duration_min,
             most_productive_day=most_productive_day,
             most_productive_hour=most_productive_hour,
-            longest_recording_min=longest_rec_min,
+            longest_recording_min=real_longest_rec_min,
             pipeline_completion_rate=pipeline_rate,
             plaud_cloud_stats=plaud_stats,
             categories_by_hour={h: dict(c) for h, c in cats_by_hour.items()},

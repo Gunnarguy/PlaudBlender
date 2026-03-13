@@ -293,7 +293,9 @@ def create_stats_view(stats: Stats) -> html.Div:
         earliest = date_range.get("earliest", "—")
         latest = date_range.get("latest", "—")
         local_recs = stats.total_recordings
-        synced_pct = (local_recs / cloud_total * 100) if cloud_total else 0
+        # Cap sync % at 100 — local DB accumulates old recordings that
+        # Plaud cloud may have pruned, so local > cloud is normal.
+        synced_pct = min((local_recs / cloud_total * 100), 100) if cloud_total else 0
 
         plaud_section_children = [
             html.Div(
@@ -318,7 +320,8 @@ def create_stats_view(stats: Stats) -> html.Div:
                         children=[
                             html.Span(f"Recording range: {earliest} → {latest}"),
                             html.Span(
-                                f" · {local_recs}/{cloud_total} recordings synced locally",
+                                f" · {local_recs} local / {cloud_total} in cloud"
+                                + (" (local includes older recordings pruned from cloud)" if local_recs > cloud_total else ""),
                                 className="plaud-sync-detail",
                             ),
                         ],
