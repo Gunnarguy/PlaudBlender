@@ -4600,7 +4600,7 @@ a.plaud-connect-btn:hover {
 /* ── Save Status Toast ─────────────────────────────────────────────────────── */
 .save-status-toast {
   position: fixed;
-  bottom: 20px;
+  bottom: 400px;
   right: 20px;
   padding: 8px 16px;
   background: var(--bg-elevated);
@@ -5504,24 +5504,24 @@ a.plaud-connect-btn:hover {
   position: fixed;
   bottom: 16px;
   right: 16px;
-  width: 420px;
-  height: 320px;
+  width: 480px;
+  height: 380px;
   z-index: 9998;
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
-  background: rgba(10, 12, 20, 0.96);
+  background: rgba(10, 12, 20, 0.97);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid rgba(99, 102, 241, 0.25);
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.55), 0 0 16px rgba(99, 102, 241, 0.1);
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-  font-size: 12px;
+  font-size: 13px;
   color: #e2e8f0;
   display: flex;
   flex-direction: column;
   transition: box-shadow 0.2s ease;
-  min-width: 280px;
-  min-height: 160px;
+  min-width: 320px;
+  min-height: 200px;
 }
 
 .xray-pip:hover {
@@ -5529,9 +5529,9 @@ a.plaud-connect-btn:hover {
 }
 
 .xray-pip.minimized {
-  width: 180px !important;
-  height: 34px !important;
-  min-height: 34px;
+  width: 200px !important;
+  height: 38px !important;
+  min-height: 38px;
   border-radius: 10px;
   cursor: pointer;
 }
@@ -5547,8 +5547,8 @@ a.plaud-connect-btn:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
-  height: 34px;
+  padding: 0 12px;
+  height: 38px;
   flex-shrink: 0;
   background: linear-gradient(180deg, rgba(22, 24, 40, 0.98) 0%, rgba(14, 16, 28, 0.98) 100%);
   border-bottom: 1px solid rgba(30, 41, 59, 0.4);
@@ -5560,26 +5560,26 @@ a.plaud-connect-btn:hover {
   cursor: grabbing;
 }
 
-.xp-titlebar .xp-logo { font-size: 0.85rem; }
+.xp-titlebar .xp-logo { font-size: 0.95rem; }
 .xp-titlebar .xp-title {
   color: #818cf8;
   font-weight: 700;
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   letter-spacing: 1.2px;
   text-transform: uppercase;
 }
 
 .xp-stats {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   margin-left: auto;
   align-items: center;
-  margin-right: 6px;
+  margin-right: 8px;
 }
 
 .xp-stat {
-  font-size: 0.64rem;
-  color: #64748b;
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
 .xp-stat b {
@@ -5592,8 +5592,8 @@ a.plaud-connect-btn:hover {
 .xp-stat b.r { color: #f87171; }
 
 .xp-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -5615,9 +5615,9 @@ a.plaud-connect-btn:hover {
   background: none;
   border: none;
   color: #64748b;
-  font-size: 0.9rem;
+  font-size: 1rem;
   cursor: pointer;
-  padding: 0 3px;
+  padding: 0 4px;
   line-height: 1;
   transition: color 0.15s;
 }
@@ -5629,8 +5629,8 @@ a.plaud-connect-btn:hover {
 .xp-toolbar {
   display: flex;
   align-items: center;
-  padding: 4px 10px;
-  gap: 6px;
+  padding: 5px 12px;
+  gap: 8px;
   border-bottom: 1px solid rgba(30, 41, 59, 0.3);
   background: rgba(15, 17, 28, 0.5);
   flex-shrink: 0;
@@ -5640,17 +5640,17 @@ a.plaud-connect-btn:hover {
   display: flex;
   gap: 1px;
   background: rgba(30, 41, 59, 0.35);
-  border-radius: 6px;
-  padding: 1px;
+  border-radius: 7px;
+  padding: 2px;
 }
 
 .xp-fbtn {
   background: transparent;
-  color: #64748b;
+  color: #94a3b8;
   border: none;
   border-radius: 5px;
-  padding: 2px 9px;
-  font-size: 0.62rem;
+  padding: 4px 10px;
+  font-size: 0.72rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.12s;
@@ -5663,8 +5663,8 @@ a.plaud-connect-btn:hover {
 .xp-spacer { flex: 1; }
 
 .xp-count {
-  color: #475569;
-  font-size: 0.62rem;
+  color: #94a3b8;
+  font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -5673,8 +5673,8 @@ a.plaud-connect-btn:hover {
   color: #94a3b8;
   border: 1px solid rgba(51, 65, 85, 0.4);
   border-radius: 5px;
-  padding: 2px 10px;
-  font-size: 0.62rem;
+  padding: 4px 12px;
+  font-size: 0.72rem;
   cursor: pointer;
   font-family: inherit;
   transition: all 0.12s;
@@ -5698,19 +5698,20 @@ a.plaud-connect-btn:hover {
   padding: 2px 0;
 }
 
-.xp-list::-webkit-scrollbar { width: 4px; }
+.xp-list::-webkit-scrollbar { width: 5px; }
 .xp-list::-webkit-scrollbar-track { background: transparent; }
-.xp-list::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.2); border-radius: 2px; }
+.xp-list::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.2); border-radius: 3px; }
 .xp-list::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.4); }
 
 .xp-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 10px;
+  padding: 5px 12px;
   border-bottom: 1px solid rgba(30, 41, 59, 0.15);
   animation: xp-fade 0.18s ease-out;
   transition: background 0.1s;
+  min-height: 28px;
 }
 
 @keyframes xp-fade {
@@ -5727,9 +5728,9 @@ a.plaud-connect-btn:hover {
 .xp-row.perf .xp-msg { color: #a5b4fc; }
 
 .xp-ts {
-  color: #475569;
-  font-size: 0.62rem;
-  min-width: 48px;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  min-width: 50px;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -5739,10 +5740,10 @@ a.plaud-connect-btn:hover {
   align-items: center;
   gap: 3px;
   font-weight: 600;
-  font-size: 0.56rem;
-  padding: 1px 6px;
+  font-size: 0.65rem;
+  padding: 2px 8px;
   border-radius: 8px;
-  min-width: 52px;
+  min-width: 72px;
   justify-content: center;
   flex-shrink: 0;
   text-transform: uppercase;
@@ -5763,24 +5764,24 @@ a.plaud-connect-btn:hover {
 .xp-src-sync { background: rgba(20, 184, 166, 0.12); color: #14b8a6; border: 1px solid rgba(20, 184, 166, 0.18); }
 .xp-src-default { background: rgba(100, 116, 139, 0.12); color: #94a3b8; border: 1px solid rgba(100, 116, 139, 0.18); }
 
-.xp-op { color: #64748b; font-size: 0.62rem; min-width: 48px; flex-shrink: 0; }
-.xp-msg { color: #e2e8f0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; }
+.xp-op { color: #94a3b8; font-size: 0.75rem; min-width: 52px; flex-shrink: 0; }
+.xp-msg { color: #e2e8f0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; }
 
-.xp-dur { display: flex; align-items: center; gap: 4px; min-width: 80px; flex-shrink: 0; }
-.xp-bar { width: 36px; height: 3px; border-radius: 2px; background: rgba(30, 41, 59, 0.4); overflow: hidden; flex-shrink: 0; }
+.xp-dur { display: flex; align-items: center; gap: 5px; min-width: 90px; flex-shrink: 0; }
+.xp-bar { width: 40px; height: 4px; border-radius: 2px; background: rgba(30, 41, 59, 0.4); overflow: hidden; flex-shrink: 0; }
 .xp-fill { height: 100%; border-radius: 2px; }
 .xp-fill.fast { background: linear-gradient(90deg, #22c55e, #34d399); }
 .xp-fill.med { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
 .xp-fill.slow { background: linear-gradient(90deg, #ef4444, #f87171); }
-.xp-dlabel { font-size: 0.6rem; font-weight: 600; min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+.xp-dlabel { font-size: 0.72rem; font-weight: 600; min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
 .xp-dlabel.fast { color: #34d399; }
 .xp-dlabel.med { color: #fbbf24; }
 .xp-dlabel.slow { color: #f87171; }
 
-.xp-dtl { color: #475569; font-size: 0.6rem; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: rgba(30, 41, 59, 0.25); padding: 1px 5px; border-radius: 3px; }
+.xp-dtl { color: #94a3b8; font-size: 0.72rem; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: rgba(30, 41, 59, 0.25); padding: 2px 6px; border-radius: 4px; }
 
-.xp-empty { color: #475569; padding: 28px 12px; text-align: center; font-size: 0.75rem; }
-.xp-empty-icon { font-size: 1.4rem; display: block; margin-bottom: 6px; opacity: 0.4; }
+.xp-empty { color: #94a3b8; padding: 40px 16px; text-align: center; font-size: 0.85rem; }
+.xp-empty-icon { font-size: 1.6rem; display: block; margin-bottom: 8px; opacity: 0.4; }
 
 /* ── Resize handle ───────────────────── */
 
@@ -5788,8 +5789,8 @@ a.plaud-connect-btn:hover {
   position: absolute;
   top: 0;
   left: 0;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   cursor: nw-resize;
   z-index: 2;
 }
@@ -5799,8 +5800,8 @@ a.plaud-connect-btn:hover {
   position: absolute;
   top: 3px;
   left: 3px;
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-top: 2px solid rgba(99, 102, 241, 0.3);
   border-left: 2px solid rgba(99, 102, 241, 0.3);
   border-radius: 2px 0 0 0;
