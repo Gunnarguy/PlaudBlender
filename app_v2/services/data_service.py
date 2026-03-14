@@ -302,7 +302,7 @@ class ChronosDataService:
         ):
             _age = (now - self._last_cache_time).seconds
             xray_log("data", "cache-hit",
-                     f"Using cached data — {len(self._events_cache)} events, {_age}s old")
+                     f"Already have your {len(self._events_cache):,} moments ready (grabbed {_age}s ago)")
             return self._events_cache
 
         with self._cache_lock:
@@ -325,7 +325,7 @@ class ChronosDataService:
                 _scroll_t0 = _time.perf_counter()
                 _scroll_pages = 0
                 xray_log("data", "cache-miss",
-                         f"Refreshing data from database…")
+                         f"Grabbing all your recordings…")
 
                 while True:
                     response = self._qdrant.client.scroll(
@@ -357,8 +357,8 @@ class ChronosDataService:
                 _scroll_ms = (_time.perf_counter() - _scroll_t0) * 1000
 
                 xray_log("data", "loaded",
-                         f"Loaded {len(events)} events ({_scroll_pages} pages)",
-                         duration_ms=round(_scroll_ms, 1), level="perf")
+                         f"Got {len(events):,} moments from your recordings",
+                         duration_ms=round(_scroll_ms, 1))
                 logger.info(f"Loaded {len(events)} events from Qdrant")
                 return events
 
@@ -1108,9 +1108,8 @@ class ChronosDataService:
             query_vector = self._embedder.embed_text(query, task_type=task_type)
             _embed_ms = (_time.perf_counter() - _embed_t0) * 1000
             xray_log("search", "embed",
-                     f"Search text converted to numbers",
-                     duration_ms=round(_embed_ms, 1),
-                     detail=f"{len(query.split())} words")
+                     f"Turned your search into numbers so the computer can match it",
+                     duration_ms=round(_embed_ms, 1))
 
             # Use hybrid search if filters are present
             if temporal_filter or categories:

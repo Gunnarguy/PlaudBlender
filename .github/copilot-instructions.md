@@ -30,22 +30,26 @@
 | ------------ | -------------------------------------------------------------------- |
 | **Timeline** | Date-grouped event timeline, click recording → detail panel          |
 | **Topics**   | Events grouped by category (work, meeting, personal, etc.)           |
-| **Search**   | Semantic search with category/date filters                           |
+| **Search**   | Semantic search with category/date filters + AI answers (GPT-5.4)    |
 | **Graph**    | Interactive Cytoscape knowledge graph, 6 layouts, node click details |
 | **Stats**    | 8 stat cards, sentiment chart, productivity insights                 |
 | **Sync**     | Pipeline dashboard: status counts, Full Sync, Reset Stuck            |
 | **Settings** | Real connectivity checks for Plaud, Gemini, Qdrant                   |
 
+**X-ray Activity Monitor** — Floating PiP panel showing plain-English telemetry. 12 source categories, filter tabs, incremental polling with sequence IDs. Events persist across page navigations.
+
 ## Project Structure
 
 ```
 app_v2/                 → MAIN Dash v2 UI (23 callbacks)
-  main.py               → Run with: python scripts/launch_app.py
+  main.py               → Run with: python scripts/launch_app.py (+ X-ray Flask routes)
   layout.py             → 3-column layout (sidebar | content | detail)
-  assets/style.css      → ~3950 lines dark theme CSS
+  assets/style.css      → ~5400 lines dark theme CSS
+  assets/xray_pip.js    → X-ray Activity Monitor PiP panel (client-side JS)
   components/           → sidebar, day_view, search, graph, stats, topics, recording_detail
-  callbacks/            → navigation, search, day_view, graph
+  callbacks/            → navigation, search, day_view, graph, recording_detail
   services/data_service.py → Data access layer (~1250 lines)
+  services/xray.py      → Telemetry ring buffer, xray_log(), seq IDs
 scripts/                → CLI tools
   chronos_pipeline.py   → Full pipeline runner (~688 lines)
   mcp_server.py         → Production MCP server (11 tools, FastMCP)
@@ -80,6 +84,7 @@ docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 3. **Schemas:** Validate data with Pydantic (`src/models/chronos_schemas.py`)
 4. **Qdrant:** Use `src/chronos/qdrant_client.py` — native API with temporal indexes
 5. **Tests:** Run `pytest tests/` before any commit.
+6. **X-ray messages:** Use `xray_log(source, operation, message)` for telemetry. Messages must be **plain human English** — no dev jargon. Source is one of: `ingest`, `gemini`, `embed`, `qdrant`, `graph`, `search`, `data`, `nav`, `pipeline`, `detail`, `day`, `sync`.
 
 ## User Philosophy
 

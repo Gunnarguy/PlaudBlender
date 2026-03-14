@@ -68,7 +68,7 @@ def register_graph_callbacks(app):
 
         from app_v2.services.xray import xray_log
 
-        xray_log("graph", "layout", f"Graph layout changed to {layout_name}")
+        xray_log("graph", "layout", f"Rearranged the knowledge map to '{layout_name}' style")
         return layout_configs.get(layout_name, {"name": layout_name, "fit": True})
 
     @app.callback(
@@ -86,7 +86,7 @@ def register_graph_callbacks(app):
         node_type = node_data.get("type", "unknown")
         label = node_data.get("full_label") or node_data.get("label", "Unknown")
         count = node_data.get("count", node_data.get("mention_count", 0))
-        xray_log("graph", "node-tap", f"Tapped {node_type}: {label}", detail=f"{count} mentions")
+        xray_log("graph", "node-tap", f"You clicked on '{label}' ({node_type})", detail=f"shows up {count} times")
         categories = node_data.get("categories", "")
         sentiment = node_data.get("sentiment")
         related = node_data.get("related_keywords", "")

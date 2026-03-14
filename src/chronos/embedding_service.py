@@ -101,12 +101,12 @@ class ChronosEmbeddingService:
         # google-genai returns a list of embeddings; each has `.values`.
         embeddings = getattr(result, "embeddings", None) or []
         if not embeddings:
-            xray_log("embed", "error", "Gemini didn't return an embedding", level="error")
+            xray_log("embed", "error", "Gemini couldn't turn that text into numbers", level="error")
             raise ValueError("No embedding returned")
         vec = list(embeddings[0].values)
         _ms = (_time.perf_counter() - _t0) * 1000
         xray_log("embed", "text",
-                 f"Converted {len(text.split())} words into a {self.output_dim}-dimension vector",
+                 f"Turned {len(text.split())} words into a fingerprint the computer can compare",
                  duration_ms=round(_ms, 1))
         return self._normalize(vec) if self._needs_normalization else vec
 
@@ -136,7 +136,7 @@ class ChronosEmbeddingService:
             _batch_num = i // batch_size + 1
             logger.debug(f"Embedding batch {_batch_num} ({len(batch)} texts)")
             xray_log("embed", "batch",
-                     f"Converting batch {_batch_num} of {_total_batches} ({len(batch)} texts)")
+                     f"Converting group {_batch_num} of {_total_batches} ({len(batch)} texts) into fingerprints")
             _bt0 = _time.perf_counter()
 
             result = self.client.models.embed_content(
@@ -151,7 +151,7 @@ class ChronosEmbeddingService:
             batch_embeddings = getattr(result, "embeddings", None) or []
             _bt_ms = (_time.perf_counter() - _bt0) * 1000
             xray_log("embed", "batch",
-                     f"Batch {_batch_num} done — {len(batch_embeddings)} vectors created",
+                     f"Group {_batch_num} done — {len(batch_embeddings)} fingerprints created",
                      duration_ms=round(_bt_ms, 1))
             if self._needs_normalization:
                 embeddings.extend([self._normalize(e.values) for e in batch_embeddings])
@@ -160,7 +160,7 @@ class ChronosEmbeddingService:
 
         _total_ms = (_time.perf_counter() - _batch_t0) * 1000
         xray_log("embed", "done",
-                 f"All {len(texts)} texts converted to searchable vectors",
+                 f"All {len(texts)} texts are now searchable fingerprints",
                  duration_ms=round(_total_ms, 1))
         return embeddings
 
@@ -203,7 +203,7 @@ class ChronosEmbeddingService:
         if audio_part is None:
             # No usable audio — fall back to text-only
             xray_log("embed", "fallback",
-                     f"No usable audio file, using text only",
+                     f"No audio file available — just using the text",
                      level="warn")
             return self.embed_text(text, task_type=task_type)
 
@@ -228,20 +228,20 @@ class ChronosEmbeddingService:
             embeddings = getattr(result, "embeddings", None) or []
             if not embeddings:
                 logger.warning("Multimodal embed returned empty — falling back to text")
-                xray_log("embed", "fallback", "Audio+text embedding was empty, using text only", level="warn")
+                xray_log("embed", "fallback", "Audio+text combo came back empty — just using text", level="warn")
                 return self.embed_text(text, task_type=task_type)
 
             vec = list(embeddings[0].values)
             _ms = (_time.perf_counter() - _t0) * 1000
             xray_log("embed", "multimodal",
-                     f"Created combined audio+text vector ({self.output_dim} dimensions)",
+                     f"Made a fingerprint from both the audio and text together",
                      duration_ms=round(_ms, 1))
             return self._normalize(vec) if self._needs_normalization else vec
 
         except Exception as exc:
             logger.warning(f"Multimodal embed failed ({exc}) — falling back to text")
             xray_log("embed", "fallback",
-                     f"Audio embedding failed, using text only",
+                     f"Audio didn't work — just using the text",
                      level="warn")
             return self.embed_text(text, task_type=task_type)
 

@@ -2,7 +2,7 @@
 
 **Version:** 2.0
 **Target Date:** Q1 2025 (original), Q1 2026 (Gemini Embedding 2 migration)
-**Status:** Complete — all MVP capabilities shipped, Gemini Embedding 2 multimodal integrated
+**Status:** Complete — all MVP capabilities shipped, Gemini Embedding 2 multimodal integrated, OpenAI GPT-5.4 RAG, X-ray Activity Monitor
 
 ## Mission Statement
 
@@ -256,6 +256,29 @@ Transform 5–7 hour Plaud voice recordings from "jumbled mess" into a **clean, 
 
 ---
 
+## Post-MVP Features (Shipped)
+
+### OpenAI GPT-5.4 RAG (Complete)
+
+- AI answer panel in Search view — GPT-5.4 synthesizes vector results
+- Reasoning levels (none/low/medium/high/xhigh) — adjustable per query
+- MCP `ask_chronos` tool uses OpenAI (falls back to Gemini if no key)
+- Dedicated service: `src/chronos/openai_service.py` (Responses API)
+
+### X-ray Activity Monitor (Complete)
+
+Floating PiP panel showing real-time telemetry in plain English:
+
+- **Server:** `app_v2/services/xray.py` — ring buffer (200 events), monotonic `seq` IDs
+- **API:** `/xray/api/events?since=N` (incremental polling), `/xray/api/clear`
+- **Client:** `app_v2/assets/xray_pip.js` — polls 800ms, accumulates ≤2,000 events
+- **12 sources:** Plaud, AI, Embedding, Search DB, Knowledge Graph, Search, Data, Nav, Pipeline, Recording, Day View, Sync
+- **Filter tabs:** Pipeline, Search, Graph, Data, Errors
+- **~87 instrumented messages** across all core services and UI callbacks
+- Messages are plain English: "Gemini read it all — wrote 2,400 chars and spotted 8 moments"
+
+---
+
 ## Model Reference (March 2026)
 
 | Model                        | Purpose                         | Notes                                                    |
@@ -275,4 +298,4 @@ Transform 5–7 hour Plaud voice recordings from "jumbled mess" into a **clean, 
 ---
 
 **Document Owner:** Gunnar Hostetler
-**Last Updated:** 2026-03-10
+**Last Updated:** 2026-03-11

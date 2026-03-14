@@ -62,15 +62,28 @@ python scripts/launch_app.py
 | **Sync**     | Pipeline dashboard, Full Sync, Reset Stuck, Plaud workflow status monitoring   |
 | **Settings** | 12-section config (29+ params), .env save, live connectivity checks            |
 
+### X-ray Activity Monitor
+
+A floating **Picture-in-Picture panel** that shows what the app is doing in plain English:
+
+- **12 source categories** — Plaud, AI, Embedding, Search DB, Knowledge Graph, Search, Data, Navigation, Pipeline, Recording, Day View, Sync
+- **Filter tabs** — Pipeline, Search, Graph, Data, Errors
+- **Incremental polling** — events accumulate across page navigations (up to 2,000)
+- **Plain English messages** — e.g. "Found 12 matching moments — top match is 94% relevant"
+- **Drag, resize, minimize** — stays on screen while you navigate
+
+Powered by a server-side ring buffer with monotonic sequence IDs and a client-side JS panel that polls every 800ms.
+
 ## Project Structure
 
 ```
 app_v2/                → Dash v2 UI (main application)
-  main.py              → App entry point (python scripts/launch_app.py)
-  layout.py            → 3-column layout (sidebar | content | detail) + X-ray drawer
+  main.py              → App entry point + X-ray Flask API routes
+  layout.py            → 3-column layout (sidebar | content | detail)
   assets/style.css     → Dark theme CSS (~5400 lines)
+  assets/xray_pip.js   → X-ray Activity Monitor PiP panel (client-side JS)
   components/          → sidebar, day_view, search, graph, stats, topics, recording_detail
-  callbacks/           → navigation, search, day_view, graph, recording_detail, xray
+  callbacks/           → navigation, search, day_view, graph, recording_detail
   services/            → data_service.py (data access), xray.py (telemetry ring buffer)
 
 scripts/               → CLI tools

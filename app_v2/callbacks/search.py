@@ -118,12 +118,12 @@ def register_search_callbacks(app):
             f"Search query: {query}, categories={categories}, dates={start_date}-{end_date}"
         )
         xray_log(
-            "search", "query", f"Searching for ‘{query}’", detail=f"categories: {categories or 'all'}"
+            "search", "query", f"Looking for anything about '{query}'"
         )
 
         # Perform filtered search
         service = get_data_service()
-        with xray_timer("search", "vector", "Finding similar events in database") as t_search:
+        with xray_timer("search", "vector", "Scanning your recordings for matches") as t_search:
             results = service.search(
                 query,
                 limit=20,
@@ -135,9 +135,8 @@ def register_search_callbacks(app):
         xray_log(
             "search",
             "results",
-            f"Found {len(results)} matching events",
+            f"Found {len(results)} matching moments" + (f" — top match is {results[0].score:.0%} relevant" if results else ""),
             duration_ms=round(t_search.ms, 1),
-            detail=f"best match: {results[0].score:.0%}" if results else None,
         )
 
         if not results:
@@ -165,20 +164,20 @@ def register_search_callbacks(app):
         results_ui = []
 
         # Add AI conversational answer (if OpenAI configured)
-        xray_log("search", "ai", "Asking AI to summarize results…")
-        with xray_timer("search", "openai", "Asking AI to explain results") as t_ai:
+        xray_log("search", "ai", "Asking GPT to explain what it all means…")
+        with xray_timer("search", "openai", "GPT is reading your results and writing a summary") as t_ai:
             ai_section = _build_ai_answer_section(query, results)
         if ai_section:
             results_ui.append(ai_section)
             xray_log(
                 "search",
                 "ai",
-                "AI answer ready",
+                "GPT wrote you an answer",
                 duration_ms=round(t_ai.ms, 1),
             )
         else:
             xray_log(
-                "search", "ai", "AI answer unavailable (no API key or error)", level="warn"
+                "search", "ai", "GPT couldn't answer (no key or something broke)", level="warn"
             )
 
         results_ui.append(create_search_results(results, query))

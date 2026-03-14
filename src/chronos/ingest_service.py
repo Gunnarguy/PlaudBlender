@@ -128,7 +128,7 @@ class ChronosIngestService:
             _http_ms = (_time.perf_counter() - _t0) * 1000
 
             content_len = response.headers.get('Content-Length', '?')
-            xray_log("ingest", "download", f"Downloading audio file ({content_len} bytes)",
+            xray_log("ingest", "download", f"Downloading the audio ({content_len} bytes)",
                      duration_ms=round(_http_ms, 1))
 
             # Write chunks to disk
@@ -141,13 +141,13 @@ class ChronosIngestService:
 
             _total_ms = (_time.perf_counter() - _t0) * 1000
             mb = bytes_written / (1024 * 1024)
-            xray_log("ingest", "download", f"Audio saved — {mb:.1f} MB",
+            xray_log("ingest", "download", f"Saved {mb:.1f} MB of audio to disk",
                      duration_ms=round(_total_ms, 1))
             logger.info(f"Downloaded audio to {local_path}")
             return True
 
         except requests.RequestException as e:
-            xray_log("ingest", "download", f"Audio download failed: {str(e)[:60]}", level="error")
+            xray_log("ingest", "download", f"Download broke: {str(e)[:60]}", level="error")
             logger.error(f"Download failed: {e}")
             # Clean up partial file
             if os.path.exists(local_path):
@@ -207,7 +207,7 @@ class ChronosIngestService:
                 )
             else:
                 logger.debug(f"Recording {recording_id} already ingested, skipping")
-                xray_log("ingest", "skip", f"Already imported, skipping")
+                xray_log("ingest", "skip", f"Already have this one, skipping")
             return (True, None)
 
         # Plaud currently does not reliably provide downloadable audio URLs.
@@ -231,7 +231,7 @@ class ChronosIngestService:
                 )
                 dur_s = duration_ms // 1000
                 xray_log("ingest", "store",
-                         f"Saved recording ({dur_s}s) — {title[:40] if title else 'untitled'}")
+                         f"New recording! '{title[:40] if title else 'untitled'}' ({dur_s} seconds long)")
                 return (True, None)
             except Exception as e:
                 logger.error(f"Database error: {e}")
@@ -298,7 +298,7 @@ class ChronosIngestService:
             f"Fetching recordings (limit={limit}, days_back={days_back}, fetch_all_pages={fetch_all_pages})"
         )
         xray_log("ingest", "start",
-                 f"Looking for new recordings from the last {days_back} days")
+                 f"Checking your Plaud for new recordings from the last {days_back} days")
 
         # Fetch from Plaud API with optional pagination
         # Pre-check authentication so callers get actionable feedback
@@ -312,21 +312,21 @@ class ChronosIngestService:
             if fetch_all_pages:
                 # Paginate through all recordings (using built-in pagination)
                 logger.info("Fetching ALL recordings from Plaud...")
-                xray_log("ingest", "plaud-api", "Asking Plaud for all recordings…")
+                xray_log("ingest", "plaud-api", "Asking Plaud for every single recording you have…")
                 recordings = self.plaud.list_recordings(fetch_all=True)
                 logger.info(f"Plaud returned {len(recordings)} total recordings")
                 # Do NOT cap with limit when fetching all — we want everything
             else:
                 # Single page fetch (most recent N only, max 20 per API)
                 page_size = min(limit, 20) if limit else 20
-                xray_log("ingest", "plaud-api", f"Asking Plaud for latest {page_size} recordings")
+                xray_log("ingest", "plaud-api", f"Asking Plaud for your newest {page_size} recordings")
                 recordings = self.plaud.list_recordings(page=1, page_size=page_size)
             _api_ms = (_time.perf_counter() - _t0) * 1000
             xray_log("ingest", "plaud-api",
-                     f"Plaud found {len(recordings)} recordings",
+                     f"Plaud has {len(recordings)} recordings",
                      duration_ms=round(_api_ms, 1))
         except Exception as e:
-            xray_log("ingest", "plaud-api", f"Couldn't reach Plaud: {str(e)[:60]}", level="error")
+            xray_log("ingest", "plaud-api", f"Can't reach Plaud right now: {str(e)[:60]}", level="error")
             logger.error(f"Failed to fetch from Plaud API: {e}")
             raise
 
@@ -350,7 +350,7 @@ class ChronosIngestService:
 
             if not recording_id:
                 logger.warning(f"Skipping record with no ID: {rec_data}")
-                xray_log("ingest", "skip", f"Recording {_rec_idx}/{len(recordings)} has no ID", level="warn")
+                xray_log("ingest", "skip", f"Recording #{_rec_idx} has no ID — weird, skipping it", level="warn")
                 failure_count += 1
                 continue
 
@@ -389,7 +389,7 @@ class ChronosIngestService:
 
         _batch_ms = (_time.perf_counter() - _batch_t0) * 1000
         xray_log("ingest", "done",
-                 f"Import complete — {success_count} new, {failure_count} failed out of {len(recordings)}",
+                 f"All done — picked up {success_count} new recordings" + (f" ({failure_count} had issues)" if failure_count else ""),
                  duration_ms=round(_batch_ms, 1))
         logger.info(
             f"Ingestion complete: {success_count} success, {failure_count} failures"

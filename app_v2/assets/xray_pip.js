@@ -132,7 +132,9 @@
     var minBtn = document.getElementById('xp-min');
 
     var filter = 'all', paused = false;
-    var allEvents = [];
+    var allEvents = [];      // accumulates ALL events ever seen this session
+    var highestSeq = 0;      // last seq we received — for incremental polling
+    var MAX_CLIENT = 2000;   // keep up to 2000 events client-side
 
     // ── Filters ──
     document.getElementById('xp-filters').addEventListener('click', function (e) {
@@ -155,6 +157,7 @@
     document.getElementById('xp-clear').addEventListener('click', function () {
       fetch('/xray/api/clear', { method: 'POST' });
       allEvents = [];
+      highestSeq = 0;
       renderAll();
     });
 
@@ -329,16 +332,27 @@
       stats.innerHTML = h;
     }
 
-    // ── Polling ──
+    // ── Polling — incremental: only fetch events newer than highestSeq ──
     function poll() {
       if (paused) return;
-      fetch('/xray/api/events')
+      var url = '/xray/api/events';
+      if (highestSeq > 0) url += '?since=' + highestSeq;
+      fetch(url)
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          if (data.length) {
-            allEvents = data;
-            renderAll();
+          if (!data.length) return; // nothing new
+          // data arrives newest-first; find the max seq in this batch
+          var batchMax = 0;
+          for (var i = 0; i < data.length; i++) {
+            if (data[i].seq > batchMax) batchMax = data[i].seq;
           }
+          // Merge into allEvents (newest-first order)
+          // data is newest-first, allEvents is newest-first
+          allEvents = data.concat(allEvents);
+          // Trim to client max
+          if (allEvents.length > MAX_CLIENT) allEvents.length = MAX_CLIENT;
+          highestSeq = batchMax;
+          renderAll();
         })
         .catch(function () {});
     }

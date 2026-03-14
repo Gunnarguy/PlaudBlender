@@ -84,7 +84,7 @@ class ChronosQdrantClient:
             logger.info(f"Creating collection: {self.collection_name}")
             from app_v2.services.xray import xray_log
             xray_log("qdrant", "create",
-                     f"Setting up search database ({vector_size} dimensions)")
+                     f"Creating a brand new place to store your searchable recordings")
             self.client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=VectorParams(
@@ -163,8 +163,8 @@ class ChronosQdrantClient:
         )
         from app_v2.services.xray import xray_log
         xray_log("qdrant", "upsert",
-                 f"Saved 1 event to search database",
-                 detail=f"category: {event.category.value}")
+                 f"Stored one moment so you can find it later",
+                 detail=f"{event.category.value}")
         return event.event_id
 
     def upsert_events_batch(
@@ -226,13 +226,13 @@ class ChronosQdrantClient:
             total += len(points)
             _batch_ms = (_time.perf_counter() - _upsert_t0) * 1000
             xray_log("qdrant", "upsert",
-                     f"Saved {total} of {len(events)} events so far",
+                     f"Stored {total} of {len(events)} moments so far",
                      duration_ms=round(_batch_ms, 1))
             logger.info(f"Upserted batch: {total}/{len(events)} events")
 
         _total_ms = (_time.perf_counter() - _upsert_t0) * 1000
         xray_log("qdrant", "upsert",
-                 f"All {total} events saved to search database",
+                 f"All {total} moments are now searchable!",
                  duration_ms=round(_total_ms, 1))
         return total
 
@@ -302,11 +302,8 @@ class ChronosQdrantClient:
         query_filter = Filter(must=must_conditions) if must_conditions else None
 
         from app_v2.services.xray import xray_log
-        _filter_desc = f"{len(must_conditions)} filters active" if must_conditions else "no filters"
-        _mode = "meaning + filters" if query_vector else "filters only"
         xray_log("qdrant", "search",
-                 f"Searching database — {_mode}, up to {limit} results",
-                 detail=_filter_desc)
+                 f"Looking through your recordings for matches (up to {limit})")
         _t0 = _time.perf_counter()
 
         # Execute search
@@ -339,9 +336,8 @@ class ChronosQdrantClient:
                 }
             )
         _ms = (_time.perf_counter() - _t0) * 1000
-        _top = f", best match: {formatted[0]['score']:.0%}" if formatted and formatted[0].get('score') else ""
         xray_log("qdrant", "search",
-                 f"Found {len(formatted)} results{_top}",
+                 f"Found {len(formatted)} matching moments" + (f" — top result is {formatted[0]['score']:.0%} relevant" if formatted and formatted[0].get('score') else ""),
                  duration_ms=round(_ms, 1))
 
         return formatted

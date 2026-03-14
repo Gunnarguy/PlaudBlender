@@ -2,7 +2,7 @@
 
 > **Single source of truth** for architecture, roadmap, implementation status, and next steps.
 >
-> _Last updated: March 10, 2026_
+> _Last updated: March 11, 2026_
 
 ---
 
@@ -191,9 +191,10 @@ Models used:
 ```
 PlaudBlender/
 ├── app_v2/                     # ← MAIN UI (Dash v2)
-│   ├── main.py                 # Entry point: python -m app_v2.main
+│   ├── main.py                 # Entry point + X-ray Flask API routes
 │   ├── layout.py               # 3-column layout (sidebar | content | detail)
-│   ├── assets/style.css        # ~3950 lines of dark-theme CSS
+│   ├── assets/style.css        # ~5400 lines of dark-theme CSS
+│   ├── assets/xray_pip.js      # X-ray Activity Monitor PiP panel (client JS)
 │   ├── components/             # UI components
 │   │   ├── sidebar.py          # Navigation sidebar (7 views)
 │   │   ├── day_view.py         # Date-grouped event timeline
@@ -206,9 +207,11 @@ PlaudBlender/
 │   │   ├── navigation.py       # Main nav + sync/settings views (~1550 lines)
 │   │   ├── search.py           # Search + filter callbacks
 │   │   ├── day_view.py         # Day view interactions
-│   │   └── graph.py            # Graph layout + node click
+│   │   ├── graph.py            # Graph layout + node click
+│   │   └── recording_detail.py # Category overrides + detail interactions
 │   └── services/
-│       └── data_service.py     # Data access layer (~1250 lines)
+│       ├── data_service.py     # Data access layer (~1250 lines)
+│       └── xray.py             # X-ray telemetry ring buffer + seq IDs
 │
 ├── scripts/                    # CLI tools
 │   ├── chronos_pipeline.py     # Full pipeline runner (~688 lines)
@@ -333,6 +336,18 @@ The UI runs on **Dash 4.0** at `http://localhost:8050` with a 3-column layout:
 | **Sync**     | Pipeline dashboard: status counts, Full Sync button, Reset Stuck button          |
 | **Settings** | Real connectivity checks for Plaud, Gemini, Qdrant with latency                  |
 
+### X-ray Activity Monitor (PiP Panel)
+
+A **floating Picture-in-Picture panel** (`app_v2/assets/xray_pip.js`) shows real-time telemetry in plain English.
+
+- **Server-side:** `app_v2/services/xray.py` — ring buffer (200 events), monotonic `seq` IDs, thread-safe
+- **Flask API:** `/xray/api/events?since=N` (incremental) + `/xray/api/clear` (POST)
+- **Client-side:** JS polls every 800ms, accumulates up to 2,000 events across page navigations
+- **12 source categories:** Plaud, AI (Gemini), Embedding, Search DB (Qdrant), Knowledge Graph, Search, Data/Cache, Navigation, Pipeline, Recording Detail, Day View, Sync
+- **Filter tabs:** Pipeline, Search, Graph, Data, Errors
+- **All messages are plain English** — e.g. "Found 12 matching moments — top match is 94% relevant", "Gemini read it all — wrote 2,400 chars and spotted 8 moments"
+- **Drag, resize, minimize** — persists while navigating between views
+
 ### Key Features
 
 - **23 callbacks** registered for full interactivity
@@ -362,11 +377,11 @@ The UI runs on **Dash 4.0** at `http://localhost:8050` with a 3-column layout:
 
 | Metric             | Value                        |
 | ------------------ | ---------------------------- |
-| Events in SQLite   | 1606                         |
+| Events in SQLite   | 1748                         |
 | Embedding model    | `gemini-embedding-2-preview` |
 | Embedding dim      | 768 (MRL, L2-normalized)     |
 | Multimodal support | Text + audio (WAV/MP3 ≤80s)  |
-| Tests passing      | 90/90                        |
+| Tests passing      | 91/91                        |
 
 ### ✅ Tier 3 — Automation & Integration (COMPLETE)
 
@@ -384,6 +399,25 @@ The UI runs on **Dash 4.0** at `http://localhost:8050` with a 3-column layout:
 - [x] `--reindex` CLI flag for model migration
 - [x] Fixed `delete_by_recording_id()` FilterSelector bug
 - [x] Updated `gemini-3-pro-preview` → `gemini-3.1-pro-preview` (old model shut down 2026-03-09)
+
+### ✅ OpenAI GPT-5.4 RAG Integration (COMPLETE)
+
+- [x] OpenAI Responses API service (`src/chronos/openai_service.py`)
+- [x] AI answers in Search view (GPT-5.4 panel above vector results)
+- [x] Reasoning levels: none/low/medium/high/xhigh
+- [x] MCP `ask_chronos` uses OpenAI (falls back to Gemini)
+- [x] Settings UI: model dropdown, temperature, API key config
+
+### ✅ X-ray Activity Monitor (COMPLETE)
+
+- [x] Server-side telemetry ring buffer with monotonic sequence IDs (`app_v2/services/xray.py`)
+- [x] Incremental polling API (`/xray/api/events?since=N`)
+- [x] Floating PiP panel — drag, resize, minimize (`app_v2/assets/xray_pip.js`)
+- [x] 12 source categories with color-coded badges and icons
+- [x] Filter tabs (Pipeline, Search, Graph, Data, Errors)
+- [x] All ~87 telemetry messages written in plain human English
+- [x] Events persist across page navigations (client-side accumulation up to 2,000)
+- [x] Deep instrumentation across all 6 core services + 5 callback files
 
 ---
 

@@ -161,7 +161,8 @@ def _register_xray_routes(server):
     @server.route("/xray/api/events")
     def xray_api_events():
         from app_v2.services.xray import get_recent_events
-        events = get_recent_events(200)
+        since = request.args.get("since", 0, type=int)
+        events = get_recent_events(200, since_seq=since)
         return jsonify(events)
 
     @server.route("/xray/api/clear", methods=["POST"])

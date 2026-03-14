@@ -46,7 +46,7 @@ class ChronosGraphExtractor:
 
         from app_v2.services.xray import xray_log
         xray_log("graph", "extract",
-                 f"Scanning {len(events)} events for people, places, and concepts")
+                 f"Reading through {len(events)} moments to find people, places, and ideas")
         _ext_t0 = _time.perf_counter()
 
         # Reset for each extraction run.
@@ -91,13 +91,13 @@ class ChronosGraphExtractor:
             except Exception as e:
                 logger.error(f"Failed to extract from event {event.event_id}: {e}")
                 xray_log("graph", "extract-error",
-                         f"Couldn't extract from one event",
+                         f"Skipped one — couldn't understand it",
                          detail=str(e)[:60], level="warn")
                 continue
 
         _ext_ms = (_time.perf_counter() - _ext_t0) * 1000
         xray_log("graph", "extract",
-                 f"Found {len(all_entities)} people, places, and concepts across {len(events)} events",
+                 f"Found {len(all_entities)} people, places, and ideas across everything you've recorded",
                  duration_ms=round(_ext_ms, 1))
         logger.info(f"Extracted {len(all_entities)} total entities")
 
@@ -127,7 +127,7 @@ class ChronosGraphExtractor:
         )
         _graph_ms = (_time.perf_counter() - _graph_t0) * 1000
         xray_log("graph", "build",
-                 f"Built knowledge map: {graph.number_of_nodes()} concepts, {graph.number_of_edges()} connections",
+                 f"Connected everything into a map: {graph.number_of_nodes()} ideas linked by {graph.number_of_edges()} connections",
                  duration_ms=round(_graph_ms, 1))
 
         return all_entities, graph
@@ -149,7 +149,7 @@ class ChronosGraphExtractor:
         _ms = (_time.perf_counter() - _t0) * 1000
 
         xray_log("graph", "communities",
-                 f"Found {len(communities)} topic clusters",
+                 f"Grouped everything into {len(communities)} clusters of related topics",
                  duration_ms=round(_ms, 1))
         logger.info(f"Detected {len(communities)} communities")
 
