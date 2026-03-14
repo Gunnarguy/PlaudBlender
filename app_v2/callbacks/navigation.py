@@ -389,7 +389,6 @@ def create_sync_view(service) -> html.Div:
                         className="sync-action-btn plaud-connect-btn"
                         + (" connected" if auth_connected else ""),
                         href="/auth/plaud",
-                        target="_blank",
                         children=[
                             html.Span(
                                 "🔗" if not auth_connected else "🔄",
@@ -1156,7 +1155,6 @@ def create_settings_view(preferences=None) -> html.Div:
             html.A(
                 "Connect →",
                 href="/auth/plaud",
-                target="_blank",
                 className="plaud-connect-btn",
                 style={
                     "marginLeft": "8px",

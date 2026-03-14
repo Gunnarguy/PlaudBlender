@@ -4,9 +4,7 @@ Run with: python -m app_v2.main
 """
 
 import logging
-import platform
 import secrets
-import subprocess
 import threading
 import time
 
@@ -38,13 +36,7 @@ def _register_auth_routes(server):
 
     @server.route("/auth/plaud")
     def auth_plaud_start():
-        """Start Plaud OAuth — opens Chrome and shows a waiting page.
-
-        Safari blocks mixed-content XHR from Plaud's HTTPS auth page to our
-        HTTP localhost callback.  Chrome has a localhost exemption, so we open
-        the auth URL in Chrome specifically and return a waiting page that
-        polls /auth/plaud/status until tokens arrive.
-        """
+        """Start Plaud OAuth — redirect to Plaud's authorization page."""
         try:
             from src.plaud_oauth import PlaudOAuthClient
 
@@ -52,10 +44,7 @@ def _register_auth_routes(server):
             auth_url, state = client.get_authorization_url()
             _oauth_pending_states[state] = True
 
-            # Return a page that opens the auth URL via window.open()
-            # so the popup can auto-close itself (window.close() only
-            # works on script-opened windows).
-            return _auth_waiting_page(auth_url)
+            return redirect(auth_url)
         except Exception as e:
             safe_msg = escape(str(e))
             return (
@@ -124,13 +113,12 @@ def _register_auth_routes(server):
 
         from src.plaud_oauth import PlaudOAuthClient
 
-        # Idempotent: if a previous XHR hit already exchanged the code
-        # and we have valid tokens, just return success.
+        # Idempotent: if tokens already valid, skip exchange
         try:
             client = PlaudOAuthClient(redirect_uri=INAPP_REDIRECT_URI)
             if client.is_authenticated:
                 logger.info("CALLBACK: already authenticated — skipping exchange")
-                return _cors_response(_auth_success_page())
+                return redirect("/")
         except Exception:
             pass
 
@@ -138,13 +126,11 @@ def _register_auth_routes(server):
             client = PlaudOAuthClient(redirect_uri=INAPP_REDIRECT_URI)
             token_data = client.exchange_code_for_token(code)
             logger.info("CALLBACK: token exchange SUCCESS — keys=%s", list(token_data.keys()))
-            return _cors_response(_auth_success_page())
+            return redirect("/")
         except Exception as e:
             logger.error("CALLBACK: token exchange FAILED — %s", e)
             safe_msg = escape(str(e))
-            return _cors_response(
-                _auth_error_page("Token Exchange Failed", safe_msg), 500
-            )
+            return _auth_error_page("Token Exchange Failed", str(safe_msg)), 500
 
     @server.route("/auth/plaud/status")
     def auth_plaud_status():
@@ -158,96 +144,14 @@ def _register_auth_routes(server):
             return jsonify({"is_authenticated": False, "error": str(e)})
 
 
-def _auth_success_page() -> str:
-    return """<!DOCTYPE html>
-<html><head><title>Chronos — Connected!</title></head>
-<body style="font-family:-apple-system,sans-serif;text-align:center;padding:60px;
-background:#0f172a;color:#e2e8f0;">
-<h1 style="color:#10b981;">✅ Plaud Connected!</h1>
-<p>Authentication successful. This tab will close automatically.</p>
-<p style="color:#64748b;font-size:0.85rem;">You can also close it manually and
-return to Chronos.</p>
-<script>
-if(window.opener){window.opener.postMessage('plaud-auth-success','*');}
-setTimeout(function(){window.close();},2500);
-</script>
-</body></html>"""
-
-
 def _auth_error_page(title: str, detail: str) -> str:
     return f"""<!DOCTYPE html>
 <html><head><title>Chronos — Auth Error</title></head>
 <body style="font-family:-apple-system,sans-serif;text-align:center;padding:60px;
 background:#0f172a;color:#e2e8f0;">
-<h1 style="color:#ef4444;">❌ {title}</h1>
+<h1 style="color:#ef4444;">&#10060; {title}</h1>
 <p>{detail}</p>
 <a href="/" style="color:#60a5fa;text-decoration:underline;">Return to Chronos</a>
-</body></html>"""
-
-
-def _open_in_chrome(url: str):
-    """Open a URL in Chrome (it has a localhost mixed-content exemption)."""
-    try:
-        if platform.system() == "Darwin":
-            subprocess.Popen(
-                ["open", "-a", "Google Chrome", url],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        elif platform.system() == "Linux":
-            subprocess.Popen(
-                ["google-chrome", url],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        else:
-            import webbrowser
-
-            webbrowser.open(url)
-    except Exception:
-        # Fallback to default browser
-        import webbrowser
-
-        webbrowser.open(url)
-
-
-def _auth_waiting_page(auth_url: str) -> str:
-    """Page shown while user completes OAuth — opens auth in a popup."""
-    import json as _json
-
-    safe_url = _json.dumps(auth_url)  # JS-safe string with quotes
-    return f"""<!DOCTYPE html>
-<html><head><title>Chronos — Authenticating…</title></head>
-<body style="font-family:-apple-system,sans-serif;text-align:center;padding:60px;
-background:#0f172a;color:#e2e8f0;">
-<h1>🔐 Authenticating with Plaud…</h1>
-<p>A popup has opened. Complete the login there.</p>
-<p>If you don't see it, <a id="manual-link" href="#" style="color:#60a5fa;"
-   onclick="authWin=window.open({safe_url},'plaud_auth','width=600,height=700');return false;">
-   click here</a>.</p>
-<p id="status" style="color:#64748b;">Waiting for authorization…</p>
-<div style="margin:30px auto;width:40px;height:40px;border:4px solid #334155;
-border-top:4px solid #60a5fa;border-radius:50%;animation:spin 1s linear infinite;"></div>
-<style>@keyframes spin{{to{{transform:rotate(360deg);}}}}</style>
-<script>
-var authWin=window.open({safe_url},'plaud_auth','width=600,height=700');
-(function poll(){{
-  fetch('/auth/plaud/status')
-    .then(function(r){{return r.json();}})
-    .then(function(d){{
-      if(d.is_authenticated){{
-        document.getElementById('status').textContent='Connected!';
-        document.querySelector('h1').textContent='✅ Plaud Connected!';
-        document.querySelector('div').style.display='none';
-        if(authWin){{try{{authWin.close();}}catch(e){{}}}};
-        setTimeout(function(){{window.location.href='/';}},2000);
-      }} else {{
-        setTimeout(poll,2000);
-      }}
-    }})
-    .catch(function(){{setTimeout(poll,3000);}});
-}})();
-</script>
 </body></html>"""
 
 

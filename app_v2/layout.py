@@ -78,7 +78,7 @@ def create_layout() -> html.Div:
             ),
             # Category save status toast
             html.Div(id="category-save-status", className="save-status-toast"),
-            # X-ray drawer — collapsible diagnostic panel
+            # X-ray drawer — collapsible activity monitor
             html.Div(
                 className="xray-drawer collapsed",
                 id="xray-drawer",
@@ -87,9 +87,15 @@ def create_layout() -> html.Div:
                         className="xray-handle",
                         id="xray-toggle",
                         children=[
-                            html.Span("🔬", className="xray-icon"),
-                            html.Span("X-RAY", className="xray-title"),
+                            html.Span("⚡", className="xray-icon"),
+                            html.Span("ACTIVITY", className="xray-title"),
                             html.Span("", id="xray-badge", className="xray-badge"),
+                            # Live stats strip
+                            html.Div(
+                                className="xray-live-stats",
+                                id="xray-live-stats",
+                                children=[],
+                            ),
                             html.Span("▲", id="xray-chevron", className="xray-chevron"),
                         ],
                     ),
@@ -100,13 +106,29 @@ def create_layout() -> html.Div:
                             html.Div(
                                 className="xray-toolbar",
                                 children=[
-                                    html.Button(
-                                        "Clear",
-                                        id="xray-clear-btn",
-                                        className="xray-btn",
+                                    # Filter tabs
+                                    html.Div(
+                                        className="xray-filters",
+                                        children=[
+                                            html.Button("All", id="xray-filter-all", className="xray-filter-btn active", **{"data-filter": "all"}),
+                                            html.Button("Search", id="xray-filter-search", className="xray-filter-btn", **{"data-filter": "search"}),
+                                            html.Button("Nav", id="xray-filter-nav", className="xray-filter-btn", **{"data-filter": "nav"}),
+                                            html.Button("Graph", id="xray-filter-graph", className="xray-filter-btn", **{"data-filter": "graph"}),
+                                            html.Button("Errors", id="xray-filter-errors", className="xray-filter-btn", **{"data-filter": "error"}),
+                                        ],
                                     ),
-                                    html.Span(
-                                        "", id="xray-count", className="xray-count"
+                                    html.Div(
+                                        className="xray-toolbar-right",
+                                        children=[
+                                            html.Span(
+                                                "", id="xray-count", className="xray-count"
+                                            ),
+                                            html.Button(
+                                                "Clear",
+                                                id="xray-clear-btn",
+                                                className="xray-btn",
+                                            ),
+                                        ],
                                     ),
                                 ],
                             ),
