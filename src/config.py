@@ -138,6 +138,12 @@ class Settings:
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-5.4")
     openai_temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # Notion: Direct API Integration (pull recordings/transcripts from Notion)
+    # ─────────────────────────────────────────────────────────────────────────
+    notion_token: Optional[str] = os.getenv("NOTION_TOKEN")
+    notion_database_id: Optional[str] = os.getenv("NOTION_DATABASE_ID")
+
     # Logging
     log_level: str = os.getenv("PB_LOG_LEVEL", "INFO")
     verbose: bool = os.getenv("PB_VERBOSE", "0") == "1"

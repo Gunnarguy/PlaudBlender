@@ -2280,6 +2280,10 @@ def register_navigation_callbacks(app):
                 content = create_stats_view(stats)
             elif view == "sync":
                 content = create_sync_view(get_service())
+            elif view == "notion":
+                from app_v2.components.notion import create_notion_view
+                content = create_notion_view()
+                xray_log("nav", "data", "Showing Notion integration dashboard")
             elif view == "settings":
                 content = create_settings_view(preferences=prefs)
             else:

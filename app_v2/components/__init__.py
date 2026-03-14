@@ -49,6 +49,7 @@ from app_v2.components.search import create_search_bar, create_search_results
 from app_v2.components.topics import create_topics_grid, create_topic_timeline_view
 from app_v2.components.stats import create_stats_view
 from app_v2.components.graph import create_graph_view
+from app_v2.components.notion import create_notion_view, create_notion_page_detail
 
 __all__ = [
     "CATEGORIES",
@@ -66,4 +67,6 @@ __all__ = [
     "create_topic_timeline_view",
     "create_stats_view",
     "create_graph_view",
+    "create_notion_view",
+    "create_notion_page_detail",
 ]

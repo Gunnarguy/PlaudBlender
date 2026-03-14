@@ -6,6 +6,7 @@ from app_v2.callbacks.search import register_search_callbacks
 from app_v2.callbacks.graph import register_graph_callbacks
 from app_v2.callbacks.recording_detail import register_recording_detail_callbacks
 from app_v2.callbacks.xray import register_xray_callbacks
+from app_v2.callbacks.notion import register_notion_callbacks
 
 
 def register_all_callbacks(app):
@@ -16,3 +17,4 @@ def register_all_callbacks(app):
     register_graph_callbacks(app)
     register_recording_detail_callbacks(app)
     register_xray_callbacks(app)
+    register_notion_callbacks(app)

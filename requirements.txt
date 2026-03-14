@@ -13,6 +13,9 @@ google-genai>=1.0.0
 # OpenAI Responses API (for RAG / conversational queries)
 openai>=1.0.0
 
+# Notion API (for pulling recordings/transcripts from Notion)
+notion-client>=3.0.0
+
 # Vector Database
 qdrant-client>=1.12.0
 
