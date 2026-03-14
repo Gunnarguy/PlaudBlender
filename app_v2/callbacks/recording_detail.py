@@ -59,12 +59,12 @@ def register_recording_detail_callbacks(app):
 
         if ok:
             logger.info(f"Category override saved: event={event_id} → {new_value}")
-            xray_log("detail", "category", f"Override: {event_id[:8]}… → {new_value}")
+            xray_log("detail", "category", f"Changed category to {new_value}")
             return f"✓ Category updated to {new_value}"
         else:
             logger.warning(f"Failed to save category override: event={event_id}")
             xray_log(
-                "detail", "category", f"FAILED override: {event_id[:8]}…", level="error"
+                "detail", "category", f"Category change failed", level="error"
             )
             return "⚠ Could not save override"
 

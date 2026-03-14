@@ -17,6 +17,7 @@ Multimodal embeddings (embedding-2-preview):
 
 import logging
 import os
+import time as _time
 from pathlib import Path
 from typing import List, Optional
 
@@ -86,6 +87,8 @@ class ChronosEmbeddingService:
         Returns:
             List[float]: Embedding vector (dimensionality from config)
         """
+        from app_v2.services.xray import xray_log
+        _t0 = _time.perf_counter()
         result = self.client.models.embed_content(
             model=self.model_name,
             contents=text,
@@ -98,8 +101,13 @@ class ChronosEmbeddingService:
         # google-genai returns a list of embeddings; each has `.values`.
         embeddings = getattr(result, "embeddings", None) or []
         if not embeddings:
+            xray_log("embed", "error", "Gemini didn't return an embedding", level="error")
             raise ValueError("No embedding returned")
         vec = list(embeddings[0].values)
+        _ms = (_time.perf_counter() - _t0) * 1000
+        xray_log("embed", "text",
+                 f"Converted {len(text.split())} words into a {self.output_dim}-dimension vector",
+                 duration_ms=round(_ms, 1))
         return self._normalize(vec) if self._needs_normalization else vec
 
     def embed_batch(
@@ -119,10 +127,17 @@ class ChronosEmbeddingService:
             List of embedding vectors
         """
         embeddings: List[List[float]] = []
+        from app_v2.services.xray import xray_log
+        _batch_t0 = _time.perf_counter()
+        _total_batches = (len(texts) + batch_size - 1) // batch_size
 
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
-            logger.debug(f"Embedding batch {i // batch_size + 1} ({len(batch)} texts)")
+            _batch_num = i // batch_size + 1
+            logger.debug(f"Embedding batch {_batch_num} ({len(batch)} texts)")
+            xray_log("embed", "batch",
+                     f"Converting batch {_batch_num} of {_total_batches} ({len(batch)} texts)")
+            _bt0 = _time.perf_counter()
 
             result = self.client.models.embed_content(
                 model=self.model_name,
@@ -134,11 +149,19 @@ class ChronosEmbeddingService:
             )
 
             batch_embeddings = getattr(result, "embeddings", None) or []
+            _bt_ms = (_time.perf_counter() - _bt0) * 1000
+            xray_log("embed", "batch",
+                     f"Batch {_batch_num} done — {len(batch_embeddings)} vectors created",
+                     duration_ms=round(_bt_ms, 1))
             if self._needs_normalization:
                 embeddings.extend([self._normalize(e.values) for e in batch_embeddings])
             else:
                 embeddings.extend([list(e.values) for e in batch_embeddings])
 
+        _total_ms = (_time.perf_counter() - _batch_t0) * 1000
+        xray_log("embed", "done",
+                 f"All {len(texts)} texts converted to searchable vectors",
+                 duration_ms=round(_total_ms, 1))
         return embeddings
 
     # ------------------------------------------------------------------
@@ -175,9 +198,13 @@ class ChronosEmbeddingService:
         if not self.supports_multimodal:
             return self.embed_text(text, task_type=task_type)
 
+        from app_v2.services.xray import xray_log
         audio_part = self._load_audio_part(audio_path)
         if audio_part is None:
             # No usable audio — fall back to text-only
+            xray_log("embed", "fallback",
+                     f"No usable audio file, using text only",
+                     level="warn")
             return self.embed_text(text, task_type=task_type)
 
         # Build a single Content with text + audio parts → one fused embedding
@@ -189,6 +216,7 @@ class ChronosEmbeddingService:
         )
 
         try:
+            _t0 = _time.perf_counter()
             result = self.client.models.embed_content(
                 model=self.model_name,
                 contents=[content],
@@ -200,13 +228,21 @@ class ChronosEmbeddingService:
             embeddings = getattr(result, "embeddings", None) or []
             if not embeddings:
                 logger.warning("Multimodal embed returned empty — falling back to text")
+                xray_log("embed", "fallback", "Audio+text embedding was empty, using text only", level="warn")
                 return self.embed_text(text, task_type=task_type)
 
             vec = list(embeddings[0].values)
+            _ms = (_time.perf_counter() - _t0) * 1000
+            xray_log("embed", "multimodal",
+                     f"Created combined audio+text vector ({self.output_dim} dimensions)",
+                     duration_ms=round(_ms, 1))
             return self._normalize(vec) if self._needs_normalization else vec
 
         except Exception as exc:
             logger.warning(f"Multimodal embed failed ({exc}) — falling back to text")
+            xray_log("embed", "fallback",
+                     f"Audio embedding failed, using text only",
+                     level="warn")
             return self.embed_text(text, task_type=task_type)
 
     def _load_audio_part(self, audio_path: str) -> Optional[types.Part]:

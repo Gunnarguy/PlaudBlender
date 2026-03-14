@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse
 
+import time as _time
+
 import requests
 from sqlalchemy.orm import Session
 
@@ -117,21 +119,35 @@ class ChronosIngestService:
         Returns:
             bool: True if download succeeded
         """
+        from app_v2.services.xray import xray_log
         try:
             # Stream download
+            _t0 = _time.perf_counter()
             response = requests.get(download_url, stream=True, timeout=300)
             response.raise_for_status()
+            _http_ms = (_time.perf_counter() - _t0) * 1000
+
+            content_len = response.headers.get('Content-Length', '?')
+            xray_log("ingest", "download", f"Downloading audio file ({content_len} bytes)",
+                     duration_ms=round(_http_ms, 1))
 
             # Write chunks to disk
+            bytes_written = 0
             with open(local_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     if chunk:
                         f.write(chunk)
+                        bytes_written += len(chunk)
 
+            _total_ms = (_time.perf_counter() - _t0) * 1000
+            mb = bytes_written / (1024 * 1024)
+            xray_log("ingest", "download", f"Audio saved — {mb:.1f} MB",
+                     duration_ms=round(_total_ms, 1))
             logger.info(f"Downloaded audio to {local_path}")
             return True
 
         except requests.RequestException as e:
+            xray_log("ingest", "download", f"Audio download failed: {str(e)[:60]}", level="error")
             logger.error(f"Download failed: {e}")
             # Clean up partial file
             if os.path.exists(local_path):
@@ -161,6 +177,7 @@ class ChronosIngestService:
         Returns:
             Tuple[bool, Optional[str]]: (success, error_message)
         """
+        from app_v2.services.xray import xray_log
         # Check if already ingested
         existing = get_chronos_recording(self.db, recording_id)
         if existing and not force_redownload:
@@ -190,6 +207,7 @@ class ChronosIngestService:
                 )
             else:
                 logger.debug(f"Recording {recording_id} already ingested, skipping")
+                xray_log("ingest", "skip", f"Already imported, skipping")
             return (True, None)
 
         # Plaud currently does not reliably provide downloadable audio URLs.
@@ -211,6 +229,9 @@ class ChronosIngestService:
                 logger.info(
                     f"Ingested recording {recording_id} (metadata only; transcript mode)"
                 )
+                dur_s = duration_ms // 1000
+                xray_log("ingest", "store",
+                         f"Saved recording ({dur_s}s) — {title[:40] if title else 'untitled'}")
                 return (True, None)
             except Exception as e:
                 logger.error(f"Database error: {e}")
@@ -272,9 +293,12 @@ class ChronosIngestService:
         Returns:
             Tuple[int, int]: (success_count, failure_count)
         """
+        from app_v2.services.xray import xray_log
         logger.info(
             f"Fetching recordings (limit={limit}, days_back={days_back}, fetch_all_pages={fetch_all_pages})"
         )
+        xray_log("ingest", "start",
+                 f"Looking for new recordings from the last {days_back} days")
 
         # Fetch from Plaud API with optional pagination
         # Pre-check authentication so callers get actionable feedback
@@ -284,24 +308,33 @@ class ChronosIngestService:
             raise RuntimeError(msg)
 
         try:
+            _t0 = _time.perf_counter()
             if fetch_all_pages:
                 # Paginate through all recordings (using built-in pagination)
                 logger.info("Fetching ALL recordings from Plaud...")
+                xray_log("ingest", "plaud-api", "Asking Plaud for all recordings…")
                 recordings = self.plaud.list_recordings(fetch_all=True)
                 logger.info(f"Plaud returned {len(recordings)} total recordings")
                 # Do NOT cap with limit when fetching all — we want everything
             else:
                 # Single page fetch (most recent N only, max 20 per API)
                 page_size = min(limit, 20) if limit else 20
+                xray_log("ingest", "plaud-api", f"Asking Plaud for latest {page_size} recordings")
                 recordings = self.plaud.list_recordings(page=1, page_size=page_size)
+            _api_ms = (_time.perf_counter() - _t0) * 1000
+            xray_log("ingest", "plaud-api",
+                     f"Plaud found {len(recordings)} recordings",
+                     duration_ms=round(_api_ms, 1))
         except Exception as e:
+            xray_log("ingest", "plaud-api", f"Couldn't reach Plaud: {str(e)[:60]}", level="error")
             logger.error(f"Failed to fetch from Plaud API: {e}")
             raise
 
         success_count = 0
         failure_count = 0
 
-        for rec_data in recordings:
+        _batch_t0 = _time.perf_counter()
+        for _rec_idx, rec_data in enumerate(recordings, 1):
             # Extract required fields from Plaud API list response
             recording_id = rec_data.get("id")
             # Prefer start_at (actual recording time) over created_at (cloud sync time).
@@ -317,6 +350,7 @@ class ChronosIngestService:
 
             if not recording_id:
                 logger.warning(f"Skipping record with no ID: {rec_data}")
+                xray_log("ingest", "skip", f"Recording {_rec_idx}/{len(recordings)} has no ID", level="warn")
                 failure_count += 1
                 continue
 
@@ -353,6 +387,10 @@ class ChronosIngestService:
                 failure_count += 1
                 logger.error(f"Failed to ingest {recording_id}: {error}")
 
+        _batch_ms = (_time.perf_counter() - _batch_t0) * 1000
+        xray_log("ingest", "done",
+                 f"Import complete — {success_count} new, {failure_count} failed out of {len(recordings)}",
+                 duration_ms=round(_batch_ms, 1))
         logger.info(
             f"Ingestion complete: {success_count} success, {failure_count} failures"
         )

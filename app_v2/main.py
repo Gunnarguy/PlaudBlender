@@ -155,6 +155,22 @@ background:#0f172a;color:#e2e8f0;">
 </body></html>"""
 
 
+def _register_xray_routes(server):
+    """Register Flask API routes for the X-ray Activity Monitor PiP panel."""
+
+    @server.route("/xray/api/events")
+    def xray_api_events():
+        from app_v2.services.xray import get_recent_events
+        events = get_recent_events(200)
+        return jsonify(events)
+
+    @server.route("/xray/api/clear", methods=["POST"])
+    def xray_api_clear():
+        from app_v2.services.xray import clear_events
+        clear_events()
+        return jsonify({"ok": True})
+
+
 def _start_token_keepalive():
     """Daemon thread that refreshes Plaud tokens every 20 minutes."""
 
@@ -193,6 +209,9 @@ def create_app() -> Dash:
 
     # Register Flask routes for in-app Plaud OAuth
     _register_auth_routes(app.server)
+
+    # Register X-ray Activity Monitor routes (standalone window)
+    _register_xray_routes(app.server)
 
     # Set layout
     app.layout = create_layout()

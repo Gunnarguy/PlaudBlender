@@ -289,6 +289,8 @@ class ChronosDataService:
 
     def _get_all_events(self, force_refresh: bool = False) -> List[Event]:
         """Get all events from Qdrant with caching."""
+        from app_v2.services.xray import xray_log
+        import time as _time
         now = datetime.now()
 
         # Check cache validity (read outside lock for fast path)
@@ -298,6 +300,9 @@ class ChronosDataService:
             and self._last_cache_time
             and (now - self._last_cache_time).seconds < self._cache_ttl_seconds
         ):
+            _age = (now - self._last_cache_time).seconds
+            xray_log("data", "cache-hit",
+                     f"Using cached data — {len(self._events_cache)} events, {_age}s old")
             return self._events_cache
 
         with self._cache_lock:
@@ -317,6 +322,10 @@ class ChronosDataService:
             try:
                 events = []
                 offset = None
+                _scroll_t0 = _time.perf_counter()
+                _scroll_pages = 0
+                xray_log("data", "cache-miss",
+                         f"Refreshing data from database…")
 
                 while True:
                     response = self._qdrant.client.scroll(
@@ -330,6 +339,7 @@ class ChronosDataService:
                     points, offset = response
                     if not points:
                         break
+                    _scroll_pages += 1
 
                     for point in points:
                         event = Event.from_qdrant(str(point.id), point.payload or {})
@@ -344,7 +354,11 @@ class ChronosDataService:
                 # Update cache
                 self._events_cache = events
                 self._last_cache_time = datetime.now()
+                _scroll_ms = (_time.perf_counter() - _scroll_t0) * 1000
 
+                xray_log("data", "loaded",
+                         f"Loaded {len(events)} events ({_scroll_pages} pages)",
+                         duration_ms=round(_scroll_ms, 1), level="perf")
                 logger.info(f"Loaded {len(events)} events from Qdrant")
                 return events
 
@@ -1070,6 +1084,8 @@ class ChronosDataService:
         if not self._qdrant or not self._embedder or not query.strip():
             return self._text_search(query, limit)
 
+        from app_v2.services.xray import xray_log
+        import time as _time
         try:
             from src.models.chronos_schemas import TemporalFilter
             from datetime import datetime as dt_cls
@@ -1088,7 +1104,13 @@ class ChronosDataService:
                 )
 
             # Embed query
+            _embed_t0 = _time.perf_counter()
             query_vector = self._embedder.embed_text(query, task_type=task_type)
+            _embed_ms = (_time.perf_counter() - _embed_t0) * 1000
+            xray_log("search", "embed",
+                     f"Search text converted to numbers",
+                     duration_ms=round(_embed_ms, 1),
+                     detail=f"{len(query.split())} words")
 
             # Use hybrid search if filters are present
             if temporal_filter or categories:

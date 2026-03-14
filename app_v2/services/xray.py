@@ -4,7 +4,7 @@ Usage in any callback:
     from app_v2.services.xray import xray_log, xray_timer
 
     # Simple log entry
-    xray_log("search", "query", f"Searching for '{query}'")
+    xray_log("search", "query", "Searching for 'meeting notes'")
 
     # Auto-timed block
     with xray_timer("search", "embed") as t:

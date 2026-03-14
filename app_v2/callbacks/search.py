@@ -118,12 +118,12 @@ def register_search_callbacks(app):
             f"Search query: {query}, categories={categories}, dates={start_date}-{end_date}"
         )
         xray_log(
-            "search", "query", f"Query: '{query}'", detail=f"cats={categories or 'all'}"
+            "search", "query", f"Searching for ‘{query}’", detail=f"categories: {categories or 'all'}"
         )
 
         # Perform filtered search
         service = get_data_service()
-        with xray_timer("search", "vector", "Qdrant semantic search") as t_search:
+        with xray_timer("search", "vector", "Finding similar events in database") as t_search:
             results = service.search(
                 query,
                 limit=20,
@@ -135,9 +135,9 @@ def register_search_callbacks(app):
         xray_log(
             "search",
             "results",
-            f"{len(results)} matches",
+            f"Found {len(results)} matching events",
             duration_ms=round(t_search.ms, 1),
-            detail=f"top={results[0].score:.2f}" if results else None,
+            detail=f"best match: {results[0].score:.0%}" if results else None,
         )
 
         if not results:
@@ -165,8 +165,8 @@ def register_search_callbacks(app):
         results_ui = []
 
         # Add AI conversational answer (if OpenAI configured)
-        xray_log("search", "ai", "Generating AI answer...")
-        with xray_timer("search", "openai", "OpenAI Responses API") as t_ai:
+        xray_log("search", "ai", "Asking AI to summarize results…")
+        with xray_timer("search", "openai", "Asking AI to explain results") as t_ai:
             ai_section = _build_ai_answer_section(query, results)
         if ai_section:
             results_ui.append(ai_section)
@@ -175,11 +175,10 @@ def register_search_callbacks(app):
                 "ai",
                 "AI answer ready",
                 duration_ms=round(t_ai.ms, 1),
-                level="perf",
             )
         else:
             xray_log(
-                "search", "ai", "AI answer skipped (no key or failed)", level="warn"
+                "search", "ai", "AI answer unavailable (no API key or error)", level="warn"
             )
 
         results_ui.append(create_search_results(results, query))

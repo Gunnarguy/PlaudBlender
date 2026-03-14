@@ -5,6 +5,7 @@ to extract entities and relationships from cleaned narrative events.
 """
 
 import logging
+import time as _time
 from typing import List, Dict, Any, Tuple
 
 import networkx as nx
@@ -42,6 +43,11 @@ class ChronosGraphExtractor:
             Tuple of (entities_list, networkx_graph)
         """
         logger.info(f"Extracting entities from {len(events)} events")
+
+        from app_v2.services.xray import xray_log
+        xray_log("graph", "extract",
+                 f"Scanning {len(events)} events for people, places, and concepts")
+        _ext_t0 = _time.perf_counter()
 
         # Reset for each extraction run.
         self._knowledge_graph = KnowledgeGraph()
@@ -84,11 +90,19 @@ class ChronosGraphExtractor:
 
             except Exception as e:
                 logger.error(f"Failed to extract from event {event.event_id}: {e}")
+                xray_log("graph", "extract-error",
+                         f"Couldn't extract from one event",
+                         detail=str(e)[:60], level="warn")
                 continue
 
+        _ext_ms = (_time.perf_counter() - _ext_t0) * 1000
+        xray_log("graph", "extract",
+                 f"Found {len(all_entities)} people, places, and concepts across {len(events)} events",
+                 duration_ms=round(_ext_ms, 1))
         logger.info(f"Extracted {len(all_entities)} total entities")
 
         # Build a NetworkX view (useful for quick stats + downstream visualization)
+        _graph_t0 = _time.perf_counter()
         graph = nx.Graph()
 
         for entity_id, entity in self._knowledge_graph.entities.items():
@@ -111,6 +125,10 @@ class ChronosGraphExtractor:
         logger.info(
             f"Built graph with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges"
         )
+        _graph_ms = (_time.perf_counter() - _graph_t0) * 1000
+        xray_log("graph", "build",
+                 f"Built knowledge map: {graph.number_of_nodes()} concepts, {graph.number_of_edges()} connections",
+                 duration_ms=round(_graph_ms, 1))
 
         return all_entities, graph
 
@@ -123,10 +141,16 @@ class ChronosGraphExtractor:
         Returns:
             Dict mapping community_id to list of node names
         """
+        from app_v2.services.xray import xray_log
+        _t0 = _time.perf_counter()
         # CommunityDetector operates on KnowledgeGraph, not the NetworkX graph.
         # (It will construct a NetworkX graph internally when needed.)
         communities = self.community_detector.detect_communities(self._knowledge_graph)
+        _ms = (_time.perf_counter() - _t0) * 1000
 
+        xray_log("graph", "communities",
+                 f"Found {len(communities)} topic clusters",
+                 duration_ms=round(_ms, 1))
         logger.info(f"Detected {len(communities)} communities")
 
         # Return dicts for easy pickling / UI use.

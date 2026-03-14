@@ -7,6 +7,7 @@ this module processes transcripts directly through Gemini for event extraction.
 
 import json
 import logging
+import time as _time
 import uuid
 from typing import Optional
 
@@ -108,6 +109,10 @@ BROKEN_JSON:
         thinking_level = normalize_thinking_level(
             getattr(self.settings, "chronos_thinking_level", "")
         )
+        from app_v2.services.xray import xray_log
+        xray_log("gemini", "json-repair",
+                 f"Asking Gemini to fix broken response ({len(snippet):,} chars)")
+        _t0 = _time.perf_counter()
         try:
             config: dict = {
                 "response_mime_type": "application/json",
@@ -123,10 +128,17 @@ BROKEN_JSON:
                 contents=repair_prompt,
                 config=config,
             )
-            return (resp.text or "").strip()
+            _ms = (_time.perf_counter() - _t0) * 1000
+            repaired = (resp.text or "").strip()
+            xray_log("gemini", "json-repair",
+                     f"Gemini fixed the response ({len(repaired):,} chars)",
+                     duration_ms=round(_ms, 1))
+            return repaired
         except Exception as e:
-            # If repair fails for any reason, bubble up the original JSON error
-            # by returning the unmodified content (caller will re-attempt parse and fail).
+            _ms = (_time.perf_counter() - _t0) * 1000
+            xray_log("gemini", "json-repair",
+                     f"Could not fix response: {str(e)[:60]}",
+                     duration_ms=round(_ms, 1), level="error")
             logger.error(f"JSON repair call failed (model={model_name}): {e}")
             return broken_json
 
@@ -160,6 +172,9 @@ BROKEN_JSON:
                     f"      ⚠️ Transcript too short ({len(transcript_text.strip())} chars < {MIN_TRANSCRIPT_CHARS}), skipping",
                     flush=True,
                 )
+            from app_v2.services.xray import xray_log
+            xray_log("gemini", "skip",
+                     f"Transcript too short to analyze ({len(transcript_text.strip())} chars)")
             logger.warning(
                 f"Skipping {recording_id}: transcript too short ({len(transcript_text.strip())} chars)"
             )
@@ -197,6 +212,12 @@ Extract events from this transcript following the schema exactly."""
             )
             print(f"      🤖 Model: {self.engine.model_name}", flush=True)
             print(f"      📤 Sending to Gemini API...", flush=True)
+
+        from app_v2.services.xray import xray_log
+        _prompt_words = len(transcript_text.split())
+        _prompt_chars = len(transcript_text)
+        xray_log("gemini", "prompt",
+                 f"Sending {_prompt_words:,} words to Gemini for analysis")
 
         for attempt in range(max_retries):
             try:
@@ -271,13 +292,21 @@ Extract events from this transcript following the schema exactly."""
                         flush=True,
                     )
 
+                    xray_log("gemini", "stream",
+                             f"Gemini finished — {len(response_text):,} chars, found {events_found} events",
+                             duration_ms=round(elapsed * 1000, 1))
+
                     # Get final usage from last chunk if available
                     usage = getattr(chunk, "usage_metadata", None)
                     if usage:
+                        _in_tok = getattr(usage, 'prompt_token_count', 0)
+                        _out_tok = getattr(usage, 'candidates_token_count', 0)
                         print(
-                            f"      📊 Tokens - Input: {getattr(usage, 'prompt_token_count', '?'):,} | Output: {getattr(usage, 'candidates_token_count', '?'):,}",
+                            f"      📊 Tokens - Input: {_in_tok:,} | Output: {_out_tok:,}",
                             flush=True,
                         )
+                        xray_log("gemini", "tokens",
+                                 f"Token usage: {_in_tok:,} in → {_out_tok:,} out ({_in_tok + _out_tok:,} total)")
 
                     # Parse the accumulated response
                     raw_text = response_text.strip()
@@ -354,6 +383,16 @@ Extract events from this transcript following the schema exactly."""
                     )
                     self._print_event_summary(validated.events)
 
+                # Log per-event category breakdown
+                from collections import Counter as _Counter
+                _cats = _Counter()
+                for _ev in validated.events:
+                    _c = getattr(_ev, 'category', 'unknown')
+                    _cats[_c.value if hasattr(_c, 'value') else str(_c)] += 1
+                _cat_str = ', '.join(f"{c}:{n}" for c, n in _cats.most_common(5))
+                xray_log("gemini", "extract",
+                         f"Found {validated.total_events} events — {_cat_str}")
+
                 logger.info(
                     f"Extracted {validated.total_events} events from transcript"
                 )
@@ -362,12 +401,18 @@ Extract events from this transcript following the schema exactly."""
             except ValidationError as e:
                 if verbose:
                     print(f"      ❌ Validation error: {str(e)[:100]}", flush=True)
+                xray_log("gemini", "error",
+                         f"AI output didn't match expected format",
+                         level="error")
                 logger.error(f"Pydantic validation failed: {e}")
                 return None
 
             except json.JSONDecodeError as e:
                 if verbose:
                     print(f"      ⚠️ JSON parse error, retrying...", flush=True)
+                xray_log("gemini", "retry",
+                         f"Bad response from Gemini, trying again ({attempt + 1}/{max_retries})",
+                         level="warn")
                 logger.error(f"JSON parse error: {e}")
                 if attempt < max_retries - 1:
                     continue
@@ -376,6 +421,9 @@ Extract events from this transcript following the schema exactly."""
             except Exception as e:
                 if verbose:
                     print(f"      ❌ Error: {str(e)[:80]}", flush=True)
+                xray_log("gemini", "error",
+                         f"AI analysis failed: {str(e)[:60]}",
+                         level="error")
                 logger.error(f"Failed to process transcript: {e}")
                 if attempt < max_retries - 1:
                     continue
@@ -466,17 +514,27 @@ Extract events from this transcript following the schema exactly."""
             return False
 
         try:
+            from app_v2.services.xray import xray_log
+            _proc_t0 = _time.perf_counter()
+
             # Mark as in-progress early so we can spot crashes mid-batch.
             mark_chronos_recording_status(
                 self.db, rec.recording_id, "processing", error_message=None
             )
+            xray_log("gemini", "start",
+                     f"Starting AI analysis of recording")
 
             if delete_existing_events:
                 deleted = delete_chronos_events_by_recording(self.db, recording_id)
                 logger.info(f"Deleted {deleted} existing events for {recording_id}")
 
             # Fetch file details from Plaud API
+            _api_t0 = _time.perf_counter()
             file_details = self.plaud.get_recording(rec.recording_id)
+            _api_ms = (_time.perf_counter() - _api_t0) * 1000
+            xray_log("ingest", "plaud-api",
+                     f"Got recording details from Plaud",
+                     duration_ms=round(_api_ms, 1))
 
             # Best-effort: refresh the recording title from Plaud if present.
             try:
@@ -512,6 +570,9 @@ Extract events from this transcript following the schema exactly."""
 
             if not transcript_text:
                 logger.warning(f"No transcript for {rec.recording_id}")
+                xray_log("gemini", "skip",
+                         f"No transcript found for this recording",
+                         level="warn")
                 mark_chronos_recording_status(
                     self.db,
                     rec.recording_id,
@@ -561,6 +622,9 @@ Extract events from this transcript following the schema exactly."""
 
             if not output or not output.events:
                 logger.warning(f"No events extracted for {rec.recording_id}")
+                xray_log("gemini", "fail",
+                         f"Gemini didn't find any events in this recording",
+                         level="warn")
                 mark_chronos_recording_status(
                     self.db,
                     rec.recording_id,
@@ -608,11 +672,19 @@ Extract events from this transcript following the schema exactly."""
                 self.db, rec.recording_id, "completed", error_message=None
             )
 
+            _proc_ms = (_time.perf_counter() - _proc_t0) * 1000
+            xray_log("gemini", "done",
+                     f"Analysis complete — {len(output.events)} events saved",
+                     duration_ms=round(_proc_ms, 1))
+
             logger.info(f"✓ Processed {rec.recording_id}: {len(output.events)} events")
             return True
 
         except Exception as e:
             logger.error(f"Failed to process {rec.recording_id}: {e}")
+            xray_log("gemini", "error",
+                     f"Recording processing failed: {str(e)[:60]}",
+                     level="error")
             mark_chronos_recording_status(
                 self.db,
                 rec.recording_id,

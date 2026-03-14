@@ -18,10 +18,6 @@ def create_layout() -> html.Div:
             dcc.Store(id="search-query", data=None),
             dcc.Store(id="days-data", data=None),
             dcc.Store(id="app-preferences", storage_type="local", data=None),
-            # X-ray telemetry store (event bus)
-            dcc.Store(id="xray-events", data=[]),
-            # X-ray refresh ticker (polls server-side buffer every 1s when open)
-            dcc.Interval(id="xray-poll", interval=1000, n_intervals=0, disabled=True),
             # Auto-refresh interval (every 60 seconds)
             dcc.Interval(id="auto-refresh", interval=60000, n_intervals=0),
             # Pipeline progress polling (2s while running, self-disables when idle)
@@ -78,65 +74,8 @@ def create_layout() -> html.Div:
             ),
             # Category save status toast
             html.Div(id="category-save-status", className="save-status-toast"),
-            # X-ray drawer — collapsible activity monitor
-            html.Div(
-                className="xray-drawer collapsed",
-                id="xray-drawer",
-                children=[
-                    html.Div(
-                        className="xray-handle",
-                        id="xray-toggle",
-                        children=[
-                            html.Span("⚡", className="xray-icon"),
-                            html.Span("ACTIVITY", className="xray-title"),
-                            html.Span("", id="xray-badge", className="xray-badge"),
-                            # Live stats strip
-                            html.Div(
-                                className="xray-live-stats",
-                                id="xray-live-stats",
-                                children=[],
-                            ),
-                            html.Span("▲", id="xray-chevron", className="xray-chevron"),
-                        ],
-                    ),
-                    html.Div(
-                        className="xray-body",
-                        id="xray-body",
-                        children=[
-                            html.Div(
-                                className="xray-toolbar",
-                                children=[
-                                    # Filter tabs
-                                    html.Div(
-                                        className="xray-filters",
-                                        children=[
-                                            html.Button("All", id="xray-filter-all", className="xray-filter-btn active", **{"data-filter": "all"}),
-                                            html.Button("Search", id="xray-filter-search", className="xray-filter-btn", **{"data-filter": "search"}),
-                                            html.Button("Nav", id="xray-filter-nav", className="xray-filter-btn", **{"data-filter": "nav"}),
-                                            html.Button("Graph", id="xray-filter-graph", className="xray-filter-btn", **{"data-filter": "graph"}),
-                                            html.Button("Errors", id="xray-filter-errors", className="xray-filter-btn", **{"data-filter": "error"}),
-                                        ],
-                                    ),
-                                    html.Div(
-                                        className="xray-toolbar-right",
-                                        children=[
-                                            html.Span(
-                                                "", id="xray-count", className="xray-count"
-                                            ),
-                                            html.Button(
-                                                "Clear",
-                                                id="xray-clear-btn",
-                                                className="xray-btn",
-                                            ),
-                                        ],
-                                    ),
-                                ],
-                            ),
-                            html.Div(id="xray-log", className="xray-log"),
-                        ],
-                    ),
-                ],
-            ),
+            # X-ray Activity Monitor — floating PiP panel
+            html.Div(id="xray-pip", className="xray-pip"),
             # Loading overlay
             dcc.Loading(
                 id="loading-overlay",

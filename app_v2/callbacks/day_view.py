@@ -70,7 +70,7 @@ def register_day_view_callbacks(app):
         from app_v2.services.xray import xray_log
 
         xray_log(
-            "day", "select", f"Recording {recording_id[:12]}…", detail=f"date={date}"
+            "day", "select", f"Opened recording from {date}"
         )
 
         return {"id": recording_id, "date": date}
