@@ -101,9 +101,9 @@ class NotionService:
         """Test the Notion connection and return status."""
         status = NotionSyncStatus()
 
-        token = self._settings.notion_token
+        token = self._resolve_token()
         if not token:
-            status.error = "NOTION_TOKEN not configured"
+            status.error = "No Notion token — set NOTION_TOKEN in .env"
             return status
 
         db_id = self._settings.notion_database_id
