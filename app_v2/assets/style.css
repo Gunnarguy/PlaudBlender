@@ -4325,6 +4325,123 @@ a.plaud-connect-btn:hover {
   opacity: 0.5;
 }
 
+/* ── Recording preview text ────────────────────────────────────────────────── */
+.recording-preview {
+  margin: 6px 0 4px;
+}
+.preview-text {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Ambient inline (compact) ──────────────────────────────────────────────── */
+.ambient-inline {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+.recording-header-left {
+  display: flex;
+  align-items: center;
+}
+
+/* ── Mood dots (sentiment arc) ─────────────────────────────────────────────── */
+.recording-mood-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+.mood-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.mood-dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.mood-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  transition: transform 0.15s;
+}
+.mood-dot:hover {
+  transform: scale(2);
+  z-index: 1;
+}
+
+/* ── Inline event previews ─────────────────────────────────────────────────── */
+.recording-event-previews {
+  margin: 6px 0 2px;
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--border-subtle);
+}
+.event-preview-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.event-preview-item {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  padding-left: 12px;
+  position: relative;
+}
+.event-preview-item::before {
+  content: '›';
+  position: absolute;
+  left: 0;
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+.event-preview-more {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+  display: block;
+}
+.stat.muted {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* ── Day flow narrative ────────────────────────────────────────────────────── */
+.day-flow-narrative {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+.flow-icon {
+  font-size: 0.82rem;
+}
+.flow-text {
+  font-size: 0.78rem;
+  color: var(--accent-secondary, #60a5fa);
+  letter-spacing: 0.01em;
+}
+
+/* ── Day mood badge ────────────────────────────────────────────────────────── */
+.day-mood-badge {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 /* ── Breadcrumbs ───────────────────────────────────────────────────────────── */
 .detail-breadcrumb {
   display: flex;

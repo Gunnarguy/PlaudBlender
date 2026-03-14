@@ -110,6 +110,9 @@ class RecordingSummary:
     avg_sentiment: float = 0.0
     source: str = "plaud_cloud"  # plaud_cloud | usb_import | local
     has_plaud_ai: bool = False  # True if Plaud cloud AI summary exists
+    preview_text: str = ""  # First significant event's clean_text (truncated)
+    event_previews: List[str] = field(default_factory=list)  # First 3 event snippets
+    sentiment_arc: List[float] = field(default_factory=list)  # Sentiment over time
 
     @property
     def duration_formatted(self) -> str:
@@ -437,6 +440,21 @@ class ChronosDataService:
                 duration = sum(e.duration_seconds for e in rec_events)
                 end_time = start_time + timedelta(seconds=duration)
 
+            # Build preview text from first significant event
+            preview_text = ""
+            event_previews = []
+            for ev in rec_events[:5]:
+                txt = (ev.clean_text or "").strip()
+                if txt and len(txt) > 20:
+                    if not preview_text:
+                        preview_text = txt[:150].rsplit(" ", 1)[0] if len(txt) > 150 else txt
+                    if len(event_previews) < 3:
+                        snippet = txt[:120].rsplit(" ", 1)[0] if len(txt) > 120 else txt
+                        event_previews.append(snippet)
+
+            # Sentiment arc — one value per event, chronological
+            sentiment_arc = [ev.sentiment for ev in rec_events]
+
             summaries[recording_id] = RecordingSummary(
                 recording_id=recording_id,
                 start_time=start_time,
@@ -454,6 +472,9 @@ class ChronosDataService:
                 has_plaud_ai=(
                     bool(getattr(db_rec, "plaud_ai_summary", None)) if db_rec else False
                 ),
+                preview_text=preview_text,
+                event_previews=event_previews,
+                sentiment_arc=sentiment_arc,
             )
 
         return summaries

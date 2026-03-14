@@ -186,20 +186,83 @@ def create_day_timeline_strip(
     )
 
 
+def _sentiment_sparkline(arc: list, width: int = 80, height: int = 20):
+    """Render a tiny inline SVG sparkline from sentiment values."""
+    if not arc or len(arc) < 2:
+        return html.Span()
+    n = len(arc)
+    # Normalize sentiment [-1, 1] → [height, 0] (inverted Y for SVG)
+    points = []
+    for i, val in enumerate(arc):
+        x = (i / (n - 1)) * width
+        y = height - ((val + 1) / 2) * height  # -1→bottom, +1→top
+        points.append(f"{x:.1f},{y:.1f}")
+    polyline = " ".join(points)
+    # Color: green if mostly positive, red if mostly negative, blue if mixed
+    avg = sum(arc) / len(arc)
+    color = "#10b981" if avg > 0.15 else "#ef4444" if avg < -0.15 else "#60a5fa"
+    svg = (
+        f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+        f'xmlns="http://www.w3.org/2000/svg" style="display:block">'
+        f'<polyline points="{polyline}" fill="none" stroke="{color}" '
+        f'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<line x1="0" y1="{height/2}" x2="{width}" y2="{height/2}" '
+        f'stroke="#ffffff15" stroke-width="0.5"/>'
+        f"</svg>"
+    )
+    return html.Div(
+        className="sentiment-sparkline",
+        # Dash doesn't support raw SVG in html.Div directly; use Iframe srcdoc
+        # or dangerously_allow_html. Simplest: use a series of colored dots.
+    )
+
+
+def _sentiment_dots(arc: list, max_dots: int = 12):
+    """Render sentiment as a row of colored dots — one per event (sampled)."""
+    if not arc:
+        return html.Span()
+    # Sample down to max_dots if needed
+    if len(arc) > max_dots:
+        step = len(arc) / max_dots
+        sampled = [arc[int(i * step)] for i in range(max_dots)]
+    else:
+        sampled = arc
+    dots = []
+    for val in sampled:
+        if val > 0.3:
+            color, title = "#10b981", "positive"
+        elif val > 0.1:
+            color, title = "#6ee7b7", "slightly positive"
+        elif val < -0.3:
+            color, title = "#ef4444", "negative"
+        elif val < -0.1:
+            color, title = "#fca5a5", "slightly negative"
+        else:
+            color, title = "#94a3b8", "neutral"
+        dots.append(
+            html.Span(
+                className="mood-dot",
+                style={"backgroundColor": color},
+                title=f"{val:+.1f} ({title})",
+            )
+        )
+    return html.Div(className="mood-dots", children=dots)
+
+
 def create_recording_card(recording: RecordingSummary, day_date: str) -> html.Div:
-    """Create a card for a single recording — time-first design."""
+    """Create a rich card for a single recording — shows what happened, not just metadata."""
     top_cat = recording.top_category
     cat_color = CATEGORY_COLORS.get(top_cat, "#374151")
-    keywords = recording.keywords[:4]
+    keywords = recording.keywords[:5]
 
     # Sentiment indicator
     s = recording.avg_sentiment
     if s > 0.2:
-        sentiment_icon, sentiment_cls = "↑", "sentiment-pos"
+        sentiment_icon, sentiment_cls = "😊", "sentiment-pos"
     elif s < -0.2:
-        sentiment_icon, sentiment_cls = "↓", "sentiment-neg"
+        sentiment_icon, sentiment_cls = "😔", "sentiment-neg"
     else:
-        sentiment_icon, sentiment_cls = "–", "sentiment-neu"
+        sentiment_icon, sentiment_cls = "😐", "sentiment-neu"
 
     # Ambient context — time-of-day label
     hour = recording.start_time.hour
@@ -218,102 +281,151 @@ def create_recording_card(recording: RecordingSummary, day_date: str) -> html.Di
     else:
         dur_ctx = "extended session"
 
+    # Category breakdown text
+    cat_parts = []
+    for cat, count in sorted(recording.categories.items(), key=lambda x: -x[1])[:3]:
+        cat_parts.append(f"{count} {cat}")
+    cat_breakdown = ", ".join(cat_parts)
+
+    children = []
+
+    # ── Time + meta header ─────────────────────────────────────────
+    children.append(
+        html.Div(
+            className="recording-header",
+            children=[
+                html.Div(
+                    className="recording-header-left",
+                    children=[
+                        html.Span(
+                            recording.time_range_formatted,
+                            className="recording-time",
+                        ),
+                        html.Span(ambient, className="ambient-inline"),
+                    ],
+                ),
+                html.Div(
+                    className="recording-header-right",
+                    children=[
+                        *(
+                            [html.Span("☁️", className="source-badge cloud",
+                                        title="Plaud Cloud + AI")]
+                            if recording.has_plaud_ai
+                            else (
+                                [html.Span("☁️", className="source-badge cloud-only",
+                                            title="Plaud Cloud")]
+                                if recording.source == "plaud_cloud"
+                                else [html.Span("💾", className="source-badge local",
+                                                  title="Local (USB)")]
+                            )
+                        ),
+                        html.Span(recording.duration_formatted,
+                                  className="recording-duration"),
+                        html.Span(
+                            sentiment_icon,
+                            className=f"sentiment-badge {sentiment_cls}",
+                            title=f"Avg sentiment: {s:+.2f}",
+                        ),
+                    ],
+                ),
+            ],
+        )
+    )
+
+    # ── Preview text — the most important part ─────────────────────
+    preview = getattr(recording, "preview_text", "") or ""
+    if preview:
+        children.append(
+            html.Div(
+                className="recording-preview",
+                children=[
+                    html.P(
+                        preview + ("…" if len(preview) >= 148 else ""),
+                        className="preview-text",
+                    ),
+                ],
+            )
+        )
+
+    # ── Category bar ────────────────────────────────────────────────
+    children.append(create_category_bar(recording.categories, height=4))
+
+    # ── Stats + category breakdown ──────────────────────────────────
+    children.append(
+        html.Div(
+            className="recording-stats",
+            children=[
+                html.Span(
+                    top_cat,
+                    className="category-pill",
+                    style={
+                        "background": f"{cat_color}22",
+                        "color": cat_color,
+                        "borderColor": f"{cat_color}44",
+                    },
+                ),
+                html.Span(f"{recording.event_count} moments", className="stat"),
+                html.Span(f"({dur_ctx})", className="stat muted"),
+            ],
+        )
+    )
+
+    # ── Mood arc (sentiment dots) ───────────────────────────────────
+    arc = getattr(recording, "sentiment_arc", []) or []
+    if len(arc) >= 2:
+        children.append(
+            html.Div(
+                className="recording-mood-row",
+                children=[
+                    html.Span("Mood:", className="mood-label"),
+                    _sentiment_dots(arc),
+                ],
+            )
+        )
+
+    # ── Inline event previews (expandable) ──────────────────────────
+    event_previews = getattr(recording, "event_previews", []) or []
+    if event_previews:
+        preview_items = []
+        for i, snippet in enumerate(event_previews):
+            preview_items.append(
+                html.Li(
+                    snippet + ("…" if len(snippet) >= 118 else ""),
+                    className="event-preview-item",
+                )
+            )
+        remaining = recording.event_count - len(event_previews)
+        children.append(
+            html.Div(
+                className="recording-event-previews",
+                children=[
+                    html.Ul(className="event-preview-list", children=preview_items),
+                    *(
+                        [html.Span(
+                            f"+{remaining} more moment{'s' if remaining != 1 else ''} — click to explore",
+                            className="event-preview-more",
+                        )]
+                        if remaining > 0
+                        else []
+                    ),
+                ],
+            )
+        )
+
+    # ── Keywords ────────────────────────────────────────────────────
+    if keywords:
+        children.append(
+            html.Div(
+                className="recording-keywords",
+                children=[html.Span(kw, className="keyword-tag small") for kw in keywords],
+            )
+        )
+
     return html.Div(
         id={"type": "recording-card", "id": recording.recording_id, "date": day_date},
         className=f"recording-card recording-cat-{top_cat}",
         style={"borderLeft": f"3px solid {cat_color}"},
-        children=[
-            # ── Time row ───────────────────────────────────────────────
-            html.Div(
-                className="recording-header",
-                children=[
-                    html.Span(
-                        recording.time_range_formatted,
-                        className="recording-time",
-                    ),
-                    html.Div(
-                        className="recording-header-right",
-                        children=[
-                            # Cloud/Local indicator
-                            *(
-                                [
-                                    html.Span(
-                                        "☁️",
-                                        className="source-badge cloud",
-                                        title="Plaud Cloud + AI",
-                                    )
-                                ]
-                                if recording.has_plaud_ai
-                                else (
-                                    [
-                                        html.Span(
-                                            "☁️",
-                                            className="source-badge cloud-only",
-                                            title="Plaud Cloud",
-                                        )
-                                    ]
-                                    if recording.source == "plaud_cloud"
-                                    else [
-                                        html.Span(
-                                            "💾",
-                                            className="source-badge local",
-                                            title="Local only (USB import)",
-                                        )
-                                    ]
-                                )
-                            ),
-                            html.Span(
-                                recording.duration_formatted,
-                                className="recording-duration",
-                            ),
-                            html.Span(
-                                sentiment_icon,
-                                className=f"sentiment-badge {sentiment_cls}",
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-            # ── Ambient row ─────────────────────────────────────────────
-            html.Div(
-                className="recording-ambient",
-                children=[
-                    html.Span(ambient, className="ambient-tag"),
-                    html.Span("•", className="ambient-sep"),
-                    html.Span(dur_ctx, className="ambient-tag"),
-                ],
-            ),
-            # ── Category bar ────────────────────────────────────────────
-            create_category_bar(recording.categories, height=4),
-            # ── Stats row ───────────────────────────────────────────────
-            html.Div(
-                className="recording-stats",
-                children=[
-                    html.Span(
-                        top_cat,
-                        className="category-pill",
-                        style={
-                            "background": f"{cat_color}22",
-                            "color": cat_color,
-                            "borderColor": f"{cat_color}44",
-                        },
-                    ),
-                    html.Span(
-                        f"{recording.event_count} events",
-                        className="stat",
-                    ),
-                ],
-            ),
-            # ── Keywords ────────────────────────────────────────────────
-            html.Div(
-                className="recording-keywords",
-                children=(
-                    [html.Span(kw, className="keyword-tag small") for kw in keywords]
-                    if keywords
-                    else []
-                ),
-            ),
-        ],
+        children=children,
     )
 
 
@@ -334,8 +446,71 @@ def _time_of_day_label(hour: int) -> str:
     return "🌙 night"
 
 
+def _build_day_flow_narrative(recordings: list) -> str:
+    """Generate a human-readable narrative of how the day flowed.
+
+    E.g. 'Morning deep work → afternoon meetings → evening reflection'
+    """
+    if not recordings:
+        return ""
+    sorted_recs = sorted(recordings, key=lambda r: r.start_time)
+
+    segments = []
+    for rec in sorted_recs:
+        hour = rec.start_time.hour
+        if hour < 6:
+            period = "early morning"
+        elif hour < 9:
+            period = "morning"
+        elif hour < 12:
+            period = "mid-morning"
+        elif hour < 14:
+            period = "afternoon"
+        elif hour < 17:
+            period = "mid-afternoon"
+        elif hour < 20:
+            period = "evening"
+        else:
+            period = "night"
+        cat = rec.top_category
+        segments.append((period, cat))
+
+    # Deduplicate consecutive identical segments
+    flow_parts = []
+    prev = None
+    for period, cat in segments:
+        label = f"{period} {cat}"
+        if label != prev:
+            flow_parts.append(label)
+            prev = label
+
+    return " → ".join(flow_parts[:6])
+
+
+def _day_mood_summary(recordings: list) -> str:
+    """One-word mood summary for the day based on average sentiment."""
+    if not recordings:
+        return ""
+    all_sentiments = []
+    for r in recordings:
+        arc = getattr(r, "sentiment_arc", []) or []
+        all_sentiments.extend(arc)
+    if not all_sentiments:
+        return ""
+    avg = sum(all_sentiments) / len(all_sentiments)
+    if avg > 0.4:
+        return "😊 Great day"
+    if avg > 0.15:
+        return "🙂 Good day"
+    if avg > -0.15:
+        return "😐 Mixed day"
+    if avg > -0.4:
+        return "😕 Tough day"
+    return "😔 Hard day"
+
+
 def create_day_card(day: DaySummary, expanded: bool = False) -> html.Div:
-    """Create a card for a day with collapsible recording list."""
+    """Create a rich card for a day with flow narrative, mood, and collapsible recordings."""
     # Build a quick day summary line from top categories + time span
     if day.recordings:
         first = min(r.start_time for r in day.recordings)
@@ -347,8 +522,71 @@ def create_day_card(day: DaySummary, expanded: bool = False) -> html.Div:
     else:
         day_summary_text = "No recordings"
 
+    # Flow narrative
+    flow = _build_day_flow_narrative(day.recordings) if day.recordings else ""
+
+    # Mood
+    mood = _day_mood_summary(day.recordings) if day.recordings else ""
+
     # One-line AI summary (from recording-level Plaud summaries)
     ai_summary_line = getattr(day, "ai_summary", None)
+
+    # Build header children
+    header_info_children = [
+        html.H3(day.date_display, className="day-title"),
+        html.Div(
+            className="day-summary-line",
+            children=[
+                html.Span(day_summary_text, className="day-summary-text"),
+                *(
+                    [html.Span(f"  •  {mood}", className="day-mood-badge")]
+                    if mood
+                    else []
+                ),
+            ],
+        ),
+    ]
+
+    # Flow narrative line
+    if flow:
+        header_info_children.append(
+            html.Div(
+                className="day-flow-narrative",
+                children=[
+                    html.Span("📖 ", className="flow-icon"),
+                    html.Span(flow, className="flow-text"),
+                ],
+            )
+        )
+
+    # AI summary line
+    if ai_summary_line:
+        header_info_children.append(
+            html.Div(
+                className="day-ai-summary-line",
+                children=[
+                    html.Span("✨ ", className="ai-summary-icon"),
+                    html.Span(ai_summary_line, className="day-ai-summary-text"),
+                ],
+            )
+        )
+
+    # Stats line
+    header_info_children.append(
+        html.Div(
+            className="day-stats",
+            children=[
+                html.Span(
+                    f"{day.recording_count} recording{'s' if day.recording_count != 1 else ''}",
+                    className="stat",
+                ),
+                html.Span("•", className="stat-sep"),
+                html.Span(f"{day.event_count} moments", className="stat"),
+                html.Span("•", className="stat-sep"),
+                html.Span(day.duration_formatted, className="stat duration"),
+            ],
+        )
+    )
 
     return html.Div(
         className=f"day-card {'expanded' if expanded else ''}",
@@ -358,58 +596,7 @@ def create_day_card(day: DaySummary, expanded: bool = False) -> html.Div:
                 id={"type": "day-header", "date": day.date},
                 className="day-header",
                 children=[
-                    # Left side - date and stats
-                    html.Div(
-                        className="day-info",
-                        children=[
-                            html.H3(day.date_display, className="day-title"),
-                            html.Div(
-                                className="day-summary-line",
-                                children=[
-                                    html.Span(
-                                        day_summary_text, className="day-summary-text"
-                                    ),
-                                ],
-                            ),
-                            *(
-                                [
-                                    html.Div(
-                                        className="day-ai-summary-line",
-                                        children=[
-                                            html.Span(
-                                                "✨ ", className="ai-summary-icon"
-                                            ),
-                                            html.Span(
-                                                ai_summary_line,
-                                                className="day-ai-summary-text",
-                                            ),
-                                        ],
-                                    )
-                                ]
-                                if ai_summary_line
-                                else []
-                            ),
-                            html.Div(
-                                className="day-stats",
-                                children=[
-                                    html.Span(
-                                        f"{day.recording_count} recording{'s' if day.recording_count != 1 else ''}",
-                                        className="stat",
-                                    ),
-                                    html.Span("•", className="stat-sep"),
-                                    html.Span(
-                                        f"{day.event_count} events", className="stat"
-                                    ),
-                                    html.Span("•", className="stat-sep"),
-                                    html.Span(
-                                        day.duration_formatted,
-                                        className="stat duration",
-                                    ),
-                                ],
-                            ),
-                        ],
-                    ),
-                    # Right side - expand indicator
+                    html.Div(className="day-info", children=header_info_children),
                     html.Span(
                         "▼" if expanded else "▶",
                         className="expand-icon",
@@ -429,7 +616,7 @@ def create_day_card(day: DaySummary, expanded: bool = False) -> html.Div:
                 children=(
                     [
                         html.Span(kw, className="keyword-tag")
-                        for kw in day.top_keywords[:5]
+                        for kw in day.top_keywords[:6]
                     ]
                     if day.top_keywords
                     else []
