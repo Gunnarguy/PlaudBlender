@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 _oauth_pending_states: dict[str, bool] = {}
 
 # Redirect URI for in-app OAuth (Dash server at port 8050)
-INAPP_REDIRECT_URI = "http://localhost:8050/auth/plaud/callback"
+# HTTPS avoids Safari mixed-content block (HTTPS Plaud -> HTTP localhost)
+INAPP_REDIRECT_URI = "https://localhost:8050/auth/plaud/callback"
 
 
 def _register_auth_routes(server):
@@ -316,7 +317,7 @@ def main():
     """Run the app."""
     app = create_app()
 
-    logger.info("Starting Chronos v2 at http://localhost:8050")
+    logger.info("Starting Chronos v2 at https://localhost:8050")
     app.run(debug=True, host="0.0.0.0", port=8050)
 
 

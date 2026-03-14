@@ -412,7 +412,7 @@ def create_sync_view(service) -> html.Div:
                     html.P(
                         [
                             "First time? Register ",
-                            html.Code("http://localhost:8050/auth/plaud/callback"),
+                            html.Code("https://localhost:8050/auth/plaud/callback"),
                             " as a redirect URI in your ",
                             html.A(
                                 "Plaud Developer Portal",

@@ -52,10 +52,10 @@ fi
 
 if [[ "$run_ui" -eq 1 ]]; then
   if lsof -nP -iTCP:8050 -sTCP:LISTEN >/dev/null 2>&1; then
-    echo "Chronos UI is already running at http://127.0.0.1:8050"
+    echo "Chronos UI is already running at https://localhost:8050"
     exit 0
   fi
 
-  echo "Starting Chronos UI at http://127.0.0.1:8050"
+  echo "Starting Chronos UI at https://localhost:8050"
   exec "$PYTHON_BIN" scripts/launch_app.py
 fi
