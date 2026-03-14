@@ -29,6 +29,7 @@ _oauth_pending_states: dict[str, bool] = {}
 # Redirect URI for in-app OAuth (Dash server at port 8050)
 # HTTPS avoids Safari mixed-content block (HTTPS Plaud -> HTTP localhost)
 INAPP_REDIRECT_URI = "https://localhost:8050/auth/plaud/callback"
+NOTION_REDIRECT_URI = "https://localhost:8050/auth/notion/callback"
 
 
 def _register_auth_routes(server):
@@ -142,6 +143,111 @@ def _register_auth_routes(server):
             return jsonify(client.token_status)
         except Exception as e:
             return jsonify({"is_authenticated": False, "error": str(e)})
+
+    # ── Notion OAuth routes ───────────────────────────────────────────
+
+    @server.route("/auth/notion")
+    def auth_notion_start():
+        """Start Notion OAuth — redirect to Notion's authorization page."""
+        try:
+            from src.notion_oauth import NotionOAuthClient
+
+            client = NotionOAuthClient(redirect_uri=NOTION_REDIRECT_URI)
+            auth_url, state = client.get_authorization_url()
+            _oauth_pending_states[state] = True
+
+            return redirect(auth_url)
+        except Exception as e:
+            safe_msg = escape(str(e))
+            return (
+                _auth_error_page(
+                    "Notion Configuration Error",
+                    f"{safe_msg}<br><br>"
+                    "Make sure <code>NOTION_CLIENT_ID</code> and "
+                    "<code>NOTION_CLIENT_SECRET</code> are set in your "
+                    "<code>.env</code> file.<br><br>"
+                    "Create a public integration at "
+                    "<a href='https://www.notion.so/my-integrations' "
+                    "style='color:#60a5fa'>notion.so/my-integrations</a>",
+                ),
+                500,
+            )
+
+    @server.route("/auth/notion/callback", methods=["GET", "OPTIONS"])
+    def auth_notion_callback():
+        """Handle OAuth callback from Notion, exchange code for tokens."""
+        logger.info(
+            "NOTION CALLBACK: method=%s args=%s",
+            request.method, dict(request.args),
+        )
+
+        if request.method == "OPTIONS":
+            resp = make_response("", 204)
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            return resp
+
+        error = request.args.get("error")
+        if error:
+            return _auth_error_page("Notion Denied Access", escape(str(error))), 400
+
+        code = request.args.get("code")
+        state = request.args.get("state")
+        if not code:
+            return _auth_error_page("Missing Code", "No authorization code received from Notion."), 400
+
+        # Clean up state
+        if state:
+            _oauth_pending_states.pop(state, None)
+
+        from src.notion_oauth import NotionOAuthClient
+
+        # Idempotent: skip if already authenticated
+        try:
+            client = NotionOAuthClient(redirect_uri=NOTION_REDIRECT_URI)
+            if client.is_authenticated:
+                logger.info("NOTION CALLBACK: already authenticated — skipping exchange")
+                # Invalidate service cache so it picks up the token
+                _invalidate_notion_service()
+                return redirect("/")
+        except Exception:
+            pass
+
+        try:
+            client = NotionOAuthClient(redirect_uri=NOTION_REDIRECT_URI)
+            token_data = client.exchange_code_for_token(code)
+            logger.info(
+                "NOTION CALLBACK: token exchange SUCCESS — workspace=%s",
+                token_data.get("workspace_name", "?"),
+            )
+            # Invalidate service cache so it uses the new OAuth token
+            _invalidate_notion_service()
+            return redirect("/")
+        except Exception as e:
+            logger.error("NOTION CALLBACK: token exchange FAILED — %s", e)
+            safe_msg = escape(str(e))
+            return _auth_error_page("Notion Token Exchange Failed", str(safe_msg)), 500
+
+    @server.route("/auth/notion/status")
+    def auth_notion_status():
+        """Return JSON auth status for AJAX polling."""
+        try:
+            from src.notion_oauth import NotionOAuthClient
+
+            client = NotionOAuthClient()
+            return jsonify(client.token_status)
+        except Exception as e:
+            return jsonify({"is_authenticated": False, "error": str(e)})
+
+
+def _invalidate_notion_service():
+    """Reset the NotionService singleton so it picks up fresh OAuth tokens."""
+    try:
+        from src.notion_service import get_notion_service
+        svc = get_notion_service()
+        svc.invalidate_client()
+    except Exception:
+        pass
 
 
 def _auth_error_page(title: str, detail: str) -> str:

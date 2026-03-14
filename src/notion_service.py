@@ -59,17 +59,43 @@ class NotionService:
         self._settings = get_settings()
 
     def _get_client(self):
-        """Lazy-init the Notion client."""
+        """Lazy-init the Notion client.
+
+        Token priority:
+        1. OAuth token from .notion_tokens.json (set via /auth/notion flow)
+        2. Static NOTION_TOKEN from .env (internal integration fallback)
+        """
         if self._client is not None:
             return self._client
 
-        token = self._settings.notion_token
+        token = self._resolve_token()
         if not token:
-            raise ConnectionError("NOTION_TOKEN not set in .env")
+            raise ConnectionError(
+                "No Notion token available. Either connect via OAuth "
+                "(Settings → Connect Notion) or set NOTION_TOKEN in .env"
+            )
 
         from notion_client import Client
         self._client = Client(auth=token)
         return self._client
+
+    def _resolve_token(self) -> str | None:
+        """Resolve the best available Notion token."""
+        # Priority 1: OAuth token
+        try:
+            from src.notion_oauth import NotionOAuthClient
+            oauth = NotionOAuthClient()
+            if oauth.is_authenticated:
+                return oauth.access_token
+        except Exception:
+            pass
+
+        # Priority 2: Static .env token
+        return self._settings.notion_token
+
+    def invalidate_client(self):
+        """Force re-creation of the Notion client (e.g. after OAuth)."""
+        self._client = None
 
     def check_connection(self) -> NotionSyncStatus:
         """Test the Notion connection and return status."""

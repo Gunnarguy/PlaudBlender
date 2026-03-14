@@ -1083,6 +1083,25 @@ def _check_services(settings):
     except Exception:
         checks["webhook_listener"] = (False, "Not running — start via Auto-Sync task")
 
+    # Notion auth
+    try:
+        from src.notion_oauth import NotionOAuthClient
+
+        nclient = NotionOAuthClient()
+        if nclient.is_authenticated:
+            wname = nclient.token_status.get("workspace_name", "")
+            checks["notion"] = (True, f"OAuth: {wname}" if wname else "OAuth connected")
+        elif nclient.has_credentials:
+            checks["notion"] = (False, "Not connected — use Connect below")
+        else:
+            token_ok = bool(settings.notion_token)
+            if token_ok:
+                checks["notion"] = (True, "Static token set")
+            else:
+                checks["notion"] = (False, "No token — set NOTION_CLIENT_ID or NOTION_TOKEN")
+    except Exception as e:
+        checks["notion"] = (False, str(e)[:80])
+
     # Webhook config
     wh_ok = bool(settings.plaud_webhook_secret and settings.plaud_webhook_url)
     if wh_ok:
@@ -1106,6 +1125,39 @@ def _check_services(settings):
         )
 
     return checks
+
+
+def _notion_auth_row(checks) -> html.Div:
+    """Build the Notion Auth status row for Settings, with a Connect link when needed."""
+    notion_ok, notion_detail = checks.get("notion", (False, "Check unavailable"))
+    children = [
+        html.Label("Notion Auth:"),
+        html.Span(
+            "✅ Connected" if notion_ok else "❌ Not Connected",
+            className=f"status-badge {'connected' if notion_ok else 'disconnected'}",
+        ),
+        html.Span(notion_detail, className="status-detail"),
+    ]
+    if not notion_ok:
+        # Only show Connect button if OAuth credentials exist
+        try:
+            from src.notion_oauth import NotionOAuthClient
+            if NotionOAuthClient().has_credentials:
+                children.append(
+                    html.A(
+                        "Connect →",
+                        href="/auth/notion",
+                        className="plaud-connect-btn",
+                        style={
+                            "marginLeft": "8px",
+                            "fontSize": "0.8rem",
+                            "padding": "2px 10px",
+                        },
+                    )
+                )
+        except Exception:
+            pass
+    return html.Div(className="setting-row", children=children)
 
 
 def create_settings_view(preferences=None) -> html.Div:
@@ -1171,6 +1223,7 @@ def create_settings_view(preferences=None) -> html.Div:
             html.H4("🔗 Service Connections"),
             status_row("Docker:", *checks["docker"]),
             plaud_auth_row,
+            _notion_auth_row(checks),
             status_row("Gemini AI:", *checks["gemini"]),
             status_row("OpenAI:", *checks["openai"]),
             status_row("SQLite:", *checks["sqlite"]),

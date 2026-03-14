@@ -103,12 +103,64 @@ def create_notion_view(
 
 
 def _build_connection_card(status) -> html.Div:
-    """Build the connection status card."""
+    """Build the connection status card with OAuth or token info."""
+    # Check OAuth status
+    oauth_status = _get_notion_auth_status()
+    has_oauth = oauth_status.get("is_authenticated", False)
+    has_credentials = oauth_status.get("has_credentials", False)
+    workspace = oauth_status.get("workspace_name", "")
+
     if status is None:
+        # Not yet connected — show setup instructions
+        auth_children = []
+        if has_oauth:
+            auth_children = [
+                html.Div(
+                    className="notion-auth-status notion-auth-connected",
+                    children=[
+                        html.Span("🟢 "),
+                        html.Span(f"OAuth connected to {workspace}"),
+                    ],
+                ),
+            ]
+        elif has_credentials:
+            auth_children = [
+                html.A(
+                    "🔗 Connect Notion Account",
+                    href="/auth/notion",
+                    className="sync-action-btn notion-import-btn",
+                    style={"display": "inline-block", "textDecoration": "none", "marginBottom": "10px"},
+                ),
+            ]
+        else:
+            auth_children = [
+                html.Div(
+                    className="notion-config-hint",
+                    children=[
+                        html.Span("Option A: ", style={"fontWeight": "600"}),
+                        html.Span("Set "),
+                        html.Code("NOTION_CLIENT_ID"),
+                        html.Span(" + "),
+                        html.Code("NOTION_CLIENT_SECRET"),
+                        html.Span(" in .env, then use the Connect button. "),
+                    ],
+                ),
+                html.Div(
+                    className="notion-config-hint",
+                    children=[
+                        html.Span("Option B: ", style={"fontWeight": "600"}),
+                        html.Span("Set "),
+                        html.Code("NOTION_TOKEN"),
+                        html.Span(" directly (internal integration). "),
+                    ],
+                ),
+            ]
+
         return html.Div(
             className="notion-card notion-connection-card",
             children=[
                 html.H3("🔌 Connection"),
+                *auth_children,
                 html.P(
                     "Click 'Fetch Recordings' to connect to Notion and pull your data.",
                     className="notion-muted",
@@ -116,14 +168,15 @@ def _build_connection_card(status) -> html.Div:
                 html.Div(
                     className="notion-config-hint",
                     children=[
-                        html.Span("Required: ", style={"fontWeight": "600"}),
-                        html.Code("NOTION_TOKEN"),
-                        html.Span(" and "),
+                        html.Span("Required: "),
                         html.Code("NOTION_DATABASE_ID"),
                         html.Span(" in your .env file. "),
-                        html.Span(
-                            "Create an integration at notion.so/profile/integrations",
+                        html.A(
+                            "Create integration →",
+                            href="https://www.notion.so/my-integrations",
+                            target="_blank",
                             className="notion-muted",
+                            style={"textDecoration": "underline"},
                         ),
                     ],
                 ),
@@ -143,6 +196,32 @@ def _build_connection_card(status) -> html.Div:
                     html.Span(status["error"]),
                 ],
             )
+        ]
+
+    # Auth row in the connected state
+    auth_row_children = []
+    if has_oauth:
+        auth_row_children = [
+            html.Div(
+                className="notion-status-item",
+                children=[
+                    html.Span("🔑"),
+                    html.Span(f"OAuth: {workspace}"),
+                ],
+            ),
+        ]
+    elif has_credentials and not has_oauth:
+        auth_row_children = [
+            html.Div(
+                className="notion-status-item",
+                children=[
+                    html.A(
+                        "🔗 Connect ",
+                        href="/auth/notion",
+                        style={"color": "#6ee7b7", "textDecoration": "underline", "fontSize": "0.8rem"},
+                    ),
+                ],
+            ),
         ]
 
     return html.Div(
@@ -177,11 +256,22 @@ def _build_connection_card(status) -> html.Div:
                             html.Span(f"{status.get('total_pages', 0)} pages in Notion"),
                         ],
                     ),
+                    *auth_row_children,
                 ],
             ),
             *error_children,
         ],
     )
+
+
+def _get_notion_auth_status() -> dict:
+    """Check Notion OAuth status (safe, returns empty dict on failure)."""
+    try:
+        from src.notion_oauth import NotionOAuthClient
+        client = NotionOAuthClient()
+        return client.token_status
+    except Exception:
+        return {"is_authenticated": False, "has_credentials": False}
 
 
 def _build_coverage_calendar(coverage_calendar) -> html.Div:

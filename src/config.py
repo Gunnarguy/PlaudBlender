@@ -139,10 +139,13 @@ class Settings:
     openai_temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Notion: Direct API Integration (pull recordings/transcripts from Notion)
+    # Notion: OAuth + Direct API Integration
     # ─────────────────────────────────────────────────────────────────────────
-    notion_token: Optional[str] = os.getenv("NOTION_TOKEN")
+    notion_token: Optional[str] = os.getenv("NOTION_TOKEN")  # Static internal token (fallback)
     notion_database_id: Optional[str] = os.getenv("NOTION_DATABASE_ID")
+    notion_client_id: Optional[str] = os.getenv("NOTION_CLIENT_ID")
+    notion_client_secret: Optional[str] = os.getenv("NOTION_CLIENT_SECRET")
+    notion_redirect_uri: Optional[str] = os.getenv("NOTION_REDIRECT_URI")
 
     # Logging
     log_level: str = os.getenv("PB_LOG_LEVEL", "INFO")
