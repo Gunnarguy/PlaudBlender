@@ -6354,11 +6354,217 @@ a.plaud-connect-btn:hover {
   word-break: break-word;
 }
 
+/* ── Coverage Calendar Heatmap ─────────────────────────────────────────── */
+
+.coverage-calendar {
+  padding: 0;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(13, 1fr);
+  gap: 3px;
+  padding: 4px;
+}
+
+.cal-day {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: default;
+  position: relative;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  min-width: 0;
+}
+
+.cal-day:hover {
+  transform: scale(1.5);
+  z-index: 2;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
+}
+
+.cal-both {
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+}
+
+.cal-chronos {
+  background: linear-gradient(135deg, #a855f7 0%, #c084fc 100%);
+}
+
+.cal-notion {
+  background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+}
+
+.cal-empty {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cal-imported {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.calendar-stats-row {
+  display: flex;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.calendar-coverage-pct {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #10b981;
+}
+
+.calendar-legend {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+  align-items: center;
+}
+
+.cal-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+  margin-right: 3px;
+  vertical-align: middle;
+}
+
+.cal-legend-both { background: #10b981; }
+.cal-legend-chronos { background: #a855f7; }
+.cal-legend-notion { background: #f59e0b; }
+
+/* ── Notion Action Buttons ────────────────────────────────────────────── */
+
+.notion-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.notion-action-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.notion-action-btn:hover {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: rgba(99, 102, 241, 0.5);
+  color: #c7d2fe;
+}
+
+.notion-import-btn {
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.notion-import-btn:hover {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #a7f3d0;
+}
+
+.notion-import-small {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  background: rgba(16, 185, 129, 0.1);
+  color: #6ee7b7;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.notion-import-small:hover {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.notion-writeback-btn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.notion-writeback-btn:hover {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.notion-rec-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.notion-import-progress {
+  padding: 8px 12px;
+}
+
+.notion-import-result {
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  margin: 4px 0;
+}
+
+.notion-import-success {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+}
+
+.notion-import-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+.notion-import-errors {
+  padding: 6px 12px;
+  font-size: 0.73rem;
+}
+
+.notion-detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 
 @media (max-width: 900px) {
   .interplay-stats {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .calendar-grid {
+    grid-template-columns: repeat(7, 1fr);
   }
 }
 

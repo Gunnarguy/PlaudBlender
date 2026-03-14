@@ -1,7 +1,8 @@
 """Notion sync & browse component.
 
 Shows Notion connection status, recordings from the Notion database,
-page content preview, and the interplay between Notion and Chronos/Plaud data.
+page content preview, the interplay between Notion and Chronos/Plaud data,
+a coverage calendar heatmap, import-to-Chronos controls, and write-back features.
 """
 
 from dash import html, dcc
@@ -12,16 +13,24 @@ def create_notion_view(
     status=None,
     recordings=None,
     chronos_recording_ids=None,
+    match_map=None,
+    coverage_calendar=None,
 ) -> html.Div:
     """Create the Notion integration view.
 
     Args:
-        status: NotionSyncStatus object (or None if not yet fetched)
-        recordings: List of NotionRecording objects
-        chronos_recording_ids: Set of recording IDs already in Chronos (for matching)
+        status: NotionSyncStatus dict (or None if not yet fetched)
+        recordings: List of NotionRecording dicts
+        chronos_recording_ids: Set of recording IDs already in Chronos
+        match_map: {notion_page_id → chronos_recording_id or None}
+        coverage_calendar: List of day dicts from get_coverage_calendar()
     """
     recordings = recordings or []
     chronos_recording_ids = chronos_recording_ids or set()
+    match_map = match_map or {}
+
+    # Count unmatched for the banner
+    unmatched_count = sum(1 for pid, cid in match_map.items() if cid is None)
 
     return html.Div(
         className="notion-view",
@@ -38,39 +47,54 @@ def create_notion_view(
                                 className="notion-header-actions",
                                 children=[
                                     html.Button(
-                                        "🔄 Fetch Recordings",
+                                        "🔄 Fetch from Notion",
                                         id="notion-fetch-btn",
                                         className="sync-action-btn",
                                         n_clicks=0,
                                     ),
+                                    html.Button(
+                                        f"🚀 Import All to Chronos ({unmatched_count})",
+                                        id="notion-import-all-btn",
+                                        className="sync-action-btn notion-import-btn",
+                                        n_clicks=0,
+                                        disabled=unmatched_count == 0,
+                                    ) if recordings else None,
                                 ],
                             ),
                         ],
                     ),
                     html.P(
-                        "Pull recordings and transcripts from your Notion database — "
-                        "the missing pieces that Plaud's API couldn't deliver.",
+                        "Pull recordings from Notion, see the overlap with Chronos, "
+                        "and import missing recordings for full AI processing.",
                         className="notion-subtitle",
                     ),
                 ],
             ),
 
+            # Import progress area
+            html.Div(id="notion-import-progress", className="notion-import-progress"),
+
             # Connection Status Card
             _build_connection_card(status),
 
+            # Coverage Calendar Heatmap
+            _build_coverage_calendar(coverage_calendar),
+
             # Interplay Overview (Notion vs Chronos)
-            _build_interplay_card(recordings, chronos_recording_ids),
+            _build_interplay_card(recordings, chronos_recording_ids, match_map),
 
             # Schema card (shows detected properties)
             _build_schema_card(status),
 
-            # Recordings list
-            _build_recordings_list(recordings, chronos_recording_ids),
+            # Recordings list (with import/writeback buttons per row)
+            _build_recordings_list(recordings, chronos_recording_ids, match_map),
 
             # Hidden stores for callbacks
             dcc.Store(id="notion-recordings-store", data=[]),
             dcc.Store(id="notion-status-store", data=None),
             dcc.Store(id="notion-selected-page", data=None),
+            dcc.Store(id="notion-match-map-store", data={}),
+            dcc.Store(id="notion-coverage-store", data=[]),
 
             # Page content modal / detail panel
             html.Div(id="notion-page-detail", className="notion-page-detail"),
@@ -160,8 +184,98 @@ def _build_connection_card(status) -> html.Div:
     )
 
 
-def _build_interplay_card(recordings, chronos_ids) -> html.Div:
+def _build_coverage_calendar(coverage_calendar) -> html.Div:
+    """Build a visual coverage calendar heatmap.
+
+    Shows last 90 days as a grid:
+    - 🟣 Purple = Chronos only
+    - 🟠 Amber = Notion only
+    - 🟢 Green = Both systems
+    - ⬛ Grey = No data
+    """
+    if not coverage_calendar:
+        return html.Div(
+            className="notion-card notion-calendar-card",
+            children=[
+                html.H3("📅 Knowledge Coverage"),
+                html.P(
+                    "Fetch recordings to see your coverage calendar — "
+                    "which days have data in which system.",
+                    className="notion-muted",
+                ),
+            ],
+        )
+
+    # Stats summary
+    days_both = sum(1 for d in coverage_calendar if d.get("has_both"))
+    days_chronos = sum(1 for d in coverage_calendar if d.get("has_chronos") and not d.get("has_notion"))
+    days_notion = sum(1 for d in coverage_calendar if d.get("has_notion") and not d.get("has_chronos"))
+    days_empty = sum(1 for d in coverage_calendar if not d.get("has_chronos") and not d.get("has_notion"))
+    total_days = len(coverage_calendar)
+    coverage_pct = round(((total_days - days_empty) / total_days) * 100) if total_days else 0
+
+    # Build day cells
+    day_cells = []
+    for day in coverage_calendar:
+        has_c = day.get("has_chronos", False)
+        has_n = day.get("has_notion", False)
+        imported = day.get("imported", False)
+
+        if has_c and has_n:
+            cell_class = "cal-day cal-both"
+            tooltip = f"{day['date']}: {day.get('chronos_count', 0)} Chronos + {day.get('notion_count', 0)} Notion"
+        elif has_c:
+            cell_class = "cal-day cal-chronos"
+            tooltip = f"{day['date']}: {day.get('chronos_count', 0)} Chronos recordings"
+        elif has_n:
+            cell_class = "cal-day cal-notion" + (" cal-imported" if imported else "")
+            tooltip = f"{day['date']}: {day.get('notion_count', 0)} Notion recordings" + (" (imported)" if imported else "")
+        else:
+            cell_class = "cal-day cal-empty"
+            tooltip = f"{day['date']}: no recordings"
+
+        day_cells.append(
+            html.Div(
+                className=cell_class,
+                title=tooltip,
+                children=[html.Span(day["date"][-2:])],  # Day number
+            )
+        )
+
+    return html.Div(
+        className="notion-card notion-calendar-card",
+        children=[
+            html.H3("📅 Knowledge Coverage"),
+            html.Div(
+                className="calendar-stats-row",
+                children=[
+                    html.Span(f"{coverage_pct}% coverage", className="calendar-coverage-pct"),
+                    html.Span(f"{days_both} both", className="cal-legend-both"),
+                    html.Span(f"{days_chronos} Chronos only", className="cal-legend-chronos"),
+                    html.Span(f"{days_notion} Notion only", className="cal-legend-notion"),
+                    html.Span(f"{days_empty} gaps", className="cal-legend-empty"),
+                ],
+            ),
+            html.Div(
+                className="calendar-grid",
+                children=day_cells,
+            ),
+            html.Div(
+                className="calendar-legend",
+                children=[
+                    html.Span("■ Both", className="cal-legend-both"),
+                    html.Span("■ Chronos", className="cal-legend-chronos"),
+                    html.Span("■ Notion", className="cal-legend-notion"),
+                    html.Span("■ No data", className="cal-legend-empty"),
+                ],
+            ),
+        ],
+    )
+
+
+def _build_interplay_card(recordings, chronos_ids, match_map=None) -> html.Div:
     """Build the Notion ↔ Chronos interplay overview card."""
+    match_map = match_map or {}
     total_notion = len(recordings)
     if total_notion == 0:
         return html.Div(
@@ -175,24 +289,16 @@ def _build_interplay_card(recordings, chronos_ids) -> html.Div:
             ],
         )
 
-    # Categorize recordings
+    # Categorize recordings using smart matching
     notion_only = []
     in_both = []
     for rec in recordings:
         if isinstance(rec, dict):
-            title = rec.get("title", "")
+            page_id = rec.get("page_id", "")
         else:
-            title = getattr(rec, "title", "")
+            page_id = getattr(rec, "page_id", "")
 
-        # Simple title-based matching (can be enhanced later)
-        matched = False
-        title_lower = title.lower() if title else ""
-        for cid in chronos_ids:
-            if isinstance(cid, str) and cid.lower() in title_lower:
-                matched = True
-                break
-
-        if matched:
+        if match_map.get(page_id):
             in_both.append(rec)
         else:
             notion_only.append(rec)
@@ -346,7 +452,7 @@ def _build_schema_card(status) -> html.Div:
     )
 
 
-def _build_recordings_list(recordings, chronos_ids) -> html.Div:
+def _build_recordings_list(recordings, chronos_ids, match_map=None) -> html.Div:
     """Build the scrollable recordings list."""
     if not recordings:
         return html.Div(
@@ -391,7 +497,7 @@ def _build_recordings_list(recordings, chronos_ids) -> html.Div:
                     html.Div(
                         className="notion-recordings-in-date",
                         children=[
-                            _build_recording_row(rec, chronos_ids)
+                            _build_recording_row(rec, chronos_ids, match_map)
                             for rec in recs
                         ],
                     ),
@@ -416,8 +522,9 @@ def _build_recordings_list(recordings, chronos_ids) -> html.Div:
     )
 
 
-def _build_recording_row(rec, chronos_ids) -> html.Div:
-    """Build a single recording row in the Notion list."""
+def _build_recording_row(rec, chronos_ids, match_map=None) -> html.Div:
+    """Build a single recording row with action buttons."""
+    match_map = match_map or {}
     if isinstance(rec, dict):
         page_id = rec.get("page_id", "")
         title = rec.get("title", "Untitled")
@@ -439,19 +546,37 @@ def _build_recording_row(rec, chronos_ids) -> html.Div:
         summary = getattr(rec, "summary", "")
         duration = getattr(rec, "duration", "")
 
-    # Determine if this recording is also in Chronos
-    in_chronos = False
-    title_lower = title.lower() if title else ""
-    for cid in chronos_ids:
-        if isinstance(cid, str) and cid.lower() in title_lower:
-            in_chronos = True
-            break
+    # Use smart match_map for matching
+    in_chronos = bool(match_map.get(page_id))
 
     source_badge = (
-        html.Span("✅ Also in Chronos", className="notion-badge badge-both")
+        html.Span("✅ In Chronos", className="notion-badge badge-both")
         if in_chronos
-        else html.Span("📔 Notion only", className="notion-badge badge-notion-only")
+        else html.Span("👻 Not in Chronos", className="notion-badge badge-notion-only")
     )
+
+    # Action buttons based on state
+    action_buttons = []
+    if not in_chronos:
+        # Ghost recording — offer to import
+        action_buttons.append(
+            html.Button(
+                "⚡ Import to Chronos",
+                id={"type": "notion-import-one", "page_id": page_id},
+                className="notion-action-btn notion-import-small",
+                n_clicks=0,
+            )
+        )
+    else:
+        # In Chronos — offer write-back
+        action_buttons.append(
+            html.Button(
+                "📤 Enrich in Notion",
+                id={"type": "notion-writeback", "page_id": page_id},
+                className="notion-action-btn notion-writeback-btn",
+                n_clicks=0,
+            )
+        )
 
     # Preview text (transcript or summary snippet)
     preview = ""
@@ -511,6 +636,15 @@ def _build_recording_row(rec, chronos_ids) -> html.Div:
             )
         )
 
+    # Action buttons row
+    if action_buttons:
+        children.append(
+            html.Div(
+                className="notion-rec-actions",
+                children=action_buttons,
+            )
+        )
+
     return html.Div(
         className=f"notion-rec-row {'in-chronos' if in_chronos else 'notion-only-row'}",
         id={"type": "notion-rec-click", "page_id": page_id},
@@ -531,9 +665,10 @@ def _format_date(date_str: str) -> str:
         return date_str
 
 
-def create_notion_page_detail(rec, body_text: str = "") -> html.Div:
+def create_notion_page_detail(rec, body_text: str = "", in_chronos: bool = False) -> html.Div:
     """Create a detail panel for a selected Notion page/recording."""
     if isinstance(rec, dict):
+        page_id = rec.get("page_id", "")
         title = rec.get("title", "Untitled")
         url = rec.get("url", "")
         transcript = rec.get("transcript", "")
@@ -543,6 +678,7 @@ def create_notion_page_detail(rec, body_text: str = "") -> html.Div:
         created = rec.get("created_time", "")
         properties = rec.get("properties", {})
     else:
+        page_id = getattr(rec, "page_id", "")
         title = getattr(rec, "title", "Untitled")
         url = getattr(rec, "url", "")
         transcript = getattr(rec, "transcript", "")
@@ -557,13 +693,29 @@ def create_notion_page_detail(rec, body_text: str = "") -> html.Div:
             className="notion-detail-header",
             children=[
                 html.H3(title),
-                html.A(
-                    "Open in Notion ↗",
-                    href=url,
-                    target="_blank",
-                    rel="noopener noreferrer",
-                    className="notion-open-link",
-                ) if url else None,
+                html.Div(
+                    className="notion-detail-actions",
+                    children=[
+                        html.A(
+                            "Open in Notion ↗",
+                            href=url,
+                            target="_blank",
+                            rel="noopener noreferrer",
+                            className="notion-open-link",
+                        ) if url else None,
+                        html.Button(
+                            "⚡ Import to Chronos",
+                            id={"type": "notion-import-one", "page_id": page_id},
+                            className="notion-action-btn notion-import-small",
+                            n_clicks=0,
+                        ) if not in_chronos else html.Button(
+                            "📤 Enrich in Notion",
+                            id={"type": "notion-writeback", "page_id": page_id},
+                            className="notion-action-btn notion-writeback-btn",
+                            n_clicks=0,
+                        ),
+                    ],
+                ),
             ],
         ),
     ]
