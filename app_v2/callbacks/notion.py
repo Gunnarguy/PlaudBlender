@@ -340,6 +340,12 @@ def register_notion_callbacks(app):
                     children=[
                         html.Span("✅ "),
                         html.Span(msg),
+                        html.Button(
+                            "View in Timeline →",
+                            id="notion-goto-timeline",
+                            className="notion-goto-timeline-btn",
+                            n_clicks=0,
+                        ),
                     ],
                 )
             else:
@@ -391,6 +397,12 @@ def register_notion_callbacks(app):
                         html.Span(f"Batch import complete: "),
                         html.Strong(f"{successes} succeeded"),
                         html.Span(f", {failures} failed") if failures else None,
+                        html.Button(
+                            "View in Timeline →",
+                            id="notion-goto-timeline",
+                            className="notion-goto-timeline-btn",
+                            n_clicks=0,
+                        ) if successes else None,
                     ],
                 ),
             ]
@@ -461,6 +473,21 @@ def register_notion_callbacks(app):
                 children=[html.Span(f"❌ Write-back error: {str(e)}")],
             )
 
+
+    # ── Navigate to Timeline after import ────────────────────────
+    @app.callback(
+        Output("current-view", "data", allow_duplicate=True),
+        Output("selected-recording", "data", allow_duplicate=True),
+        Input("notion-goto-timeline", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def goto_timeline_after_import(n_clicks):
+        """Navigate to Timeline view after a successful Notion import."""
+        if not n_clicks:
+            raise PreventUpdate
+        from app_v2.services.xray import xray_log
+        xray_log("nav", "switch", "Switching to Timeline after Notion import")
+        return "timeline", None
 
     # ── Client-side search/filter/sort ───────────────────────────
     @app.callback(

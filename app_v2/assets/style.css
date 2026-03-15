@@ -6760,3 +6760,100 @@ a.plaud-connect-btn:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   GRAPH → RECORDING NAVIGATION
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.graph-find-recordings-btn {
+  margin-top: 12px;
+  width: 100%;
+  padding: 8px 16px;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #a5b4fc;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+.graph-find-recordings-btn:hover {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: #6366f1;
+  color: #e0e7ff;
+}
+
+.graph-node-recordings {
+  margin-top: 8px;
+}
+
+.graph-recordings-heading {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  margin: 0 0 8px 0;
+  font-weight: 500;
+}
+
+.graph-recordings-empty {
+  padding: 12px;
+  color: #64748b;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.graph-rec-card {
+  padding: 10px 12px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(71, 85, 105, 0.3);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.graph-rec-card:hover {
+  background: rgba(51, 65, 85, 0.8);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+.graph-rec-title {
+  font-size: 0.85rem;
+  color: #e2e8f0;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.graph-rec-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 0.75rem;
+}
+.graph-rec-date {
+  color: #64748b;
+}
+.graph-rec-cat {
+  color: #8b5cf6;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   NOTION → TIMELINE NAVIGATION
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.notion-goto-timeline-btn {
+  display: inline-block;
+  margin-left: 12px;
+  padding: 4px 14px;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #a5b4fc;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+.notion-goto-timeline-btn:hover {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: #6366f1;
+  color: #e0e7ff;
+}

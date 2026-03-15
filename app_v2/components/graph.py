@@ -332,6 +332,13 @@ def create_graph_view(graph_data=None) -> html.Div:
                 id="graph-node-detail",
                 className="graph-node-detail",
             ),
+            # Recording results for clicked node (populated by callback)
+            html.Div(
+                id="graph-node-recordings",
+                className="graph-node-recordings",
+            ),
+            # Hidden store for the clicked node's keyword
+            dcc.Store(id="graph-clicked-keyword", data=None),
         ],
     )
 
