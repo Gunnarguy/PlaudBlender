@@ -15,6 +15,7 @@ def create_notion_view(
     chronos_recording_ids=None,
     match_map=None,
     coverage_calendar=None,
+    databases=None,
 ) -> html.Div:
     """Create the Notion integration view.
 
@@ -24,13 +25,19 @@ def create_notion_view(
         chronos_recording_ids: Set of recording IDs already in Chronos
         match_map: {notion_page_id → chronos_recording_id or None}
         coverage_calendar: List of day dicts from get_coverage_calendar()
+        databases: List of available Notion databases for selection
     """
     recordings = recordings or []
     chronos_recording_ids = chronos_recording_ids or set()
     match_map = match_map or {}
+    databases = databases or []
 
     # Count unmatched for the banner
     unmatched_count = sum(1 for pid, cid in match_map.items() if cid is None)
+
+    # Determine if we need the database picker
+    from src.config import get_settings
+    has_db_id = bool(get_settings().notion_database_id)
 
     return html.Div(
         className="notion-view",
@@ -64,7 +71,7 @@ def create_notion_view(
                         ],
                     ),
                     html.P(
-                        "Pull recordings from Notion, see the overlap with Chronos, "
+                        "Browse your Notion database, see the overlap with Chronos, "
                         "and import missing recordings for full AI processing.",
                         className="notion-subtitle",
                     ),
@@ -77,6 +84,18 @@ def create_notion_view(
             # Connection Status Card
             _build_connection_card(status),
 
+            # Database Picker (shown when no database selected or databases available)
+            _build_database_picker(databases, has_db_id),
+
+            # Auto-load trigger (fires once on mount to load data)
+            dcc.Store(id="notion-auto-loaded", data=False),
+            dcc.Interval(
+                id="notion-auto-fetch-trigger",
+                interval=500,  # 500ms after mount
+                max_intervals=1,
+                disabled=not has_db_id,  # Only auto-fetch if DB is configured
+            ),
+
             # Coverage Calendar Heatmap
             _build_coverage_calendar(coverage_calendar),
 
@@ -85,6 +104,9 @@ def create_notion_view(
 
             # Schema card (shows detected properties)
             _build_schema_card(status),
+
+            # Search/Filter Toolbar
+            _build_search_toolbar(recordings),
 
             # Recordings list (with import/writeback buttons per row)
             _build_recordings_list(recordings, chronos_recording_ids, match_map),
@@ -95,9 +117,174 @@ def create_notion_view(
             dcc.Store(id="notion-selected-page", data=None),
             dcc.Store(id="notion-match-map-store", data={}),
             dcc.Store(id="notion-coverage-store", data=[]),
+            dcc.Store(id="notion-databases-store", data=databases),
 
             # Page content modal / detail panel
             html.Div(id="notion-page-detail", className="notion-page-detail"),
+        ],
+    )
+
+
+def _build_database_picker(databases, has_db_id) -> html.Div:
+    """Build the database picker card — shown when no DB configured or for switching."""
+    if has_db_id and not databases:
+        # DB is configured and we haven't listed alternatives — nothing to show
+        return html.Div()
+
+    if not databases:
+        return html.Div(
+            className="notion-card notion-db-picker-card",
+            children=[
+                html.H3("📂 Select a Database"),
+                html.P(
+                    "No NOTION_DATABASE_ID configured. Click 'Fetch' to discover your databases, "
+                    "or set NOTION_DATABASE_ID in .env.",
+                    className="notion-muted",
+                ),
+                html.Button(
+                    "🔍 Discover Databases",
+                    id="notion-discover-dbs-btn",
+                    className="sync-action-btn",
+                    n_clicks=0,
+                ),
+            ],
+        )
+
+    # Show database cards for selection
+    db_cards = []
+    for db in databases:
+        icon = db.get("icon", "📁")
+        title = db.get("title", "Untitled")
+        desc = db.get("description", "")
+        prop_count = db.get("property_count", 0)
+        last_edited = db.get("last_edited", "")[:10]
+        db_id = db.get("id", "")
+
+        is_selected = False
+        try:
+            from src.config import get_settings
+            is_selected = get_settings().notion_database_id == db_id
+        except Exception:
+            pass
+
+        db_cards.append(
+            html.Div(
+                className=f"notion-db-card {'notion-db-selected' if is_selected else ''}",
+                children=[
+                    html.Div(
+                        className="notion-db-card-header",
+                        children=[
+                            html.Span(icon, className="notion-db-icon"),
+                            html.Div(
+                                className="notion-db-card-info",
+                                children=[
+                                    html.Span(title, className="notion-db-title"),
+                                    html.Span(
+                                        f"{prop_count} properties · edited {last_edited}",
+                                        className="notion-db-meta",
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                    html.P(desc, className="notion-db-desc") if desc else None,
+                    html.Button(
+                        "✅ Selected" if is_selected else "Use This Database",
+                        id={"type": "notion-select-db", "db_id": db_id},
+                        className="notion-action-btn notion-import-small" + (" notion-db-active-btn" if is_selected else ""),
+                        n_clicks=0,
+                        disabled=is_selected,
+                    ),
+                ],
+            )
+        )
+
+    return html.Div(
+        className="notion-card notion-db-picker-card",
+        children=[
+            html.H3("📂 Databases" + (" — select one" if not has_db_id else "")),
+            html.Div(className="notion-db-grid", children=db_cards),
+        ],
+    )
+
+
+def _build_search_toolbar(recordings) -> html.Div:
+    """Build search/filter/sort toolbar for the recordings list."""
+    if not recordings:
+        return html.Div()
+
+    # Count categories for filter buttons
+    categories = {}
+    for rec in recordings:
+        cat = (rec.get("category", "") if isinstance(rec, dict)
+               else getattr(rec, "category", "")) or "uncategorized"
+        categories[cat] = categories.get(cat, 0) + 1
+
+    filter_buttons = [
+        html.Button(
+            f"All ({len(recordings)})",
+            id="notion-filter-all",
+            className="notion-filter-btn notion-filter-active",
+            n_clicks=0,
+        )
+    ]
+    for cat, count in sorted(categories.items(), key=lambda x: -x[1]):
+        if cat:
+            filter_buttons.append(
+                html.Button(
+                    f"{cat} ({count})",
+                    id={"type": "notion-filter-cat", "category": cat},
+                    className="notion-filter-btn",
+                    n_clicks=0,
+                )
+            )
+
+    return html.Div(
+        className="notion-card notion-toolbar-card",
+        children=[
+            html.Div(
+                className="notion-toolbar",
+                children=[
+                    # Search input
+                    html.Div(
+                        className="notion-search-box",
+                        children=[
+                            html.Span("🔍", className="notion-search-icon"),
+                            dcc.Input(
+                                id="notion-search-input",
+                                type="text",
+                                placeholder="Search recordings by title, transcript, tags...",
+                                className="notion-search-input",
+                                debounce=True,
+                            ),
+                        ],
+                    ),
+                    # Sort dropdown
+                    html.Div(
+                        className="notion-sort-box",
+                        children=[
+                            html.Label("Sort: ", className="notion-sort-label"),
+                            dcc.Dropdown(
+                                id="notion-sort-dropdown",
+                                options=[
+                                    {"label": "Date (newest)", "value": "date-desc"},
+                                    {"label": "Date (oldest)", "value": "date-asc"},
+                                    {"label": "Title A-Z", "value": "title-asc"},
+                                    {"label": "Title Z-A", "value": "title-desc"},
+                                ],
+                                value="date-desc",
+                                clearable=False,
+                                className="notion-sort-dropdown",
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            # Category filters
+            html.Div(
+                className="notion-filter-row",
+                children=filter_buttons,
+            ) if len(categories) > 1 else None,
         ],
     )
 

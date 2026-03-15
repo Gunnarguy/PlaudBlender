@@ -2335,8 +2335,26 @@ def register_navigation_callbacks(app):
                 content = create_sync_view(get_service())
             elif view == "notion":
                 from app_v2.components.notion import create_notion_view
-                content = create_notion_view()
-                xray_log("nav", "data", "Showing Notion integration dashboard")
+                from src.config import get_settings
+
+                # Pre-discover databases if token is set but no DB configured
+                databases = []
+                settings = get_settings()
+                has_token = bool(settings.notion_token)
+                has_db = bool(settings.notion_database_id)
+
+                if has_token and not has_db:
+                    try:
+                        from src.notion_service import get_notion_service
+                        svc = get_notion_service()
+                        databases = svc.list_databases()
+                        xray_log("nav", "data", f"Notion: found {len(databases)} databases — select one")
+                    except Exception as e:
+                        xray_log("nav", "data", f"Notion: could not list databases: {e}")
+                else:
+                    xray_log("nav", "data", "Showing Notion integration dashboard")
+
+                content = create_notion_view(databases=databases)
             elif view == "settings":
                 content = create_settings_view(preferences=prefs)
             else:

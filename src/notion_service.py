@@ -97,6 +97,83 @@ class NotionService:
         """Force re-creation of the Notion client (e.g. after OAuth)."""
         self._client = None
 
+    def list_databases(self) -> list[dict]:
+        """Search for all databases accessible to this integration.
+
+        Returns list of {id, title, description, icon, last_edited, url}.
+        """
+        try:
+            client = self._get_client()
+            databases = []
+            cursor = None
+
+            while True:
+                kwargs = {"filter": {"value": "database", "property": "object"}, "page_size": 100}
+                if cursor:
+                    kwargs["start_cursor"] = cursor
+
+                result = client.search(**kwargs)
+
+                for db in result.get("results", []):
+                    title_parts = db.get("title", [])
+                    title = "".join(t.get("plain_text", "") for t in title_parts) or "Untitled"
+                    desc_parts = db.get("description", [])
+                    desc = "".join(t.get("plain_text", "") for t in desc_parts)
+                    icon_data = db.get("icon")
+                    icon = ""
+                    if icon_data:
+                        if icon_data.get("type") == "emoji":
+                            icon = icon_data.get("emoji", "")
+                        else:
+                            icon = "📁"
+
+                    prop_count = len(db.get("properties", {}))
+
+                    databases.append({
+                        "id": db["id"],
+                        "title": title,
+                        "description": desc,
+                        "icon": icon or "📁",
+                        "last_edited": db.get("last_edited_time", ""),
+                        "url": db.get("url", ""),
+                        "property_count": prop_count,
+                    })
+
+                if not result.get("has_more"):
+                    break
+                cursor = result.get("next_cursor")
+
+            return databases
+        except Exception as e:
+            logger.error(f"Error listing Notion databases: {e}")
+            return []
+
+    def set_database_id(self, db_id: str) -> None:
+        """Set the active database ID (runtime + .env persistence)."""
+        self._settings.notion_database_id = db_id
+        # Persist to .env
+        self._save_env_key("NOTION_DATABASE_ID", db_id)
+
+    @staticmethod
+    def _save_env_key(key: str, value: str) -> None:
+        """Add or update a key in .env file."""
+        import os
+        env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+        lines = []
+        found = False
+        if os.path.exists(env_path):
+            with open(env_path, "r") as f:
+                lines = f.readlines()
+        for i, line in enumerate(lines):
+            if line.strip().startswith(f"{key}="):
+                lines[i] = f"{key}={value}\n"
+                found = True
+                break
+        if not found:
+            lines.append(f"{key}={value}\n")
+        with open(env_path, "w") as f:
+            f.writelines(lines)
+
     def check_connection(self) -> NotionSyncStatus:
         """Test the Notion connection and return status."""
         status = NotionSyncStatus()
@@ -108,7 +185,7 @@ class NotionService:
 
         db_id = self._settings.notion_database_id
         if not db_id:
-            status.error = "NOTION_DATABASE_ID not configured"
+            status.error = "NOTION_DATABASE_ID not configured — select a database below"
             return status
 
         try:
@@ -198,7 +275,7 @@ class NotionService:
 
         Handles various Notion DB schemas — auto-detects property names.
         """
-        token = self._settings.notion_token
+        token = self._resolve_token()
         db_id = self._settings.notion_database_id
         if not token or not db_id:
             return []

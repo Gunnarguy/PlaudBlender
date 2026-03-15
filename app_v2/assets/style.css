@@ -6558,6 +6558,191 @@ a.plaud-connect-btn:hover {
   margin-top: 8px;
 }
 
+/* ── Database Picker ───────────────────────────────────────────────────── */
+
+.notion-db-picker-card {
+  border-left: 3px solid #f59e0b;
+}
+
+.notion-db-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.notion-db-card {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #334155);
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.notion-db-card:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.notion-db-selected {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.notion-db-card-header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.notion-db-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.notion-db-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notion-db-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notion-db-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.notion-db-desc {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+
+.notion-db-active-btn {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+  cursor: default !important;
+}
+
+/* ── Search & Filter Toolbar ──────────────────────────────────────────── */
+
+.notion-toolbar-card {
+  padding: 12px 16px;
+}
+
+.notion-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.notion-search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 200px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+  padding: 0 12px;
+}
+
+.notion-search-icon {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.notion-search-input {
+  flex: 1;
+  border: none !important;
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  font-size: 0.84rem !important;
+  padding: 8px 4px !important;
+  outline: none;
+}
+
+.notion-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.notion-sort-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.notion-sort-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.notion-sort-dropdown {
+  width: 160px;
+}
+
+.notion-sort-dropdown .Select-control {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: var(--border-color, #334155) !important;
+  min-height: 32px !important;
+}
+
+.notion-sort-dropdown .Select-value-label,
+.notion-sort-dropdown .Select-placeholder {
+  font-size: 0.78rem !important;
+  color: var(--text-secondary) !important;
+}
+
+.notion-filter-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.notion-filter-btn {
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border-color, #334155);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.notion-filter-btn:hover {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.3);
+  color: var(--text-primary);
+}
+
+.notion-filter-active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #a5b4fc;
+  font-weight: 600;
+}
+
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 
 @media (max-width: 900px) {
@@ -6566,6 +6751,13 @@ a.plaud-connect-btn:hover {
   }
   .calendar-grid {
     grid-template-columns: repeat(7, 1fr);
+  }
+  .notion-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .notion-db-grid {
+    grid-template-columns: 1fr;
   }
 }
 
