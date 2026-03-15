@@ -135,14 +135,14 @@ def _build_database_picker(databases, has_db_id) -> html.Div:
         return html.Div(
             className="notion-card notion-db-picker-card",
             children=[
-                html.H3("📂 Select a Database"),
+                html.H3("📂 Select a Data Source"),
                 html.P(
-                    "No NOTION_DATABASE_ID configured. Click 'Fetch' to discover your databases, "
+                    "No data source configured. Click 'Fetch' to discover your Notion data sources, "
                     "or set NOTION_DATABASE_ID in .env.",
                     className="notion-muted",
                 ),
                 html.Button(
-                    "🔍 Discover Databases",
+                    "🔍 Discover Data Sources",
                     id="notion-discover-dbs-btn",
                     className="sync-action-btn",
                     n_clicks=0,
@@ -202,7 +202,7 @@ def _build_database_picker(databases, has_db_id) -> html.Div:
     return html.Div(
         className="notion-card notion-db-picker-card",
         children=[
-            html.H3("📂 Databases" + (" — select one" if not has_db_id else "")),
+            html.H3("📂 Data Sources" + (" — select one" if not has_db_id else "")),
             html.Div(className="notion-db-grid", children=db_cards),
         ],
     )
@@ -355,11 +355,9 @@ def _build_connection_card(status) -> html.Div:
                 html.Div(
                     className="notion-config-hint",
                     children=[
-                        html.Span("Required: "),
-                        html.Code("NOTION_DATABASE_ID"),
-                        html.Span(" in your .env file. "),
+                        html.Span("Data source auto-detected on first visit. "),
                         html.A(
-                            "Create integration →",
+                            "Manage integrations →",
                             href="https://www.notion.so/my-integrations",
                             target="_blank",
                             className="notion-muted",

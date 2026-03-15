@@ -2348,9 +2348,18 @@ def register_navigation_callbacks(app):
                         from src.notion_service import get_notion_service
                         svc = get_notion_service()
                         databases = svc.list_databases()
-                        xray_log("nav", "data", f"Notion: found {len(databases)} databases — select one")
+                        xray_log("nav", "data", f"Notion: found {len(databases)} data sources")
+
+                        # Auto-select the one with the most properties
+                        if databases:
+                            best = max(databases, key=lambda d: d.get("property_count", 0))
+                            svc.set_database_id(best["id"])
+                            settings.notion_database_id = best["id"]
+                            has_db = True
+                            xray_log("nav", "data",
+                                     f"Auto-selected '{best['title']}' ({best['property_count']} properties)")
                     except Exception as e:
-                        xray_log("nav", "data", f"Notion: could not list databases: {e}")
+                        xray_log("nav", "data", f"Notion: could not list data sources: {e}")
                 else:
                     xray_log("nav", "data", "Showing Notion integration dashboard")
 

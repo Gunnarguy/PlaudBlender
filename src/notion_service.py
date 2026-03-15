@@ -98,9 +98,10 @@ class NotionService:
         self._client = None
 
     def list_databases(self) -> list[dict]:
-        """Search for all databases accessible to this integration.
+        """Search for all data sources accessible to this integration.
 
-        Returns list of {id, title, description, icon, last_edited, url}.
+        notion-client 3.0.0 uses data_source objects (not databases).
+        Returns list of {id, title, description, icon, last_edited, url, property_count}.
         """
         try:
             client = self._get_client()
@@ -108,7 +109,7 @@ class NotionService:
             cursor = None
 
             while True:
-                kwargs = {"filter": {"value": "database", "property": "object"}, "page_size": 100}
+                kwargs = {"filter": {"value": "data_source", "property": "object"}, "page_size": 100}
                 if cursor:
                     kwargs["start_cursor"] = cursor
 
@@ -145,7 +146,7 @@ class NotionService:
 
             return databases
         except Exception as e:
-            logger.error(f"Error listing Notion databases: {e}")
+            logger.error(f"Error listing Notion data sources: {e}")
             return []
 
     def set_database_id(self, db_id: str) -> None:
@@ -185,13 +186,13 @@ class NotionService:
 
         db_id = self._settings.notion_database_id
         if not db_id:
-            status.error = "NOTION_DATABASE_ID not configured — select a database below"
+            status.error = "No data source configured — select one below or navigate to the Notion page"
             return status
 
         try:
             client = self._get_client()
-            # Search for the database to verify access
-            db = client.databases.retrieve(database_id=db_id)
+            # Retrieve the data source (notion-client 3.0.0 uses data_sources API)
+            db = client.data_sources.retrieve(data_source_id=db_id)
             status.connected = True
             status.database_found = True
 
@@ -208,28 +209,8 @@ class NotionService:
                 for name, prop in props.items()
             }
 
-            # Count pages (quick query with page_size=1)
-            # Use the data_sources approach if available, fall back to databases
-            try:
-                # Try data_sources (API 2025-09-03+)
-                ds_list = db.get("data_sources", [])
-                if ds_list:
-                    ds_id = ds_list[0].get("id", db_id)
-                    result = client.data_sources.query(
-                        data_source_id=ds_id, page_size=1
-                    )
-                else:
-                    result = client.databases.query(
-                        database_id=db_id, page_size=1
-                    )
-            except (AttributeError, Exception):
-                # Older SDK version — use databases.query
-                result = client.databases.query(
-                    database_id=db_id, page_size=1
-                )
-
-            # Estimate total (we need to paginate to count)
-            status.total_pages = self._count_pages(client, db_id, db)
+            # Count pages
+            status.total_pages = self._count_pages(client, db_id)
 
         except Exception as e:
             status.connected = False
@@ -238,29 +219,17 @@ class NotionService:
 
         return status
 
-    def _count_pages(self, client, db_id: str, db: dict) -> int:
-        """Count total pages in the database (paginated)."""
+    def _count_pages(self, client, ds_id: str) -> int:
+        """Count total pages in the data source (paginated)."""
         count = 0
         cursor = None
         try:
             while True:
-                kwargs = {"page_size": 100}
+                kwargs = {"data_source_id": ds_id, "page_size": 100}
                 if cursor:
                     kwargs["start_cursor"] = cursor
 
-                try:
-                    ds_list = db.get("data_sources", [])
-                    if ds_list:
-                        ds_id = ds_list[0].get("id", db_id)
-                        kwargs["data_source_id"] = ds_id
-                        result = client.data_sources.query(**kwargs)
-                    else:
-                        kwargs["database_id"] = db_id
-                        result = client.databases.query(**kwargs)
-                except (AttributeError, Exception):
-                    kwargs.pop("data_source_id", None)
-                    kwargs["database_id"] = db_id
-                    result = client.databases.query(**kwargs)
+                result = client.data_sources.query(**kwargs)
 
                 count += len(result.get("results", []))
                 if not result.get("has_more"):
@@ -271,7 +240,7 @@ class NotionService:
         return count
 
     def fetch_recordings(self, limit: int = 100) -> List[NotionRecording]:
-        """Fetch recordings from the Notion database.
+        """Fetch recordings from the Notion data source.
 
         Handles various Notion DB schemas — auto-detects property names.
         """
@@ -282,37 +251,26 @@ class NotionService:
 
         try:
             client = self._get_client()
-            db = client.databases.retrieve(database_id=db_id)
-            props_schema = db.get("properties", {})
+            ds = client.data_sources.retrieve(data_source_id=db_id)
+            props_schema = ds.get("properties", {})
 
             # Auto-detect property mappings
             mapping = self._detect_property_mapping(props_schema)
             logger.info(f"Notion property mapping: {mapping}")
 
-            # Fetch pages (sorted by created_time descending)
+            # Fetch pages via data_sources.query (sorted by created_time descending)
             pages = []
             cursor = None
             while len(pages) < limit:
                 kwargs = {
+                    "data_source_id": db_id,
                     "page_size": min(100, limit - len(pages)),
                     "sorts": [{"timestamp": "created_time", "direction": "descending"}],
                 }
                 if cursor:
                     kwargs["start_cursor"] = cursor
 
-                try:
-                    ds_list = db.get("data_sources", [])
-                    if ds_list:
-                        ds_id = ds_list[0].get("id", db_id)
-                        kwargs["data_source_id"] = ds_id
-                        result = client.data_sources.query(**kwargs)
-                    else:
-                        kwargs["database_id"] = db_id
-                        result = client.databases.query(**kwargs)
-                except (AttributeError, Exception):
-                    kwargs.pop("data_source_id", None)
-                    kwargs["database_id"] = db_id
-                    result = client.databases.query(**kwargs)
+                result = client.data_sources.query(**kwargs)
 
                 for page in result.get("results", []):
                     rec = self._parse_page(page, mapping)

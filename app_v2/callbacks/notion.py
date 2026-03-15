@@ -48,7 +48,7 @@ def register_notion_callbacks(app):
 
         from app_v2.services.xray import xray_log
 
-        xray_log("data", "notion", "Discovering Notion databases...")
+        xray_log("data", "notion", "Discovering Notion data sources...")
 
         try:
             from src.notion_service import get_notion_service
@@ -56,7 +56,7 @@ def register_notion_callbacks(app):
 
             svc = get_notion_service()
             databases = svc.list_databases()
-            xray_log("data", "notion", f"Found {len(databases)} accessible databases")
+            xray_log("data", "notion", f"Found {len(databases)} accessible data sources")
 
             return create_notion_view(databases=databases)
 
