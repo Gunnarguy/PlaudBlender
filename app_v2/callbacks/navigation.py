@@ -572,6 +572,321 @@ def create_sync_view(service) -> html.Div:
             ),
         ]
 
+    pipeline_status_card = html.Div(
+        className="sync-status-card sync-pipeline-card",
+        children=[
+            html.H4("Pipeline Status"),
+            html.Div(
+                className="status-stats",
+                children=[
+                    html.Div(
+                        [
+                            html.Span(str(total), className="big-number"),
+                            html.Span("Total", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(
+                                str(completed),
+                                className="big-number",
+                                style={"color": "#10b981"},
+                            ),
+                            html.Span("Completed", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(
+                                str(pending),
+                                className="big-number",
+                                style={"color": "#f59e0b"},
+                            ),
+                            html.Span("Pending", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(
+                                str(processing),
+                                className="big-number",
+                                style={"color": "#3b82f6"},
+                            ),
+                            html.Span("Processing", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(
+                                str(failed),
+                                className="big-number",
+                                style={"color": "#ef4444"},
+                            ),
+                            html.Span("Failed", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                ],
+            ),
+            html.Div(
+                className="status-stats sync-status-subgrid",
+                children=[
+                    html.Div(
+                        [
+                            html.Span(str(stats.total_events), className="big-number"),
+                            html.Span("Events in Qdrant", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(str(stats.total_days), className="big-number"),
+                            html.Span("Days", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(f"{stats.total_duration_hours:.1f}", className="big-number"),
+                            html.Span("Hours Recorded", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                ],
+            ),
+            *plaud_cloud_children,
+            *failed_details_children,
+        ],
+    )
+
+    plaud_enrichment_card = html.Div(
+        className="sync-status-card sync-enrichment-card",
+        children=[
+            html.H4("☁️ Plaud Cloud Enrichment"),
+            html.Div(
+                className="status-stats",
+                children=[
+                    html.Div(
+                        [
+                            html.Span(
+                                str(workflow_stats.get("with_ai_summary", 0)),
+                                className="big-number",
+                                style={"color": "#10b981"},
+                            ),
+                            html.Span("AI Summaries", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(
+                                str(workflow_stats.get("ready_for_enrichment", 0)),
+                                className="big-number",
+                                style={"color": "#f59e0b"},
+                            ),
+                            html.Span("Ready", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(
+                                str(workflow_stats.get("workflow_pending", 0)),
+                                className="big-number",
+                                style={"color": "#3b82f6"},
+                            ),
+                            html.Span("In Flight", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(
+                                str(workflow_stats.get("workflow_failed", 0)),
+                                className="big-number",
+                                style={"color": "#ef4444"},
+                            ),
+                            html.Span("Failed", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                ],
+            ),
+            html.Div(
+                className="auto-sync-details",
+                children=[
+                    html.Span(
+                        f"Recent window: {workflow_stats.get('recent_recordings', 0)} recordings",
+                        className="sync-detail-text",
+                    ),
+                    html.Span(" · ", className="sync-detail-sep"),
+                    html.Span(
+                        f"Last submit: {workflow_last_run}",
+                        className="sync-detail-text",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    actions_card = html.Div(
+        className="sync-options sync-operations-card",
+        children=[
+            html.H4("Actions"),
+            html.Div(
+                className="sync-action-group",
+                children=[
+                    html.Label("Days to fetch back:"),
+                    dcc.Slider(
+                        id="sync-days-slider",
+                        min=1,
+                        max=30,
+                        step=1,
+                        value=7,
+                        marks={1: "1", 7: "7", 14: "14", 30: "30"},
+                        className="sync-slider",
+                    ),
+                    html.Button(
+                        id="do-sync-btn",
+                        className="sync-action-btn",
+                        children=[
+                            html.Span("🚀", className="btn-icon"),
+                            html.Span(
+                                "Full Sync (Fetch → Process → Index)",
+                                className="btn-text",
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            html.Div(
+                className="sync-action-group",
+                style={"marginTop": "15px"},
+                children=[
+                    html.Label("Enrichment batch size:"),
+                    dcc.Slider(
+                        id="plaud-workflow-limit",
+                        min=1,
+                        max=10,
+                        step=1,
+                        value=3,
+                        marks={1: "1", 3: "3", 5: "5", 10: "10"},
+                        className="sync-slider",
+                    ),
+                    html.Label("Summary Template:"),
+                    dcc.Dropdown(
+                        id="plaud-template-select",
+                        options=[
+                            {"label": "Summary Only (no ETL)", "value": ""},
+                            {
+                                "label": "📋 General Summary — Key points and action items",
+                                "value": "general",
+                            },
+                            {
+                                "label": "📝 Meeting Notes — Attendees, decisions, action items",
+                                "value": "meeting",
+                            },
+                            {
+                                "label": "💡 Brainstorm — Ideas grouped by theme",
+                                "value": "brainstorm",
+                            },
+                            {
+                                "label": "📅 Daily Log — Timeline of activities",
+                                "value": "daily_log",
+                            },
+                            {
+                                "label": "🎤 Interview — Q&A format with key quotes",
+                                "value": "interview",
+                            },
+                        ],
+                        value="",
+                        clearable=False,
+                        className="sync-dropdown",
+                        placeholder="Select a template…",
+                    ),
+                    html.Label("AI Model:"),
+                    dcc.Dropdown(
+                        id="plaud-model-select",
+                        options=[
+                            {"label": "Gemini (Google)", "value": "gemini"},
+                            {"label": "OpenAI (GPT)", "value": "openai"},
+                            {"label": "Claude (Anthropic)", "value": "claude"},
+                        ],
+                        value="gemini",
+                        clearable=False,
+                        className="sync-dropdown",
+                    ),
+                    html.Label("Custom ETL template ID (optional):"),
+                    dcc.Input(
+                        id="plaud-template-id",
+                        type="text",
+                        placeholder="tpl_your_template_id (overrides dropdown)",
+                        className="sync-text-input",
+                    ),
+                    html.Div(
+                        className="sync-button-row",
+                        children=[
+                            html.Button(
+                                id="run-plaud-workflows-btn",
+                                className="sync-action-btn",
+                                children=[
+                                    html.Span("☁️", className="btn-icon"),
+                                    html.Span(
+                                        "Submit Plaud AI Workflows",
+                                        className="btn-text",
+                                    ),
+                                ],
+                            ),
+                            html.Button(
+                                id="refresh-plaud-workflows-btn",
+                                className="sync-action-btn secondary",
+                                children=[
+                                    html.Span("🔄", className="btn-icon"),
+                                    html.Span(
+                                        "Refresh Plaud Workflow Status",
+                                        className="btn-text",
+                                    ),
+                                ],
+                                disabled=(workflow_stats.get("workflow_pending", 0) == 0),
+                            ),
+                        ],
+                    ),
+                    html.P(
+                        "Targets recent recordings missing a Plaud AI summary. Select a template for AI_ETL structured extraction, or leave on 'Summary Only' for just the AI summary.",
+                        className="sync-note",
+                    ),
+                ],
+            ),
+            html.Div(
+                className="sync-action-group",
+                style={"marginTop": "15px"},
+                children=[
+                    html.Button(
+                        id="reset-stuck-btn",
+                        className="sync-action-btn secondary",
+                        children=[
+                            html.Span("🔧", className="btn-icon"),
+                            html.Span(
+                                f"Reset Stuck Recordings ({processing} stuck)",
+                                className="btn-text",
+                            ),
+                        ],
+                        disabled=(processing == 0),
+                    ),
+                ],
+            ),
+            html.Div(id="sync-result", className="sync-result"),
+            html.Div(
+                id="pipeline-progress-panel",
+                className="pipeline-progress-panel",
+            ),
+        ],
+    )
+
     return html.Div(
         className="sync-view",
         children=[
@@ -580,359 +895,30 @@ def create_sync_view(service) -> html.Div:
                 children=[
                     html.H2("🔄 Sync & Process", className="view-title"),
                     html.P(
-                        "Fetch, process, and index your Plaud recordings",
+                        "Fetch, process, enrich, and index your Plaud recordings from one operations dashboard.",
                         className="view-subtitle",
                     ),
                 ],
             ),
-            # Plaud account connection status
-            auth_section,
-            # Pipeline status dashboard
             html.Div(
-                className="sync-status-card",
+                className="sync-dashboard-grid",
                 children=[
-                    html.H4("Pipeline Status"),
                     html.Div(
-                        className="status-stats",
+                        className="sync-main-column",
                         children=[
-                            html.Div(
-                                [
-                                    html.Span(str(total), className="big-number"),
-                                    html.Span("Total", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(
-                                        str(completed),
-                                        className="big-number",
-                                        style={"color": "#10b981"},
-                                    ),
-                                    html.Span("Completed", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(
-                                        str(pending),
-                                        className="big-number",
-                                        style={"color": "#f59e0b"},
-                                    ),
-                                    html.Span("Pending", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(
-                                        str(processing),
-                                        className="big-number",
-                                        style={"color": "#3b82f6"},
-                                    ),
-                                    html.Span("Processing", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(
-                                        str(failed),
-                                        className="big-number",
-                                        style={"color": "#ef4444"},
-                                    ),
-                                    html.Span("Failed", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
+                            auth_section,
+                            actions_card,
+                            *upload_section,
                         ],
                     ),
                     html.Div(
-                        className="status-stats",
-                        style={
-                            "marginTop": "10px",
-                            "borderTop": "1px solid var(--border-color, #e2e8f0)",
-                            "paddingTop": "10px",
-                        },
+                        className="sync-side-column",
                         children=[
-                            html.Div(
-                                [
-                                    html.Span(
-                                        str(stats.total_events), className="big-number"
-                                    ),
-                                    html.Span(
-                                        "Events in Qdrant", className="stat-label"
-                                    ),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(
-                                        str(stats.total_days), className="big-number"
-                                    ),
-                                    html.Span("Days", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(
-                                        f"{stats.total_duration_hours:.1f}",
-                                        className="big-number",
-                                    ),
-                                    html.Span("Hours Recorded", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
+                            pipeline_status_card,
+                            plaud_enrichment_card,
+                            *auto_sync_children,
+                            *workflow_monitor_section,
                         ],
-                    ),
-                    # Plaud cloud stats (if available)
-                    *plaud_cloud_children,
-                    # Failed recording error details (if any)
-                    *failed_details_children,
-                ],
-            ),
-            # Plaud Cloud Enrichment card
-            html.Div(
-                className="sync-status-card",
-                children=[
-                    html.H4("☁️ Plaud Cloud Enrichment"),
-                    html.Div(
-                        className="status-stats",
-                        children=[
-                            html.Div(
-                                [
-                                    html.Span(
-                                        str(workflow_stats.get("with_ai_summary", 0)),
-                                        className="big-number",
-                                        style={"color": "#10b981"},
-                                    ),
-                                    html.Span("AI Summaries", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(
-                                        str(
-                                            workflow_stats.get(
-                                                "ready_for_enrichment", 0
-                                            )
-                                        ),
-                                        className="big-number",
-                                        style={"color": "#f59e0b"},
-                                    ),
-                                    html.Span("Ready", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(
-                                        str(workflow_stats.get("workflow_pending", 0)),
-                                        className="big-number",
-                                        style={"color": "#3b82f6"},
-                                    ),
-                                    html.Span("In Flight", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(
-                                        str(workflow_stats.get("workflow_failed", 0)),
-                                        className="big-number",
-                                        style={"color": "#ef4444"},
-                                    ),
-                                    html.Span("Failed", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                        ],
-                    ),
-                    html.Div(
-                        className="auto-sync-details",
-                        children=[
-                            html.Span(
-                                f"Recent window: {workflow_stats.get('recent_recordings', 0)} recordings",
-                                className="sync-detail-text",
-                            ),
-                            html.Span(" · ", className="sync-detail-sep"),
-                            html.Span(
-                                f"Last submit: {workflow_last_run}",
-                                className="sync-detail-text",
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-            # Active workflow monitor
-            *workflow_monitor_section,
-            # Auto-sync status (if available)
-            *auto_sync_children,
-            # Upload local files section
-            *upload_section,
-            # Action buttons
-            html.Div(
-                className="sync-options",
-                children=[
-                    html.H4("Actions"),
-                    # Full pipeline sync
-                    html.Div(
-                        className="sync-action-group",
-                        children=[
-                            html.Label("Days to fetch back:"),
-                            dcc.Slider(
-                                id="sync-days-slider",
-                                min=1,
-                                max=30,
-                                step=1,
-                                value=7,
-                                marks={1: "1", 7: "7", 14: "14", 30: "30"},
-                                className="sync-slider",
-                            ),
-                            html.Button(
-                                id="do-sync-btn",
-                                className="sync-action-btn",
-                                children=[
-                                    html.Span("🚀", className="btn-icon"),
-                                    html.Span(
-                                        "Full Sync (Fetch → Process → Index)",
-                                        className="btn-text",
-                                    ),
-                                ],
-                            ),
-                        ],
-                    ),
-                    # Plaud cloud enrichment section
-                    html.Div(
-                        className="sync-action-group",
-                        style={"marginTop": "15px"},
-                        children=[
-                            html.Label("Enrichment batch size:"),
-                            dcc.Slider(
-                                id="plaud-workflow-limit",
-                                min=1,
-                                max=10,
-                                step=1,
-                                value=3,
-                                marks={1: "1", 3: "3", 5: "5", 10: "10"},
-                                className="sync-slider",
-                            ),
-                            html.Label("Summary Template:"),
-                            dcc.Dropdown(
-                                id="plaud-template-select",
-                                options=[
-                                    {"label": "Summary Only (no ETL)", "value": ""},
-                                    {
-                                        "label": "📋 General Summary — Key points and action items",
-                                        "value": "general",
-                                    },
-                                    {
-                                        "label": "📝 Meeting Notes — Attendees, decisions, action items",
-                                        "value": "meeting",
-                                    },
-                                    {
-                                        "label": "💡 Brainstorm — Ideas grouped by theme",
-                                        "value": "brainstorm",
-                                    },
-                                    {
-                                        "label": "📅 Daily Log — Timeline of activities",
-                                        "value": "daily_log",
-                                    },
-                                    {
-                                        "label": "🎤 Interview — Q&A format with key quotes",
-                                        "value": "interview",
-                                    },
-                                ],
-                                value="",
-                                clearable=False,
-                                className="sync-dropdown",
-                                placeholder="Select a template…",
-                            ),
-                            html.Label("AI Model:"),
-                            dcc.Dropdown(
-                                id="plaud-model-select",
-                                options=[
-                                    {"label": "Gemini (Google)", "value": "gemini"},
-                                    {"label": "OpenAI (GPT)", "value": "openai"},
-                                    {"label": "Claude (Anthropic)", "value": "claude"},
-                                ],
-                                value="gemini",
-                                clearable=False,
-                                className="sync-dropdown",
-                            ),
-                            html.Label("Custom ETL template ID (optional):"),
-                            dcc.Input(
-                                id="plaud-template-id",
-                                type="text",
-                                placeholder="tpl_your_template_id (overrides dropdown)",
-                                className="sync-text-input",
-                            ),
-                            html.Div(
-                                className="sync-button-row",
-                                children=[
-                                    html.Button(
-                                        id="run-plaud-workflows-btn",
-                                        className="sync-action-btn",
-                                        children=[
-                                            html.Span("☁️", className="btn-icon"),
-                                            html.Span(
-                                                "Submit Plaud AI Workflows",
-                                                className="btn-text",
-                                            ),
-                                        ],
-                                    ),
-                                    html.Button(
-                                        id="refresh-plaud-workflows-btn",
-                                        className="sync-action-btn secondary",
-                                        children=[
-                                            html.Span("🔄", className="btn-icon"),
-                                            html.Span(
-                                                "Refresh Plaud Workflow Status",
-                                                className="btn-text",
-                                            ),
-                                        ],
-                                        disabled=(
-                                            workflow_stats.get("workflow_pending", 0)
-                                            == 0
-                                        ),
-                                    ),
-                                ],
-                            ),
-                            html.P(
-                                "Targets recent recordings missing a Plaud AI summary. "
-                                "Select a template for AI_ETL structured extraction, or leave on 'Summary Only' for just the AI summary.",
-                                className="sync-note",
-                            ),
-                        ],
-                    ),
-                    # Reset stuck recordings
-                    html.Div(
-                        className="sync-action-group",
-                        style={"marginTop": "15px"},
-                        children=[
-                            html.Button(
-                                id="reset-stuck-btn",
-                                className="sync-action-btn secondary",
-                                children=[
-                                    html.Span("🔧", className="btn-icon"),
-                                    html.Span(
-                                        f"Reset Stuck Recordings ({processing} stuck)",
-                                        className="btn-text",
-                                    ),
-                                ],
-                                disabled=(processing == 0),
-                            ),
-                        ],
-                    ),
-                    html.Div(id="sync-result", className="sync-result"),
-                    # Live pipeline progress panel
-                    html.Div(
-                        id="pipeline-progress-panel",
-                        className="pipeline-progress-panel",
                     ),
                 ],
             ),

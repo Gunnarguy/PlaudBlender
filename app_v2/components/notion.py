@@ -9,6 +9,145 @@ from dash import html, dcc
 from typing import List, Optional, Dict
 
 
+def _build_notion_hero(
+    status, recordings, matched_count: int, unmatched_count: int, has_db_id: bool
+) -> html.Div:
+    """Build the hero section for the Notion workspace."""
+    connected = bool(status and status.get("connected"))
+    database_title = (
+        status.get("database_title")
+        if status and status.get("database_found")
+        else ("Configured data source" if has_db_id else "No data source selected")
+    )
+    total_pages = status.get("total_pages", 0) if status else 0
+    total_recordings = len(recordings or [])
+
+    return html.Div(
+        className="notion-card notion-hero-card",
+        children=[
+            html.Div(
+                className="notion-hero-content",
+                children=[
+                    html.Div(
+                        className="notion-hero-copy",
+                        children=[
+                            html.Span(
+                                "Knowledge Bridge", className="notion-hero-eyebrow"
+                            ),
+                            html.H2("Notion Workspace"),
+                            html.P(
+                                "Review what exists in Notion, see what Chronos already knows, and act on the gaps without leaving the tab.",
+                                className="notion-subtitle",
+                            ),
+                            html.Div(
+                                className="notion-hero-meta",
+                                children=[
+                                    html.Span(
+                                        (
+                                            "Live connection"
+                                            if connected
+                                            else "Connection pending"
+                                        ),
+                                        className="notion-hero-meta-item",
+                                    ),
+                                    html.Span(
+                                        database_title,
+                                        className="notion-hero-meta-item",
+                                    ),
+                                    html.Span(
+                                        f"{total_pages or total_recordings} pages indexed",
+                                        className="notion-hero-meta-item",
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                    html.Div(
+                        className="notion-header-actions notion-hero-actions",
+                        children=[
+                            html.Button(
+                                "Refresh Notion",
+                                id="notion-fetch-btn",
+                                className="sync-action-btn",
+                                n_clicks=0,
+                            ),
+                            (
+                                html.Button(
+                                    f"Import Missing ({unmatched_count})",
+                                    id="notion-import-all-btn",
+                                    className="sync-action-btn notion-import-btn",
+                                    n_clicks=0,
+                                    disabled=unmatched_count == 0,
+                                )
+                                if recordings
+                                else None
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            html.Div(
+                className="notion-hero-stats",
+                children=[
+                    html.Div(
+                        className="notion-hero-stat",
+                        children=[
+                            html.Span("Status", className="notion-hero-stat-label"),
+                            html.Span(
+                                "Connected" if connected else "Offline",
+                                className="notion-hero-stat-value",
+                            ),
+                        ],
+                    ),
+                    html.Div(
+                        className="notion-hero-stat",
+                        children=[
+                            html.Span("Pages", className="notion-hero-stat-label"),
+                            html.Span(
+                                str(total_pages or total_recordings),
+                                className="notion-hero-stat-value",
+                            ),
+                        ],
+                    ),
+                    html.Div(
+                        className="notion-hero-stat",
+                        children=[
+                            html.Span("Matched", className="notion-hero-stat-label"),
+                            html.Span(
+                                str(matched_count), className="notion-hero-stat-value"
+                            ),
+                        ],
+                    ),
+                    html.Div(
+                        className="notion-hero-stat",
+                        children=[
+                            html.Span("Missing", className="notion-hero-stat-label"),
+                            html.Span(
+                                str(unmatched_count), className="notion-hero-stat-value"
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+def _build_empty_detail_panel() -> html.Div:
+    """Default detail placeholder before a page is selected."""
+    return html.Div(
+        className="notion-card notion-detail-panel notion-detail-empty",
+        children=[
+            html.Span("Selected Page", className="notion-detail-kicker"),
+            html.H3("Open a recording"),
+            html.P(
+                "Select any Notion recording to inspect transcript, page body, tags, raw properties, and import or write-back actions.",
+                className="notion-muted",
+            ),
+        ],
+    )
+
+
 def create_notion_view(
     status=None,
     recordings=None,
@@ -34,59 +173,36 @@ def create_notion_view(
 
     # Count unmatched for the banner
     unmatched_count = sum(1 for pid, cid in match_map.items() if cid is None)
+    matched_count = sum(1 for cid in match_map.values() if cid)
 
     # Determine if we need the database picker
     from src.config import get_settings
     has_db_id = bool(get_settings().notion_database_id)
 
+    top_cards = [_build_connection_card(status)]
+    if not (has_db_id and not databases):
+        top_cards.append(_build_database_picker(databases, has_db_id))
+
+    analytics_cards = [
+        _build_interplay_card(recordings, chronos_recording_ids, match_map),
+        _build_coverage_calendar(coverage_calendar),
+    ]
+    if status and status.get("schema"):
+        analytics_cards.append(_build_schema_card(status))
+
     return html.Div(
         className="notion-view",
         children=[
-            # Header
-            html.Div(
-                className="notion-header",
-                children=[
-                    html.Div(
-                        className="notion-title-row",
-                        children=[
-                            html.H2("📔 Notion Integration"),
-                            html.Div(
-                                className="notion-header-actions",
-                                children=[
-                                    html.Button(
-                                        "🔄 Fetch from Notion",
-                                        id="notion-fetch-btn",
-                                        className="sync-action-btn",
-                                        n_clicks=0,
-                                    ),
-                                    html.Button(
-                                        f"🚀 Import All to Chronos ({unmatched_count})",
-                                        id="notion-import-all-btn",
-                                        className="sync-action-btn notion-import-btn",
-                                        n_clicks=0,
-                                        disabled=unmatched_count == 0,
-                                    ) if recordings else None,
-                                ],
-                            ),
-                        ],
-                    ),
-                    html.P(
-                        "Browse your Notion database, see the overlap with Chronos, "
-                        "and import missing recordings for full AI processing.",
-                        className="notion-subtitle",
-                    ),
-                ],
+            _build_notion_hero(
+                status=status,
+                recordings=recordings,
+                matched_count=matched_count,
+                unmatched_count=unmatched_count,
+                has_db_id=has_db_id,
             ),
-
             # Import progress area
             html.Div(id="notion-import-progress", className="notion-import-progress"),
-
-            # Connection Status Card
-            _build_connection_card(status),
-
-            # Database Picker (shown when no database selected or databases available)
-            _build_database_picker(databases, has_db_id),
-
+            html.Div(className="notion-top-grid", children=top_cards),
             # Auto-load trigger (fires once on mount to load data)
             dcc.Store(id="notion-auto-loaded", data=False),
             dcc.Interval(
@@ -95,22 +211,31 @@ def create_notion_view(
                 max_intervals=1,
                 disabled=not has_db_id,  # Only auto-fetch if DB is configured
             ),
-
-            # Coverage Calendar Heatmap
-            _build_coverage_calendar(coverage_calendar),
-
-            # Interplay Overview (Notion vs Chronos)
-            _build_interplay_card(recordings, chronos_recording_ids, match_map),
-
-            # Schema card (shows detected properties)
-            _build_schema_card(status),
-
-            # Search/Filter Toolbar
-            _build_search_toolbar(recordings),
-
-            # Recordings list (with import/writeback buttons per row)
-            _build_recordings_list(recordings, chronos_recording_ids, match_map),
-
+            html.Div(className="notion-analytics-grid", children=analytics_cards),
+            html.Div(
+                className="notion-workspace-grid",
+                children=[
+                    html.Div(
+                        className="notion-list-column",
+                        children=[
+                            _build_search_toolbar(recordings),
+                            _build_recordings_list(
+                                recordings, chronos_recording_ids, match_map
+                            ),
+                        ],
+                    ),
+                    html.Div(
+                        className="notion-side-column",
+                        children=[
+                            html.Div(
+                                id="notion-page-detail",
+                                className="notion-page-detail",
+                                children=_build_empty_detail_panel(),
+                            ),
+                        ],
+                    ),
+                ],
+            ),
             # Hidden stores for callbacks
             dcc.Store(id="notion-recordings-store", data=[]),
             dcc.Store(id="notion-status-store", data=None),
@@ -118,9 +243,6 @@ def create_notion_view(
             dcc.Store(id="notion-match-map-store", data={}),
             dcc.Store(id="notion-coverage-store", data=[]),
             dcc.Store(id="notion-databases-store", data=databases),
-
-            # Page content modal / detail panel
-            html.Div(id="notion-page-detail", className="notion-page-detail"),
         ],
     )
 
@@ -199,10 +321,42 @@ def _build_database_picker(databases, has_db_id) -> html.Div:
             )
         )
 
+    # If a DB is already selected, wrap grid in collapsible details
+    if has_db_id:
+        current_id = None
+        try:
+            from src.config import get_settings
+
+            current_id = get_settings().notion_database_id
+        except Exception:
+            pass
+        selected_name = next(
+            (
+                db.get("title", "Untitled")
+                for db in databases
+                if db.get("id") == current_id
+            ),
+            "selected",
+        )
+        return html.Div(
+            className="notion-card notion-db-picker-card",
+            children=[
+                html.H3(f"📂 Data Source: {selected_name}"),
+                html.Details(
+                    children=[
+                        html.Summary(
+                            f"Switch data source ({len(databases)} available)"
+                        ),
+                        html.Div(className="notion-db-grid", children=db_cards),
+                    ],
+                ),
+            ],
+        )
+
     return html.Div(
         className="notion-card notion-db-picker-card",
         children=[
-            html.H3("📂 Data Sources" + (" — select one" if not has_db_id else "")),
+            html.H3("📂 Select a Data Source"),
             html.Div(className="notion-db-grid", children=db_cards),
         ],
     )
@@ -964,6 +1118,7 @@ def create_notion_page_detail(rec, body_text: str = "", in_chronos: bool = False
         properties = getattr(rec, "properties", {})
 
     children = [
+        html.Span("Selected Page", className="notion-detail-kicker"),
         html.Div(
             className="notion-detail-header",
             children=[
@@ -971,23 +1126,31 @@ def create_notion_page_detail(rec, body_text: str = "", in_chronos: bool = False
                 html.Div(
                     className="notion-detail-actions",
                     children=[
-                        html.A(
-                            "Open in Notion ↗",
-                            href=url,
-                            target="_blank",
-                            rel="noopener noreferrer",
-                            className="notion-open-link",
-                        ) if url else None,
-                        html.Button(
-                            "⚡ Import to Chronos",
-                            id={"type": "notion-import-one", "page_id": page_id},
-                            className="notion-action-btn notion-import-small",
-                            n_clicks=0,
-                        ) if not in_chronos else html.Button(
-                            "📤 Enrich in Notion",
-                            id={"type": "notion-writeback", "page_id": page_id},
-                            className="notion-action-btn notion-writeback-btn",
-                            n_clicks=0,
+                        (
+                            html.A(
+                                "Open in Notion ↗",
+                                href=url,
+                                target="_blank",
+                                rel="noopener noreferrer",
+                                className="notion-open-link",
+                            )
+                            if url
+                            else None
+                        ),
+                        (
+                            html.Button(
+                                "⚡ Import to Chronos",
+                                id={"type": "notion-import-one", "page_id": page_id},
+                                className="notion-action-btn notion-import-small",
+                                n_clicks=0,
+                            )
+                            if not in_chronos
+                            else html.Button(
+                                "📤 Enrich in Notion",
+                                id={"type": "notion-writeback", "page_id": page_id},
+                                className="notion-action-btn notion-writeback-btn",
+                                n_clicks=0,
+                            )
                         ),
                     ],
                 ),
@@ -1081,6 +1244,6 @@ def create_notion_page_detail(rec, body_text: str = "", in_chronos: bool = False
             )
 
     return html.Div(
-        className="notion-detail-panel",
+        className="notion-card notion-detail-panel",
         children=children,
     )
