@@ -52,15 +52,15 @@ python scripts/launch_app.py
 
 ## UI Views
 
-| View         | Description                                                                    |
-| ------------ | ------------------------------------------------------------------------------ |
-| **Timeline** | Date-grouped event timeline with horizontal strip, heat-map, recording detail  |
-| **Topics**   | Events grouped by category (work, meeting, personal, health, etc.)             |
-| **Search**   | Semantic vector search with category/date filters + AI answers (GPT-5.4)       |
-| **Graph**    | Interactive Cytoscape knowledge graph — 6 layouts, node click details           |
-| **Stats**    | 8 stat cards, sentiment trends, productivity insights                          |
-| **Sync**     | Pipeline dashboard, Full Sync, Reset Stuck, Plaud workflow status monitoring   |
-| **Settings** | 12-section config (29+ params), .env save, live connectivity checks            |
+| View         | Description                                                                   |
+| ------------ | ----------------------------------------------------------------------------- |
+| **Timeline** | Date-grouped event timeline with horizontal strip, heat-map, recording detail |
+| **Topics**   | Events grouped by category (work, meeting, personal, health, etc.)            |
+| **Search**   | Semantic vector search with category/date filters + AI answers (GPT-5.4)      |
+| **Graph**    | Interactive Cytoscape knowledge graph — 6 layouts, node click details         |
+| **Stats**    | 8 stat cards, sentiment trends, productivity insights                         |
+| **Sync**     | Pipeline dashboard, Full Sync, Reset Stuck, Plaud workflow status monitoring  |
+| **Settings** | 12-section config (29+ params), .env save, live connectivity checks           |
 
 ### X-ray Activity Monitor
 
