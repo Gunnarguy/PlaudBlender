@@ -76,7 +76,7 @@ class NotionService:
             )
 
         from notion_client import Client
-        self._client = Client(auth=token)
+        self._client = Client(auth=token, timeout_ms=15_000)
         return self._client
 
     def _resolve_token(self) -> str | None:
@@ -178,8 +178,13 @@ class NotionService:
         with open(env_path, "w") as f:
             f.writelines(lines)
 
-    def check_connection(self) -> NotionSyncStatus:
-        """Test the Notion connection and return status."""
+    def check_connection(self, quick: bool = False) -> NotionSyncStatus:
+        """Test the Notion connection and return status.
+
+        Args:
+            quick: If True, skip the expensive page count (use when you'll
+                   fetch recordings separately and can set total_pages later).
+        """
         status = NotionSyncStatus()
 
         token = self._resolve_token()
@@ -212,8 +217,9 @@ class NotionService:
                 for name, prop in props.items()
             }
 
-            # Count pages
-            status.total_pages = self._count_pages(client, db_id)
+            # Count pages (skip when quick — caller will set from fetch results)
+            if not quick:
+                status.total_pages = self._count_pages(client, db_id)
 
         except Exception as e:
             status.connected = False

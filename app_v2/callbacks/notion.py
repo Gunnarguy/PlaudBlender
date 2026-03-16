@@ -846,20 +846,26 @@ def _do_full_fetch_data():
     svc = get_notion_service()
 
     databases_data = []
-    try:
-        databases_data = svc.list_databases()
-        xray_log("data", "notion", f"Found {len(databases_data)} accessible databases")
-    except Exception:
-        pass
+    # Only list databases when no DB is configured (avoids slow/hanging API call)
+    from src.config import get_settings as _gs
+
+    if not _gs().notion_database_id:
+        try:
+            databases_data = svc.list_databases()
+            xray_log(
+                "data", "notion", f"Found {len(databases_data)} accessible databases"
+            )
+        except Exception:
+            pass
 
     with xray_timer("data", "notion", "Checking Notion connection"):
-        status = svc.check_connection()
+        status = svc.check_connection(quick=True)
 
     status_dict = {
         "connected": status.connected,
         "database_found": status.database_found,
         "database_title": status.database_title,
-        "total_pages": status.total_pages,
+        "total_pages": status.total_pages,  # 0 initially — set from fetch below
         "error": status.error,
         "schema": status.schema,
     }
@@ -877,6 +883,9 @@ def _do_full_fetch_data():
             recordings = svc.fetch_recordings(limit=500)
 
         xray_log("data", "notion", f"Found {len(recordings)} recordings in Notion")
+
+        # Set total_pages from actual fetch (skipped expensive count in quick mode)
+        status_dict["total_pages"] = len(recordings)
 
         for rec in recordings:
             recordings_data.append(
@@ -919,7 +928,9 @@ def _do_full_fetch_data():
                         "notion-match",
                         f"Smart match: {matched} linked, {len(match_map) - matched} unique to Notion",
                     )
-                coverage = get_coverage_calendar(db, days=90)
+                coverage = get_coverage_calendar(
+                    db, days=90, notion_recordings=recordings
+                )
                 stale_map = detect_stale_imports(recordings, match_map, db)
                 if stale_map:
                     xray_log(

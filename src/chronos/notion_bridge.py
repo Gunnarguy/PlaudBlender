@@ -790,6 +790,7 @@ def detect_stale_imports(
 def get_coverage_calendar(
     session: Session,
     days: int = 90,
+    notion_recordings: List = None,
 ) -> List[Dict]:
     """Build a coverage calendar showing data presence by source per day.
 
@@ -808,17 +809,24 @@ def get_coverage_calendar(
             if rec.source != "notion":
                 chronos_dates[d] = chronos_dates.get(d, 0) + 1
 
-    # Get Notion recording dates
+    # Get Notion recording dates (use pre-fetched if available)
     notion_dates: Dict[str, int] = {}
     try:
-        svc = get_notion_service()
-        recordings = svc.fetch_recordings(limit=1000)
+        recordings = notion_recordings
+        if recordings is None:
+            svc = get_notion_service()
+            recordings = svc.fetch_recordings(limit=1000)
         for r in recordings:
-            d = r.date or (r.created_time[:10] if r.created_time else "")
+            if hasattr(r, "date"):
+                d = r.date or (r.created_time[:10] if r.created_time else "")
+            elif isinstance(r, dict):
+                d = r.get("date") or (r.get("created_time", "")[:10])
+            else:
+                continue
             if d:
                 notion_dates[d] = notion_dates.get(d, 0) + 1
     except Exception as e:
-        logger.warning(f"Could not fetch Notion dates for calendar: {e}")
+        logger.warning(f"Could not process Notion dates for calendar: {e}")
 
     # Also count notion-imported recordings
     notion_imported_dates: Dict[str, int] = {}
