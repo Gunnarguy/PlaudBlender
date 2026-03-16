@@ -19,6 +19,35 @@ from dash.exceptions import PreventUpdate
 logger = logging.getLogger(__name__)
 
 
+def _build_progress_display(progress: dict):
+    """Build a live progress bar + label from import progress data."""
+    total = progress.get("total", 1)
+    completed = progress.get("completed", 0)
+    failed = progress.get("failed", 0)
+    done_count = completed + failed
+    pct = int((done_count / max(total, 1)) * 100)
+    current = progress.get("current_title", "")
+    idx = progress.get("current_index", 0)
+
+    return html.Div(
+        className="notion-import-result notion-import-running",
+        children=[
+            html.Span(
+                f"🔄 Importing recordings through Gemini... ({completed} done, {failed} failed)"
+            ),
+            html.Div(
+                className="notion-progress-bar-container",
+                children=[
+                    html.Div(
+                        className="notion-progress-bar", style={"width": f"{pct}%"}
+                    ),
+                ],
+            ),
+            html.Span(f"[{idx}/{total}] {current}", className="notion-progress-label"),
+        ],
+    )
+
+
 def register_notion_callbacks(app):
     """Register all Notion-related callbacks."""
 
@@ -291,7 +320,13 @@ def register_notion_callbacks(app):
             logger.warning(f"Could not fetch page content: {e}")
 
         in_chronos = bool((match_map or {}).get(page_id))
-        return create_notion_page_detail(rec, body_text=body_text, in_chronos=in_chronos)
+        matched_recording_id = (match_map or {}).get(page_id, "") or ""
+        return create_notion_page_detail(
+            rec,
+            body_text=body_text,
+            in_chronos=in_chronos,
+            matched_recording_id=matched_recording_id,
+        )
 
     # ── Import single recording to Chronos ────────────────────────
     @app.callback(
@@ -363,49 +398,182 @@ def register_notion_callbacks(app):
                 children=[html.Span(f"❌ Import error: {str(e)}")],
             )
 
-    # ── Import ALL unmatched recordings ───────────────────────────
+    # ── Import ALL unmatched recordings (background thread) ─────
     @app.callback(
-        Output("notion-import-progress", "children", allow_duplicate=True),
+        [
+            Output("notion-import-progress", "children", allow_duplicate=True),
+            Output("notion-import-poll", "disabled", allow_duplicate=True),
+        ],
         Input("notion-import-all-btn", "n_clicks"),
         prevent_initial_call=True,
     )
     def import_all_to_chronos(n_clicks):
-        """Import all unmatched Notion recordings to Chronos."""
+        """Launch batch import of all unmatched Notion recordings in a background thread."""
         if not n_clicks:
             raise PreventUpdate
 
+        import threading
         from app_v2.services.xray import xray_log
-        from src.database.engine import SessionLocal
+        from src.chronos.notion_bridge import get_import_progress
+
+        # Check if already running
+        progress = get_import_progress()
+        if progress and progress.get("status") == "running":
+            return _build_progress_display(progress), False
 
         xray_log("pipeline", "notion-import", "Starting batch import of all Notion-only recordings...")
 
-        try:
+        def _run_import():
+            from src.database.engine import SessionLocal
             from src.chronos.notion_bridge import import_all_unmatched
 
             db = SessionLocal()
             try:
-                successes, failures, errors = import_all_unmatched(
-                    db, process=True, index=True,
-                )
+                import_all_unmatched(db, process=True, index=True)
+            except Exception as e:
+                logger.error(f"Background import failed: {e}", exc_info=True)
             finally:
                 db.close()
 
+        t = threading.Thread(target=_run_import, daemon=True, name="notion-import")
+        t.start()
+
+        # Return initial progress display + enable polling
+        return (
+            html.Div(
+                className="notion-import-result notion-import-running",
+                children=[
+                    html.Span(
+                        "🔄 Import started — processing recordings through Gemini..."
+                    ),
+                    html.Div(
+                        className="notion-progress-bar-container",
+                        children=[
+                            html.Div(
+                                className="notion-progress-bar", style={"width": "0%"}
+                            ),
+                        ],
+                    ),
+                    html.Span("Preparing...", className="notion-progress-label"),
+                ],
+            ),
+            False,
+        )  # False = enable the poll interval
+
+    # ── Resume import (retry failed + continue remaining) ────────
+    @app.callback(
+        [
+            Output("notion-import-progress", "children", allow_duplicate=True),
+            Output("notion-import-poll", "disabled", allow_duplicate=True),
+        ],
+        Input("notion-import-resume-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def resume_import(n_clicks):
+        """Resume a previously interrupted or partially failed import."""
+        if not n_clicks:
+            raise PreventUpdate
+
+        import threading
+        from app_v2.services.xray import xray_log
+        from src.chronos.notion_bridge import get_import_progress, _clear_progress
+
+        # Clear old progress to allow a fresh run
+        _clear_progress()
+        xray_log(
+            "pipeline",
+            "notion-import",
+            "Resuming import — retrying failed + remaining recordings...",
+        )
+
+        def _run_import():
+            from src.database.engine import SessionLocal
+            from src.chronos.notion_bridge import import_all_unmatched
+
+            db = SessionLocal()
+            try:
+                import_all_unmatched(db, process=True, index=True)
+            except Exception as e:
+                logger.error(f"Background resume import failed: {e}", exc_info=True)
+            finally:
+                db.close()
+
+        t = threading.Thread(
+            target=_run_import, daemon=True, name="notion-import-resume"
+        )
+        t.start()
+
+        return (
+            html.Div(
+                className="notion-import-result notion-import-running",
+                children=[
+                    html.Span("🔄 Resuming import — retrying failed and remaining..."),
+                    html.Div(
+                        className="notion-progress-bar-container",
+                        children=[
+                            html.Div(
+                                className="notion-progress-bar", style={"width": "0%"}
+                            ),
+                        ],
+                    ),
+                    html.Span("Preparing...", className="notion-progress-label"),
+                ],
+            ),
+            False,
+        )
+
+    # ── Poll import progress ──────────────────────────────────────
+    @app.callback(
+        [
+            Output("notion-import-progress", "children", allow_duplicate=True),
+            Output("notion-import-poll", "disabled", allow_duplicate=True),
+        ],
+        Input("notion-import-poll", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    def poll_import_progress(n_intervals):
+        """Poll the batch import progress file and update the UI."""
+        from src.chronos.notion_bridge import get_import_progress
+
+        progress = get_import_progress()
+        if not progress:
+            raise PreventUpdate
+
+        status = progress.get("status", "unknown")
+
+        if status == "running":
+            return _build_progress_display(progress), False  # keep polling
+
+        elif status == "done":
+            completed = progress.get("completed", 0)
+            failed = progress.get("failed", 0)
+            total = progress.get("total", 0)
+            errors = progress.get("errors", [])
+
             children = [
                 html.Div(
-                    className="notion-import-result notion-import-success" if successes else "notion-import-result notion-import-error",
+                    className=(
+                        "notion-import-result notion-import-success"
+                        if completed
+                        else "notion-import-result notion-import-error"
+                    ),
                     children=[
                         html.Span(f"Batch import complete: "),
-                        html.Strong(f"{successes} succeeded"),
-                        html.Span(f", {failures} failed") if failures else None,
-                        html.Button(
-                            "View in Timeline →",
-                            id="notion-goto-timeline",
-                            className="notion-goto-timeline-btn",
-                            n_clicks=0,
-                        ) if successes else None,
+                        html.Strong(f"{completed} succeeded"),
+                        html.Span(f", {failed} failed") if failed else None,
+                        html.Span(f" out of {total}"),
                     ],
                 ),
             ]
+            if failed > 0:
+                children.append(
+                    html.Button(
+                        f"🔄 Resume — Retry {failed} Failed",
+                        id="notion-import-resume-btn",
+                        className="sync-action-btn notion-resume-btn",
+                        n_clicks=0,
+                    )
+                )
             if errors:
                 children.append(
                     html.Div(
@@ -413,15 +581,19 @@ def register_notion_callbacks(app):
                         children=[html.P(e, className="notion-muted") for e in errors[:5]],
                     )
                 )
+            if completed:
+                children.append(
+                    html.Button(
+                        "View in Timeline →",
+                        id="notion-goto-timeline",
+                        className="notion-goto-timeline-btn",
+                        n_clicks=0,
+                    )
+                )
 
-            return html.Div(children=children)
+            return html.Div(children=children), True  # stop polling
 
-        except Exception as e:
-            logger.error(f"Batch import failed: {e}", exc_info=True)
-            return html.Div(
-                className="notion-import-result notion-import-error",
-                children=[html.Span(f"❌ Batch import error: {str(e)}")],
-            )
+        raise PreventUpdate
 
     # ── Write-back enrichments to Notion ──────────────────────────
     @app.callback(
@@ -473,6 +645,67 @@ def register_notion_callbacks(app):
                 children=[html.Span(f"❌ Write-back error: {str(e)}")],
             )
 
+    # ── Batch write-back all matched ──────────────────────────────
+    @app.callback(
+        Output("notion-import-progress", "children", allow_duplicate=True),
+        Input("notion-writeback-all-btn", "n_clicks"),
+        State("notion-match-map-store", "data"),
+        prevent_initial_call=True,
+    )
+    def write_back_all_to_notion(n_clicks, match_map):
+        """Push Chronos AI enrichments back to ALL matched Notion pages."""
+        if not n_clicks or not match_map:
+            raise PreventUpdate
+
+        from app_v2.services.xray import xray_log
+        from src.database.engine import SessionLocal
+
+        matched_count = sum(1 for v in match_map.values() if v)
+        xray_log(
+            "data",
+            "notion-writeback",
+            f"Starting batch write-back for {matched_count} matched recordings",
+        )
+
+        try:
+            from src.chronos.notion_bridge import write_back_all_matched
+
+            db = SessionLocal()
+            try:
+                success, failed, errors = write_back_all_matched(match_map, db)
+            finally:
+                db.close()
+
+            children = [
+                html.Div(
+                    className=(
+                        "notion-import-result notion-import-success"
+                        if success
+                        else "notion-import-result notion-import-error"
+                    ),
+                    children=[
+                        html.Span(f"📤 Batch write-back: "),
+                        html.Strong(f"{success} succeeded"),
+                        html.Span(f", {failed} failed") if failed else None,
+                    ],
+                ),
+            ]
+            if errors:
+                children.append(
+                    html.Div(
+                        className="notion-import-errors",
+                        children=[
+                            html.P(e, className="notion-muted") for e in errors[:5]
+                        ],
+                    )
+                )
+            return html.Div(children=children)
+        except Exception as e:
+            logger.error(f"Batch write-back failed: {e}", exc_info=True)
+            return html.Div(
+                className="notion-import-result notion-import-error",
+                children=[html.Span(f"❌ Batch write-back error: {str(e)}")],
+            )
 
     # ── Navigate to Timeline after import ────────────────────────
     @app.callback(
@@ -489,11 +722,30 @@ def register_notion_callbacks(app):
         xray_log("nav", "switch", "Switching to Timeline after Notion import")
         return "timeline", None
 
+    # ── Deep-link: detail panel → Timeline ────────────────────────
+    @app.callback(
+        Output("current-view", "data", allow_duplicate=True),
+        Output("selected-recording", "data", allow_duplicate=True),
+        Input("notion-detail-goto-timeline", "n_clicks"),
+        State("notion-detail-matched-rec-id", "data"),
+        prevent_initial_call=True,
+    )
+    def goto_timeline_from_detail(n_clicks, recording_id):
+        """Navigate to a specific recording in Timeline view."""
+        if not n_clicks or not recording_id:
+            raise PreventUpdate
+        from app_v2.services.xray import xray_log
+
+        xray_log("nav", "switch", f"Deep-linking to matched recording in Timeline")
+        return "timeline", recording_id
+
     # ── Client-side search/filter/sort ───────────────────────────
     @app.callback(
         Output("content-container", "children", allow_duplicate=True),
         Input("notion-search-input", "value"),
         Input("notion-sort-dropdown", "value"),
+        Input({"type": "notion-filter-cat", "category": ALL}, "n_clicks"),
+        Input("notion-filter-all", "n_clicks"),
         State("notion-recordings-store", "data"),
         State("notion-status-store", "data"),
         State("notion-match-map-store", "data"),
@@ -502,9 +754,19 @@ def register_notion_callbacks(app):
         State("current-view", "data"),
         prevent_initial_call=True,
     )
-    def filter_recordings(search_text, sort_value, recordings_data, status_data,
-                          match_map, coverage, databases_data, current_view):
-        """Filter and sort recordings based on search input and sort selection."""
+    def filter_recordings(
+        search_text,
+        sort_value,
+        cat_clicks,
+        all_clicks,
+        recordings_data,
+        status_data,
+        match_map,
+        coverage,
+        databases_data,
+        current_view,
+    ):
+        """Filter and sort recordings based on search, category, and sort."""
         if current_view != "notion" or not recordings_data:
             raise PreventUpdate
 
@@ -512,6 +774,20 @@ def register_notion_callbacks(app):
         from app_v2.services.data_service import get_data_service
 
         filtered = list(recordings_data)
+
+        # Determine active category filter from trigger
+        active_category = None
+        triggered = ctx.triggered_id
+        if isinstance(triggered, dict) and triggered.get("type") == "notion-filter-cat":
+            active_category = triggered.get("category")
+
+        # Apply category filter
+        if active_category:
+            filtered = [
+                r
+                for r in filtered
+                if (r.get("category", "") or "uncategorized") == active_category
+            ]
 
         # Apply search filter
         if search_text:
@@ -554,7 +830,133 @@ def register_notion_callbacks(app):
             match_map=match_map or {},
             coverage_calendar=coverage or [],
             databases=databases_data or [],
+            active_category=active_category,
         )
+
+
+def _do_full_fetch_data():
+    """Fetch all Notion data and return kwargs dict for create_notion_view.
+
+    Used by navigation to pre-fetch data during tab switch.
+    """
+    from app_v2.services.xray import xray_log, xray_timer
+    from app_v2.services.data_service import get_data_service
+    from src.notion_service import get_notion_service
+
+    svc = get_notion_service()
+
+    databases_data = []
+    try:
+        databases_data = svc.list_databases()
+        xray_log("data", "notion", f"Found {len(databases_data)} accessible databases")
+    except Exception:
+        pass
+
+    with xray_timer("data", "notion", "Checking Notion connection"):
+        status = svc.check_connection()
+
+    status_dict = {
+        "connected": status.connected,
+        "database_found": status.database_found,
+        "database_title": status.database_title,
+        "total_pages": status.total_pages,
+        "error": status.error,
+        "schema": status.schema,
+    }
+
+    recordings_data = []
+    match_map = {}
+    coverage = []
+    stale_map = {}
+    chronos_ids = set()
+
+    if status.connected:
+        with xray_timer(
+            "data", "notion", f"Pulling recordings from '{status.database_title}'"
+        ):
+            recordings = svc.fetch_recordings(limit=500)
+
+        xray_log("data", "notion", f"Found {len(recordings)} recordings in Notion")
+
+        for rec in recordings:
+            recordings_data.append(
+                {
+                    "page_id": rec.page_id,
+                    "title": rec.title,
+                    "created_time": rec.created_time,
+                    "last_edited_time": rec.last_edited_time,
+                    "url": rec.url,
+                    "transcript": rec.transcript,
+                    "summary": rec.summary,
+                    "date": rec.date,
+                    "duration": rec.duration,
+                    "tags": rec.tags,
+                    "category": rec.category,
+                    "source": rec.source,
+                    "properties": rec.properties,
+                }
+            )
+
+        try:
+            from src.chronos.notion_bridge import (
+                match_notion_to_chronos,
+                get_coverage_calendar,
+                detect_stale_imports,
+            )
+            from src.database.engine import SessionLocal
+
+            db = SessionLocal()
+            try:
+                with xray_timer(
+                    "data",
+                    "notion-match",
+                    "Matching Notion pages to Chronos recordings",
+                ):
+                    match_map = match_notion_to_chronos(recordings, db)
+                    matched = sum(1 for v in match_map.values() if v)
+                    xray_log(
+                        "data",
+                        "notion-match",
+                        f"Smart match: {matched} linked, {len(match_map) - matched} unique to Notion",
+                    )
+                coverage = get_coverage_calendar(db, days=90)
+                stale_map = detect_stale_imports(recordings, match_map, db)
+                if stale_map:
+                    xray_log(
+                        "data",
+                        "notion-match",
+                        f"{len(stale_map)} recordings edited in Notion since import",
+                    )
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"Smart matching failed (non-fatal): {e}")
+
+        xray_log(
+            "data",
+            "notion-match",
+            f"Matched {sum(1 for v in match_map.values() if v)} of {len(match_map)} Notion pages to Chronos recordings",
+        )
+
+    try:
+        service = get_data_service()
+        days = service.get_days()
+        for day in days:
+            for rec in day.recordings:
+                if rec.recording_id:
+                    chronos_ids.add(rec.recording_id)
+    except Exception:
+        pass
+
+    return {
+        "status": status_dict,
+        "recordings": recordings_data,
+        "chronos_recording_ids": chronos_ids,
+        "match_map": match_map,
+        "coverage_calendar": coverage,
+        "databases": databases_data,
+        "stale_map": stale_map,
+    }
 
 
 def _do_full_fetch():
@@ -587,6 +989,7 @@ def _do_full_fetch():
     recordings_data = []
     match_map = {}
     coverage = []
+    stale_map = {}
     chronos_ids = set()
 
     if status.connected:
@@ -610,13 +1013,18 @@ def _do_full_fetch():
             })
 
         try:
-            from src.chronos.notion_bridge import match_notion_to_chronos, get_coverage_calendar
+            from src.chronos.notion_bridge import (
+                match_notion_to_chronos,
+                get_coverage_calendar,
+                detect_stale_imports,
+            )
             from src.database.engine import SessionLocal
 
             db = SessionLocal()
             try:
                 match_map = match_notion_to_chronos(recordings, db)
                 coverage = get_coverage_calendar(db, days=90)
+                stale_map = detect_stale_imports(recordings, match_map, db)
             finally:
                 db.close()
         except Exception:
@@ -642,6 +1050,7 @@ def _do_full_fetch():
         match_map=match_map,
         coverage_calendar=coverage,
         databases=databases_data,
+        stale_map=stale_map,
     )
 
 

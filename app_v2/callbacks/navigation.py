@@ -2320,10 +2320,10 @@ def register_navigation_callbacks(app):
             elif view == "sync":
                 content = create_sync_view(get_service())
             elif view == "notion":
+                from app_v2.callbacks.notion import _do_full_fetch_data
                 from app_v2.components.notion import create_notion_view
                 from src.config import get_settings
 
-                # Pre-discover databases if token is set but no DB configured
                 databases = []
                 settings = get_settings()
                 has_token = bool(settings.notion_token)
@@ -2346,10 +2346,18 @@ def register_navigation_callbacks(app):
                                      f"Auto-selected '{best['title']}' ({best['property_count']} properties)")
                     except Exception as e:
                         xray_log("nav", "data", f"Notion: could not list data sources: {e}")
-                else:
-                    xray_log("nav", "data", "Showing Notion integration dashboard")
 
-                content = create_notion_view(databases=databases)
+                # Pre-fetch all Notion data so the view renders populated
+                if has_db:
+                    xray_log("nav", "data", "Loading Notion data for dashboard")
+                    try:
+                        notion_data = _do_full_fetch_data()
+                        content = create_notion_view(**notion_data)
+                    except Exception as e:
+                        logger.warning(f"Notion pre-fetch failed: {e}")
+                        content = create_notion_view(databases=databases)
+                else:
+                    content = create_notion_view(databases=databases)
             elif view == "settings":
                 content = create_settings_view(preferences=prefs)
             else:

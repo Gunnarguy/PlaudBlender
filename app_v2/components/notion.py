@@ -82,6 +82,17 @@ def _build_notion_hero(
                                 if recordings
                                 else None
                             ),
+                            (
+                                html.Button(
+                                    f"📤 Write Back All ({matched_count})",
+                                    id="notion-writeback-all-btn",
+                                    className="sync-action-btn notion-writeback-btn",
+                                    n_clicks=0,
+                                    disabled=matched_count == 0,
+                                )
+                                if recordings and matched_count > 0
+                                else None
+                            ),
                         ],
                     ),
                 ],
@@ -155,6 +166,8 @@ def create_notion_view(
     match_map=None,
     coverage_calendar=None,
     databases=None,
+    active_category=None,
+    stale_map=None,
 ) -> html.Div:
     """Create the Notion integration view.
 
@@ -165,10 +178,13 @@ def create_notion_view(
         match_map: {notion_page_id → chronos_recording_id or None}
         coverage_calendar: List of day dicts from get_coverage_calendar()
         databases: List of available Notion databases for selection
+        active_category: Currently selected category filter (None = All)
+        stale_map: {notion_page_id → True} for pages edited after import
     """
     recordings = recordings or []
     chronos_recording_ids = chronos_recording_ids or set()
     match_map = match_map or {}
+    stale_map = stale_map or {}
     databases = databases or []
 
     # Count unmatched for the banner
@@ -202,14 +218,21 @@ def create_notion_view(
             ),
             # Import progress area
             html.Div(id="notion-import-progress", className="notion-import-progress"),
+            # Poll interval for batch import progress (disabled by default)
+            dcc.Interval(
+                id="notion-import-poll",
+                interval=2000,
+                disabled=True,
+            ),
             html.Div(className="notion-top-grid", children=top_cards),
-            # Auto-load trigger (fires once on mount to load data)
-            dcc.Store(id="notion-auto-loaded", data=False),
+            # Auto-load trigger (fires once on mount — disabled when data is pre-fetched)
+            dcc.Store(id="notion-auto-loaded", data=bool(recordings)),
             dcc.Interval(
                 id="notion-auto-fetch-trigger",
                 interval=500,  # 500ms after mount
                 max_intervals=1,
-                disabled=not has_db_id,  # Only auto-fetch if DB is configured
+                disabled=(not has_db_id)
+                or bool(recordings),  # Skip if data already loaded
             ),
             html.Div(className="notion-analytics-grid", children=analytics_cards),
             html.Div(
@@ -218,9 +241,9 @@ def create_notion_view(
                     html.Div(
                         className="notion-list-column",
                         children=[
-                            _build_search_toolbar(recordings),
+                            _build_search_toolbar(recordings, active_category),
                             _build_recordings_list(
-                                recordings, chronos_recording_ids, match_map
+                                recordings, chronos_recording_ids, match_map, stale_map
                             ),
                         ],
                     ),
@@ -236,12 +259,12 @@ def create_notion_view(
                     ),
                 ],
             ),
-            # Hidden stores for callbacks
-            dcc.Store(id="notion-recordings-store", data=[]),
-            dcc.Store(id="notion-status-store", data=None),
+            # Hidden stores for callbacks (pre-populated when data is fetched during navigation)
+            dcc.Store(id="notion-recordings-store", data=recordings or []),
+            dcc.Store(id="notion-status-store", data=status),
             dcc.Store(id="notion-selected-page", data=None),
-            dcc.Store(id="notion-match-map-store", data={}),
-            dcc.Store(id="notion-coverage-store", data=[]),
+            dcc.Store(id="notion-match-map-store", data=match_map or {}),
+            dcc.Store(id="notion-coverage-store", data=coverage_calendar or []),
             dcc.Store(id="notion-databases-store", data=databases),
         ],
     )
@@ -362,7 +385,7 @@ def _build_database_picker(databases, has_db_id) -> html.Div:
     )
 
 
-def _build_search_toolbar(recordings) -> html.Div:
+def _build_search_toolbar(recordings, active_category=None) -> html.Div:
     """Build search/filter/sort toolbar for the recordings list."""
     if not recordings:
         return html.Div()
@@ -374,21 +397,23 @@ def _build_search_toolbar(recordings) -> html.Div:
                else getattr(rec, "category", "")) or "uncategorized"
         categories[cat] = categories.get(cat, 0) + 1
 
+    all_active = "notion-filter-active" if not active_category else ""
     filter_buttons = [
         html.Button(
             f"All ({len(recordings)})",
             id="notion-filter-all",
-            className="notion-filter-btn notion-filter-active",
+            className=f"notion-filter-btn {all_active}",
             n_clicks=0,
         )
     ]
     for cat, count in sorted(categories.items(), key=lambda x: -x[1]):
         if cat:
+            cat_active = "notion-filter-active" if active_category == cat else ""
             filter_buttons.append(
                 html.Button(
                     f"{cat} ({count})",
                     id={"type": "notion-filter-cat", "category": cat},
-                    className="notion-filter-btn",
+                    className=f"notion-filter-btn {cat_active}",
                     n_clicks=0,
                 )
             )
@@ -735,6 +760,8 @@ def _build_interplay_card(recordings, chronos_ids, match_map=None) -> html.Div:
     notion_only_count = len(notion_only)
     both_count = len(in_both)
     total_chronos = len(chronos_ids)
+    chronos_only_count = max(0, total_chronos - both_count)
+    total_unique = notion_only_count + both_count + chronos_only_count
 
     return html.Div(
         className="notion-card notion-interplay-card",
@@ -747,7 +774,9 @@ def _build_interplay_card(recordings, chronos_ids, match_map=None) -> html.Div:
                     html.Div(
                         className="interplay-stat notion-only",
                         children=[
-                            html.Span(str(notion_only_count), className="interplay-number"),
+                            html.Span(
+                                str(notion_only_count), className="interplay-number"
+                            ),
                             html.Span("Notion Only", className="interplay-label"),
                             html.Span(
                                 "Recordings only in Notion — not yet in Chronos",
@@ -762,31 +791,33 @@ def _build_interplay_card(recordings, chronos_ids, match_map=None) -> html.Div:
                             html.Span(str(both_count), className="interplay-number"),
                             html.Span("In Both", className="interplay-label"),
                             html.Span(
-                                "Recordings that exist in both systems",
+                                "Recordings matched across both systems",
                                 className="interplay-desc",
                             ),
                         ],
                     ),
-                    # Chronos Total
+                    # Chronos Only
                     html.Div(
-                        className="interplay-stat chronos-total",
+                        className="interplay-stat chronos-only",
                         children=[
-                            html.Span(str(total_chronos), className="interplay-number"),
-                            html.Span("Chronos Total", className="interplay-label"),
                             html.Span(
-                                "All recordings currently in Chronos/Qdrant",
+                                str(chronos_only_count), className="interplay-number"
+                            ),
+                            html.Span("Chronos Only", className="interplay-label"),
+                            html.Span(
+                                "Recordings only in Chronos — not in Notion",
                                 className="interplay-desc",
                             ),
                         ],
                     ),
-                    # Notion Total
+                    # Total Unique
                     html.Div(
-                        className="interplay-stat notion-total",
+                        className="interplay-stat total-unique",
                         children=[
-                            html.Span(str(total_notion), className="interplay-number"),
-                            html.Span("Notion Total", className="interplay-label"),
+                            html.Span(str(total_unique), className="interplay-number"),
+                            html.Span("Total Unique", className="interplay-label"),
                             html.Span(
-                                "All recordings found in your Notion database",
+                                "Combined unique recordings across both systems",
                                 className="interplay-desc",
                             ),
                         ],
@@ -794,7 +825,7 @@ def _build_interplay_card(recordings, chronos_ids, match_map=None) -> html.Div:
                 ],
             ),
             # Visual bar showing proportions
-            _build_interplay_bar(notion_only_count, both_count, total_chronos),
+            _build_interplay_bar(notion_only_count, both_count, chronos_only_count),
         ],
     )
 
@@ -881,8 +912,11 @@ def _build_schema_card(status) -> html.Div:
     )
 
 
-def _build_recordings_list(recordings, chronos_ids, match_map=None) -> html.Div:
+def _build_recordings_list(
+    recordings, chronos_ids, match_map=None, stale_map=None
+) -> html.Div:
     """Build the scrollable recordings list."""
+    stale_map = stale_map or {}
     if not recordings:
         return html.Div(
             className="notion-card notion-recordings-card",
@@ -916,7 +950,9 @@ def _build_recordings_list(recordings, chronos_ids, match_map=None) -> html.Div:
                     html.Div(
                         className="notion-date-header",
                         children=[
-                            html.Span(_format_date(date), className="notion-date-label"),
+                            html.Span(
+                                _format_date(date), className="notion-date-label"
+                            ),
                             html.Span(
                                 f"{len(recs)} recording{'s' if len(recs) != 1 else ''}",
                                 className="notion-date-count",
@@ -926,7 +962,7 @@ def _build_recordings_list(recordings, chronos_ids, match_map=None) -> html.Div:
                     html.Div(
                         className="notion-recordings-in-date",
                         children=[
-                            _build_recording_row(rec, chronos_ids, match_map)
+                            _build_recording_row(rec, chronos_ids, match_map, stale_map)
                             for rec in recs
                         ],
                     ),
@@ -951,9 +987,10 @@ def _build_recordings_list(recordings, chronos_ids, match_map=None) -> html.Div:
     )
 
 
-def _build_recording_row(rec, chronos_ids, match_map=None) -> html.Div:
+def _build_recording_row(rec, chronos_ids, match_map=None, stale_map=None) -> html.Div:
     """Build a single recording row with action buttons."""
     match_map = match_map or {}
+    stale_map = stale_map or {}
     if isinstance(rec, dict):
         page_id = rec.get("page_id", "")
         title = rec.get("title", "Untitled")
@@ -977,12 +1014,20 @@ def _build_recording_row(rec, chronos_ids, match_map=None) -> html.Div:
 
     # Use smart match_map for matching
     in_chronos = bool(match_map.get(page_id))
+    is_stale = stale_map.get(page_id, False)
 
-    source_badge = (
-        html.Span("✅ In Chronos", className="notion-badge badge-both")
-        if in_chronos
-        else html.Span("👻 Not in Chronos", className="notion-badge badge-notion-only")
-    )
+    # Build badges
+    badges = []
+    if in_chronos:
+        badges.append(html.Span("✅ In Chronos", className="notion-badge badge-both"))
+    else:
+        badges.append(
+            html.Span("👻 Not in Chronos", className="notion-badge badge-notion-only")
+        )
+    if is_stale:
+        badges.append(
+            html.Span("🔄 Updated in Notion", className="notion-badge badge-stale")
+        )
 
     # Action buttons based on state
     action_buttons = []
@@ -1033,15 +1078,27 @@ def _build_recording_row(rec, chronos_ids, match_map=None) -> html.Div:
                     className="notion-rec-title-row",
                     children=[
                         html.Span(title, className="notion-rec-title"),
-                        source_badge,
+                        *badges,
                     ],
                 ),
                 html.Div(
                     className="notion-rec-meta",
                     children=[
-                        html.Span(time_str, className="notion-rec-time") if time_str else None,
-                        html.Span(f" · {duration}", className="notion-rec-duration") if duration else None,
-                        html.Span(f" · {category}", className="notion-rec-category") if category else None,
+                        (
+                            html.Span(time_str, className="notion-rec-time")
+                            if time_str
+                            else None
+                        ),
+                        (
+                            html.Span(f" · {duration}", className="notion-rec-duration")
+                            if duration
+                            else None
+                        ),
+                        (
+                            html.Span(f" · {category}", className="notion-rec-category")
+                            if category
+                            else None
+                        ),
                     ],
                 ),
             ],
@@ -1094,7 +1151,9 @@ def _format_date(date_str: str) -> str:
         return date_str
 
 
-def create_notion_page_detail(rec, body_text: str = "", in_chronos: bool = False) -> html.Div:
+def create_notion_page_detail(
+    rec, body_text: str = "", in_chronos: bool = False, matched_recording_id: str = ""
+) -> html.Div:
     """Create a detail panel for a selected Notion page/recording."""
     if isinstance(rec, dict):
         page_id = rec.get("page_id", "")
@@ -1117,6 +1176,47 @@ def create_notion_page_detail(rec, body_text: str = "", in_chronos: bool = False
         created = getattr(rec, "created_time", "")
         properties = getattr(rec, "properties", {})
 
+    # Build action buttons list
+    detail_actions = []
+    if url:
+        detail_actions.append(
+            html.A(
+                "Open in Notion ↗",
+                href=url,
+                target="_blank",
+                rel="noopener noreferrer",
+                className="notion-open-link",
+            )
+        )
+    if not in_chronos:
+        detail_actions.append(
+            html.Button(
+                "⚡ Import to Chronos",
+                id={"type": "notion-import-one", "page_id": page_id},
+                className="notion-action-btn notion-import-small",
+                n_clicks=0,
+            )
+        )
+    else:
+        detail_actions.append(
+            html.Button(
+                "📤 Enrich in Notion",
+                id={"type": "notion-writeback", "page_id": page_id},
+                className="notion-action-btn notion-writeback-btn",
+                n_clicks=0,
+            )
+        )
+        if matched_recording_id:
+            detail_actions.append(
+                html.Button(
+                    "📍 View in Timeline",
+                    id="notion-detail-goto-timeline",
+                    className="notion-action-btn notion-goto-timeline-btn",
+                    n_clicks=0,
+                    **{"data-recording-id": matched_recording_id},
+                )
+            )
+
     children = [
         html.Span("Selected Page", className="notion-detail-kicker"),
         html.Div(
@@ -1125,37 +1225,12 @@ def create_notion_page_detail(rec, body_text: str = "", in_chronos: bool = False
                 html.H3(title),
                 html.Div(
                     className="notion-detail-actions",
-                    children=[
-                        (
-                            html.A(
-                                "Open in Notion ↗",
-                                href=url,
-                                target="_blank",
-                                rel="noopener noreferrer",
-                                className="notion-open-link",
-                            )
-                            if url
-                            else None
-                        ),
-                        (
-                            html.Button(
-                                "⚡ Import to Chronos",
-                                id={"type": "notion-import-one", "page_id": page_id},
-                                className="notion-action-btn notion-import-small",
-                                n_clicks=0,
-                            )
-                            if not in_chronos
-                            else html.Button(
-                                "📤 Enrich in Notion",
-                                id={"type": "notion-writeback", "page_id": page_id},
-                                className="notion-action-btn notion-writeback-btn",
-                                n_clicks=0,
-                            )
-                        ),
-                    ],
+                    children=detail_actions,
                 ),
             ],
         ),
+        # Store matched recording id for the deep-link callback
+        dcc.Store(id="notion-detail-matched-rec-id", data=matched_recording_id or ""),
     ]
 
     # Metadata row

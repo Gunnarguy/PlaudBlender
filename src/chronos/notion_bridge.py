@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from src.config import get_settings
 from src.database.chronos_repository import (
     add_chronos_events,
+    delete_chronos_events_by_recording,
     get_chronos_recording,
     mark_chronos_recording_status,
     set_chronos_recording_transcript,
@@ -37,17 +38,68 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════
 
 
+def _extract_date_from_title(title: str, year_hint: str = "") -> Optional[str]:
+    """Extract date from Notion title.
+
+    Supports:
+    - MM-DD prefix: '03-13 Operational Briefing...'
+    - YYYY-MM-DD prefix: '2026-02-11 22:39:55'
+
+    Returns YYYY-MM-DD string or None.
+    """
+    import re
+
+    # Try YYYY-MM-DD first (timestamp titles like '2026-02-11 22:39:55')
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})[\s T]", title)
+    if m:
+        year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            try:
+                from datetime import date as _date
+
+                _date(year, month, day)
+                return f"{year:04d}-{month:02d}-{day:02d}"
+            except ValueError:
+                pass
+
+    # Try MM-DD prefix
+    m = re.match(r"^(\d{2})-(\d{2})\s", title)
+    if not m:
+        return None
+    month, day = int(m.group(1)), int(m.group(2))
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return None
+    year = (
+        int(year_hint[:4])
+        if year_hint and len(year_hint) >= 4
+        else datetime.utcnow().year
+    )
+    try:
+        from datetime import date as _date
+
+        _date(year, month, day)  # validate
+        return f"{year:04d}-{month:02d}-{day:02d}"
+    except ValueError:
+        return None
+
+
 def match_notion_to_chronos(
     notion_recordings: List[NotionRecording],
     session: Session,
 ) -> Dict[str, Optional[str]]:
     """Match Notion recordings to Chronos recordings using fuzzy logic.
 
-    Returns: {notion_page_id → chronos_recording_id or None}
+    Strategy:
+    1. Parse real recording date from Notion title prefix (MM-DD format)
+    2. Same-date fuzzy title match (strongest signal)
+    3. Adjacent-date (+-1 day) fuzzy title match (penalized)
+    4. Prevent many-to-one: each Chronos recording matches at most one Notion page
+
+    Returns: {notion_page_id -> chronos_recording_id or None}
     """
     from app_v2.services.xray import xray_log
 
-    # Build a lookup of Chronos recordings by date → list of (id, title, created_at)
+    # Build a lookup of Chronos recordings by date -> list of (id, title, created_at)
     chronos_recs = session.query(ChronosRecording).all()
     by_date: Dict[str, List[Tuple[str, str, datetime]]] = {}
     for rec in chronos_recs:
@@ -57,32 +109,34 @@ def match_notion_to_chronos(
                 (rec.recording_id, rec.title or "", rec.created_at)
             )
 
-    matches: Dict[str, Optional[str]] = {}
-    matched_count = 0
+    # Score all candidates, then assign greedily (best score first, no duplicates)
+    scored_pairs: List[Tuple[float, str, str]] = (
+        []
+    )  # (score, notion_page_id, chronos_id)
 
     for nrec in notion_recordings:
-        best_match = None
-        best_score = 0.0
-
-        notion_date = nrec.date or (nrec.created_time[:10] if nrec.created_time else "")
         notion_title = (nrec.title or "").lower().strip()
 
-        # Phase 1: Same-date fuzzy title match (strongest signal)
+        # Determine the true recording date: prefer title-embedded date over page date
+        fallback_date = nrec.date or (
+            nrec.created_time[:10] if nrec.created_time else ""
+        )
+        title_date = _extract_date_from_title(nrec.title or "", fallback_date)
+        notion_date = title_date or fallback_date
+
+        # Phase 1: Same-date candidates
         candidates = by_date.get(notion_date, [])
         for cid, ctitle, _ in candidates:
             ctitle_lower = (ctitle or "").lower().strip()
             if not notion_title or not ctitle_lower:
-                # If either has no title, same-date is a weaker match
-                score = 0.4
+                score = 0.4  # weak date-only match
             else:
                 score = SequenceMatcher(None, notion_title, ctitle_lower).ratio()
+            if score >= 0.45:
+                scored_pairs.append((score, nrec.page_id, cid))
 
-            if score > best_score:
-                best_score = score
-                best_match = cid
-
-        # Phase 2: Adjacent-date fuzzy match (±1 day, lower threshold)
-        if best_score < 0.5 and notion_date:
+        # Phase 2: Adjacent-date fuzzy match (+-1 day, penalized)
+        if notion_date:
             try:
                 from datetime import timedelta
                 nd = datetime.strptime(notion_date, "%Y-%m-%d")
@@ -91,20 +145,36 @@ def match_notion_to_chronos(
                     for cid, ctitle, _ in by_date.get(adj_date, []):
                         ctitle_lower = (ctitle or "").lower().strip()
                         if notion_title and ctitle_lower:
-                            score = SequenceMatcher(None, notion_title, ctitle_lower).ratio() * 0.8  # penalize date mismatch
-                            if score > best_score:
-                                best_score = score
-                                best_match = cid
+                            score = (
+                                SequenceMatcher(
+                                    None, notion_title, ctitle_lower
+                                ).ratio()
+                                * 0.8
+                            )
+                            if score >= 0.45:
+                                scored_pairs.append((score, nrec.page_id, cid))
             except (ValueError, TypeError):
                 pass
 
-        # Threshold: need >0.45 similarity to consider a match
-        if best_score >= 0.45 and best_match:
-            matches[nrec.page_id] = best_match
-            matched_count += 1
-        else:
+    # Greedy assignment: best scores first, each side matched at most once
+    scored_pairs.sort(key=lambda x: x[0], reverse=True)
+    used_notion: Set[str] = set()
+    used_chronos: Set[str] = set()
+    matches: Dict[str, Optional[str]] = {}
+
+    for score, pid, cid in scored_pairs:
+        if pid in used_notion or cid in used_chronos:
+            continue
+        matches[pid] = cid
+        used_notion.add(pid)
+        used_chronos.add(cid)
+
+    # Fill in unmatched Notion pages as None
+    for nrec in notion_recordings:
+        if nrec.page_id not in matches:
             matches[nrec.page_id] = None
 
+    matched_count = sum(1 for v in matches.values() if v)
     xray_log(
         "data", "notion-match",
         f"Matched {matched_count} of {len(notion_recordings)} Notion pages to Chronos recordings"
@@ -123,31 +193,55 @@ def import_notion_recording(
     *,
     process: bool = True,
     index: bool = True,
+    prefetched: Optional["NotionRecording"] = None,
 ) -> Tuple[bool, str]:
     """Import a single Notion page into the Chronos pipeline.
 
-    Steps:
-    1. Fetch page from Notion (content + properties)
-    2. Create ChronosRecording (source="notion")
-    3. Cache transcript text
-    4. (Optional) Process through Gemini → extract events
-    5. (Optional) Index events to Qdrant
+    Idempotent: safe to call multiple times on the same page.
+    - If already completed, skips and returns success.
+    - If previously failed, cleans up old events and retries.
+    - If new, creates recording + processes + indexes.
+
+    Args:
+        page_id: Notion page ID
+        session: SQLAlchemy session
+        process: Whether to run Gemini processing
+        index: Whether to index events to Qdrant
+        prefetched: Pre-fetched NotionRecording to avoid redundant API calls
 
     Returns: (success, message)
     """
     from app_v2.services.xray import xray_log
 
+    recording_id = f"notion:{page_id}"
+
     try:
+        # Check if already completed — skip entirely
+        existing = get_chronos_recording(session, recording_id)
+        if existing and existing.processing_status == "completed":
+            return True, f"Already imported '{existing.title}'"
+
+        # If previously failed, clean up old events before retrying
+        if existing and existing.processing_status == "failed":
+            cleaned = delete_chronos_events_by_recording(session, recording_id)
+            if cleaned:
+                xray_log(
+                    "data",
+                    "notion-import",
+                    f"Cleaned {cleaned} stale events from failed import",
+                )
+
         svc = get_notion_service()
 
-        # Step 1: Fetch the page
-        xray_log("data", "notion-import", f"Pulling page from Notion...")
-        recordings = svc.fetch_recordings(limit=1000)
-        page = None
-        for r in recordings:
-            if r.page_id == page_id:
-                page = r
-                break
+        # Step 1: Get the page data (use prefetched when available)
+        page = prefetched
+        if not page:
+            xray_log("data", "notion-import", f"Pulling page from Notion...")
+            recordings = svc.fetch_recordings(limit=1000)
+            for r in recordings:
+                if r.page_id == page_id:
+                    page = r
+                    break
 
         if not page:
             return False, f"Page {page_id} not found in Notion database"
@@ -160,19 +254,18 @@ def import_notion_recording(
         if not transcript.strip():
             return False, "No transcript or body text found in Notion page"
 
-        # Step 2: Create ChronosRecording
+        # Step 2: Create/update ChronosRecording
         created_at = _parse_iso(page.created_time)
-        # Estimate duration from transcript length (~150 words/minute)
         word_count = len(transcript.split())
-        estimated_duration = max(60, int(word_count / 2.5))  # ~150wpm speaking rate
+        estimated_duration = max(60, int(word_count / 2.5))
 
         rec = upsert_chronos_recording(
             session=session,
-            recording_id=f"notion:{page_id}",
+            recording_id=recording_id,
             title=page.title,
             created_at=created_at,
             duration_seconds=estimated_duration,
-            local_audio_path="",  # No audio for Notion imports
+            local_audio_path="",
             source="notion",
             device_id="notion",
         )
@@ -192,8 +285,6 @@ def import_notion_recording(
         processor = TranscriptProcessor(db_session=session)
 
         recording_date = created_at.strftime("%Y-%m-%d") if created_at else ""
-
-        # Use Notion summary as context to improve Gemini's categorization
         plaud_context = page.summary if page.summary else None
 
         _t0 = _time.perf_counter()
@@ -253,7 +344,73 @@ def import_notion_recording(
 
     except Exception as e:
         logger.error(f"Error importing Notion page {page_id}: {e}", exc_info=True)
+        # Mark as failed so resume knows to retry
+        try:
+            mark_chronos_recording_status(
+                session,
+                recording_id,
+                "failed",
+                error_message=str(e)[:500],
+            )
+        except Exception:
+            pass
         return False, f"Error: {str(e)}"
+
+
+# ── Batch Progress Persistence ────────────────────────────────
+
+import json
+import os
+
+_PROGRESS_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "data",
+    "notion_import_progress.json",
+)
+
+
+def _load_progress() -> Dict:
+    """Load batch import progress from disk."""
+    try:
+        with open(_PROGRESS_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_progress(data: Dict) -> None:
+    """Persist batch import progress to disk."""
+    os.makedirs(os.path.dirname(_PROGRESS_FILE), exist_ok=True)
+    with open(_PROGRESS_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _clear_progress() -> None:
+    """Remove the progress file when the batch is complete."""
+    try:
+        os.remove(_PROGRESS_FILE)
+    except FileNotFoundError:
+        pass
+
+
+def get_import_progress() -> Optional[Dict]:
+    """Get current import progress for the UI.
+
+    Returns None if no import is running/paused, otherwise:
+    {
+        "total": int,
+        "completed": int,
+        "failed": int,
+        "skipped": int,
+        "current_title": str,
+        "status": "running" | "paused" | "done",
+        "errors": [str],
+    }
+    """
+    data = _load_progress()
+    if not data:
+        return None
+    return data
 
 
 def import_all_unmatched(
@@ -262,8 +419,17 @@ def import_all_unmatched(
     process: bool = True,
     index: bool = True,
     progress_callback=None,
+    batch_size: int = 0,
 ) -> Tuple[int, int, List[str]]:
-    """Import all Notion recordings that aren't already in Chronos.
+    """Import Notion recordings not already in Chronos.
+
+    Resume-safe: tracks progress to disk. On re-run:
+    - Completed recordings are skipped instantly
+    - Failed recordings are retried (events cleaned up first)
+    - New recordings are imported normally
+
+    Args:
+        batch_size: Max recordings to process in this run (0 = all)
 
     Returns: (success_count, failure_count, error_messages)
     """
@@ -275,62 +441,114 @@ def import_all_unmatched(
     if not recordings:
         return 0, 0, ["No recordings found in Notion"]
 
-    # Find which ones are already imported
-    existing = set()
-    for rec in session.query(ChronosRecording).filter(
-        ChronosRecording.source == "notion"
-    ).all():
-        # Extract page_id from "notion:<page_id>" format
+    # Build set of completed notion imports (skip these entirely)
+    completed_notion = set()
+    failed_notion = set()
+    for rec in (
+        session.query(ChronosRecording)
+        .filter(ChronosRecording.source == "notion")
+        .all()
+    ):
         if rec.recording_id.startswith("notion:"):
-            existing.add(rec.recording_id[7:])
+            pid = rec.recording_id[7:]
+            if rec.processing_status == "completed":
+                completed_notion.add(pid)
+            elif rec.processing_status == "failed":
+                failed_notion.add(pid)
 
-    # Also check fuzzy matches
+    # Also check fuzzy matches (recordings already in Chronos via Plaud)
     matches = match_notion_to_chronos(recordings, session)
 
     to_import = []
     for nrec in recordings:
-        if nrec.page_id in existing:
-            continue  # Already imported directly
+        if nrec.page_id in completed_notion:
+            continue  # Already fully imported
         if matches.get(nrec.page_id):
             continue  # Already in Chronos via Plaud
         to_import.append(nrec)
 
+    # Sort newest first — prioritize recent recordings
+    to_import.sort(
+        key=lambda n: n.date or n.created_time or "",
+        reverse=True,
+    )
+
     if not to_import:
         xray_log("data", "notion-import", "All Notion recordings are already in Chronos!")
+        _clear_progress()
         return 0, 0, []
 
+    # Apply batch size limit
+    if batch_size > 0:
+        to_import = to_import[:batch_size]
+
+    total = len(to_import)
+    retrying = sum(1 for n in to_import if n.page_id in failed_notion)
     xray_log(
-        "data", "notion-import",
-        f"Importing {len(to_import)} unmatched Notion recordings into Chronos..."
+        "data",
+        "notion-import",
+        f"Importing {total} recordings ({retrying} retries) into Chronos...",
     )
+
+    # Initialize progress
+    progress = {
+        "total": total,
+        "completed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "current_title": "",
+        "current_index": 0,
+        "status": "running",
+        "errors": [],
+    }
+    _save_progress(progress)
 
     successes = 0
     failures = 0
-    errors = []
+    errors: List[str] = []
 
     for i, nrec in enumerate(to_import):
+        # Update progress before each item
+        progress["current_index"] = i + 1
+        progress["current_title"] = (nrec.title or "Untitled")[:60]
+        progress["status"] = "running"
+        _save_progress(progress)
+
         if progress_callback:
-            progress_callback(i + 1, len(to_import), nrec.title)
+            progress_callback(i + 1, total, nrec.title)
 
         ok, msg = import_notion_recording(
-            nrec.page_id, session,
+            nrec.page_id,
+            session,
             process=process,
             index=index,
+            prefetched=nrec,
         )
         if ok:
             successes += 1
+            progress["completed"] = successes
         else:
             failures += 1
             errors.append(msg)
+            progress["failed"] = failures
+            progress["errors"] = errors[-5:]  # keep last 5
+
+        _save_progress(progress)
 
         xray_log(
-            "pipeline", "notion-import",
-            f"Imported {i + 1}/{len(to_import)}: {'✓' if ok else '✗'} {nrec.title[:40]}"
+            "pipeline",
+            "notion-import",
+            f"[{i + 1}/{total}] {'✓' if ok else '✗'} {nrec.title[:40]}",
         )
 
+    # Mark batch done
+    progress["status"] = "done"
+    _save_progress(progress)
+
     xray_log(
-        "pipeline", "notion-import",
-        f"Batch import complete: {successes} succeeded, {failures} failed"
+        "pipeline",
+        "notion-import",
+        f"Batch complete: {successes} succeeded, {failures} failed out of {total}",
     )
     return successes, failures, errors
 
@@ -427,6 +645,27 @@ def write_back_to_notion(
         for name in ["Events", "events", "Event Count", "event_count"]:
             _set_number(name, len(events))
 
+        # Richer write-back: AI summary and cleaned transcript
+        rec = get_chronos_recording(session, recording_id)
+        if rec:
+            # Build AI summary from event clean texts
+            ai_summary = ""
+            if rec.plaud_ai_summary:
+                ai_summary = str(rec.plaud_ai_summary)
+            elif events:
+                ai_summary = " | ".join(
+                    str(ev.clean_text)[:200] for ev in events[:5] if ev.clean_text
+                )
+            if ai_summary:
+                for name in ["Summary", "summary", "ChatGPT Summary", "AI Summary"]:
+                    _set_rich_text(name, ai_summary)
+
+            # Cleaned transcript text
+            if rec.transcript:
+                clean_transcript = str(rec.transcript)
+                for name in ["Transcript", "transcript", "Text", "text"]:
+                    _set_rich_text(name, clean_transcript)
+
         if not properties:
             return False, "No matching writable properties found in Notion page schema"
 
@@ -443,6 +682,104 @@ def write_back_to_notion(
     except Exception as e:
         logger.error(f"Error writing back to Notion page {page_id}: {e}", exc_info=True)
         return False, f"Write-back error: {str(e)}"
+
+
+def write_back_all_matched(
+    match_map: Dict[str, Optional[str]],
+    session: Session,
+) -> Tuple[int, int, List[str]]:
+    """Write back Chronos enrichments to ALL matched Notion pages.
+
+    Args:
+        match_map: {notion_page_id → chronos_recording_id or None}
+        session: SQLAlchemy session
+
+    Returns:
+        (success_count, fail_count, error_messages)
+    """
+    matched_page_ids = [pid for pid, cid in match_map.items() if cid]
+    if not matched_page_ids:
+        return 0, 0, ["No matched recordings to write back"]
+
+    success = 0
+    failed = 0
+    errors = []
+
+    for page_id in matched_page_ids:
+        ok, msg = write_back_to_notion(page_id, session)
+        if ok:
+            success += 1
+        else:
+            failed += 1
+            errors.append(f"{page_id[:8]}…: {msg}")
+
+    logger.info(
+        f"Batch write-back: {success} succeeded, {failed} failed out of {len(matched_page_ids)}"
+    )
+    return success, failed, errors
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Change Detection — Stale Import Detection
+# ═══════════════════════════════════════════════════════════════════
+
+
+def detect_stale_imports(
+    recordings: List,
+    match_map: Dict[str, Optional[str]],
+    session: Session,
+) -> Dict[str, bool]:
+    """Detect Notion pages that were edited after their Chronos import.
+
+    Returns: {notion_page_id → True if stale (Notion edited after import)}
+    """
+    stale_map: Dict[str, bool] = {}
+
+    # Build lookup: notion_page_id → ChronosRecording.ingested_at
+    import_times: Dict[str, datetime] = {}
+    for rec in (
+        session.query(ChronosRecording)
+        .filter(
+            ChronosRecording.source == "notion",
+            ChronosRecording.processing_status == "completed",
+        )
+        .all()
+    ):
+        pid = str(rec.recording_id)[7:]  # strip "notion:" prefix
+        if rec.ingested_at:
+            import_times[pid] = (
+                rec.ingested_at
+                if isinstance(rec.ingested_at, datetime)
+                else datetime.utcnow()
+            )
+
+    for nrec in recordings:
+        if hasattr(nrec, "page_id"):
+            page_id = nrec.page_id
+            edited = nrec.last_edited_time
+        elif isinstance(nrec, dict):
+            page_id = nrec.get("page_id", "")
+            edited = nrec.get("last_edited_time", "")
+        else:
+            continue
+
+        if not match_map.get(page_id):
+            continue  # Not imported
+
+        ingested = import_times.get(page_id)
+        if not ingested or not edited:
+            continue
+
+        try:
+            edited_dt = datetime.fromisoformat(edited.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+            if edited_dt > ingested:
+                stale_map[page_id] = True
+        except (ValueError, TypeError):
+            pass
+
+    return stale_map
 
 
 # ═══════════════════════════════════════════════════════════════════

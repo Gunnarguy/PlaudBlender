@@ -154,6 +154,9 @@ class NotionService:
         self._settings.notion_database_id = db_id
         # Persist to .env
         self._save_env_key("NOTION_DATABASE_ID", db_id)
+        # Invalidate the module-level singleton so the next call picks up the new ID
+        global _notion_service
+        _notion_service = None
 
     @staticmethod
     def _save_env_key(key: str, value: str) -> None:
@@ -558,8 +561,22 @@ _notion_service: Optional[NotionService] = None
 
 
 def get_notion_service() -> NotionService:
-    """Get or create the singleton NotionService."""
+    """Get or create the NotionService singleton.
+
+    Recreates the instance when the configured database ID changes
+    (e.g. after the user picks a different DB in Settings).
+    """
     global _notion_service
+    if _notion_service is not None:
+        current_db_id = get_settings().notion_database_id
+        if current_db_id != _notion_service._settings.notion_database_id:
+            _notion_service = None  # stale — recreate
     if _notion_service is None:
         _notion_service = NotionService()
     return _notion_service
+
+
+def reset_notion_service() -> None:
+    """Clear the cached singleton so the next call creates a fresh one."""
+    global _notion_service
+    _notion_service = None
