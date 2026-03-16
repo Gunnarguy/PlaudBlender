@@ -139,6 +139,7 @@
     var allEvents = []; // accumulates ALL events ever seen this session
     var highestSeq = 0; // last seq we received — for incremental polling
     var MAX_CLIENT = 2000; // keep up to 2000 events client-side
+    var MAX_VISIBLE = 500; // max DOM rows before trimming old ones
 
     // ── Filters ──
     document
@@ -322,7 +323,15 @@
       });
     }
 
-    function buildRow(e) {
+    function matchesFilter(e) {
+      if (filter === "all") return true;
+      if (filter === "errors") return e.level === "error" || e.level === "warn";
+      var group = FILTER_GROUPS[filter];
+      if (group) return group.indexOf(e.source) !== -1;
+      return e.source === filter;
+    }
+
+    function buildRow(e, fresh) {
       var src = e.source || "?";
       var meta = srcMeta(src);
       var srcCls = "xp-src xp-src-" + meta.cls;
@@ -335,6 +344,7 @@
             : lvl === "perf"
               ? " perf"
               : "";
+      var freshCls = fresh ? " xp-fresh" : "";
 
       var dur = "";
       if (e.duration_ms != null) {
@@ -352,13 +362,21 @@
           "</span></span>";
       }
       var dtl = e.detail
-        ? '<span class="xp-dtl">' + esc(e.detail) + "</span>"
+        ? ' <span class="xp-dtl">' + esc(e.detail) + "</span>"
         : "";
+
+      var msgContent = e.message || "";
+      var msgLine =
+        msgContent || dtl
+          ? '<div class="xp-msg">' + esc(msgContent) + dtl + "</div>"
+          : "";
 
       return (
         '<div class="xp-row' +
         lvlCls +
+        freshCls +
         '">' +
+        '<div class="xp-meta">' +
         '<span class="xp-ts">' +
         fmtTs(e.ts) +
         "</span>" +
@@ -372,26 +390,69 @@
         '<span class="xp-op">' +
         esc(opLabel(e.op || "")) +
         "</span>" +
-        '<span class="xp-msg">' +
-        esc(e.message || "") +
-        "</span>" +
+        '<span style="flex:1"></span>' +
         dur +
-        dtl +
+        "</div>" +
+        msgLine +
         "</div>"
       );
     }
 
+    function updateCount() {
+      var evts = filterEvents();
+      var n = filter === "all" ? allEvents.length : evts.length;
+      countEl.textContent = n + (n === 1 ? " event" : " events");
+    }
+
+    // Full re-render — used for filter changes and clear only
     function renderAll() {
       var evts = filterEvents();
       if (!evts.length) {
         list.innerHTML =
-          '<div class="xp-empty"><span class="xp-empty-icon">📡</span>No activity yet.</div>';
+          '<div class="xp-empty"><span class="xp-empty-icon">📡</span>Listening\u2026</div>';
       } else {
-        list.innerHTML = evts.map(buildRow).join("");
+        list.innerHTML = evts
+          .map(function (e) {
+            return buildRow(e, false);
+          })
+          .join("");
       }
       updateStats();
-      var n = filter === "all" ? allEvents.length : evts.length;
-      countEl.textContent = n + (n === 1 ? " event" : " events");
+      updateCount();
+    }
+
+    // Incremental DOM prepend — only adds new rows, no flicker
+    function appendNewRows(newEvents) {
+      var empty = list.querySelector(".xp-empty");
+      if (empty) empty.remove();
+
+      var wasAtTop = list.scrollTop < 10;
+
+      var filtered = newEvents.filter(matchesFilter);
+      if (!filtered.length) {
+        updateCount();
+        return;
+      }
+
+      var html = filtered
+        .map(function (e) {
+          return buildRow(e, true);
+        })
+        .join("");
+      var temp = document.createElement("div");
+      temp.innerHTML = html;
+
+      var frag = document.createDocumentFragment();
+      while (temp.firstChild) frag.appendChild(temp.firstChild);
+      list.insertBefore(frag, list.firstChild);
+
+      // Trim old DOM rows to keep performance smooth
+      while (list.children.length > MAX_VISIBLE) {
+        list.removeChild(list.lastChild);
+      }
+
+      if (wasAtTop) list.scrollTop = 0;
+      updateCount();
     }
 
     function updateStats() {
@@ -458,12 +519,12 @@
             if (data[i].seq > batchMax) batchMax = data[i].seq;
           }
           // Merge into allEvents (newest-first order)
-          // data is newest-first, allEvents is newest-first
           allEvents = data.concat(allEvents);
-          // Trim to client max
           if (allEvents.length > MAX_CLIENT) allEvents.length = MAX_CLIENT;
           highestSeq = batchMax;
-          renderAll();
+          // Incremental DOM update — no full re-render
+          appendNewRows(data);
+          updateStats();
         })
         .catch(function () {});
     }

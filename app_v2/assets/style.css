@@ -9,7 +9,7 @@
 :root {
   /* ── Core Palette ──────────────────────────────────────────────────────── */
   --bg-primary: #f8f9fb;
-    --bg-secondary: #ffffff;
+  --bg-secondary: #ffffff;
     --bg-tertiary: #f0f2f5;
     --bg-hover: #e8ebef;
     --bg-elevated: #ffffff;
@@ -17,17 +17,17 @@
 
   --text-primary: #1a1d21;
   --text-secondary: #57606a;
-    --text-muted: #8b949e;
+  --text-muted: #8b949e;
     --text-bright: #0d1117;
 
   --border-primary: rgba(208, 215, 222, 0.7);
   --border-secondary: rgba(227, 232, 237, 0.6);
-    --border-focus: #0969da;
+  --border-focus: #0969da;
     --border-glow: rgba(9, 105, 218, 0.25);
 
   /* ── Accent Colors ─────────────────────────────────────────────────────── */
   --accent-primary: #0969da;
-    --accent-green: #1a7f37;
+  --accent-green: #1a7f37;
     --accent-yellow: #9a6700;
     --accent-red: #cf222e;
     --accent-purple: #8250df;
@@ -37,7 +37,7 @@
 
   /* ── Category Colors ───────────────────────────────────────────────────── */
   --cat-work: #0969da;
-    --cat-personal: #8250df;
+  --cat-personal: #8250df;
     --cat-meeting: #1a7f37;
     --cat-reflection: #9a6700;
     --cat-idea: #bf3989;
@@ -46,7 +46,7 @@
 
   /* ── Spacing (fluid) ───────────────────────────────────────────────────── */
   --sp-2: 2px;
-    --sp-4: 4px;
+  --sp-4: 4px;
     --sp-6: 6px;
     --sp-8: 8px;
     --sp-12: 12px;
@@ -72,7 +72,7 @@
 
   --text-xs: 0.6875rem;
   --text-sm: 0.8125rem;
-    --text-base: 0.9375rem;
+  --text-base: 0.9375rem;
     --text-lg: 1.0625rem;
     --text-xl: 1.1875rem;
     --text-2xl: 1.375rem;
@@ -92,13 +92,13 @@
 
   /* ── Shadows ───────────────────────────────────────────────────────────── */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
     --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
     --shadow-glow: 0 0 24px rgba(9, 105, 218, 0.08);
 
   /* ── Transitions ───────────────────────────────────────────────────────── */
   --transition-fast: 120ms ease;
-    --transition-normal: 220ms ease;
+  --transition-normal: 220ms ease;
     --transition-slow: 400ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -218,7 +218,7 @@ pre {
   align-items: center;
   gap: var(--sp-8);
   padding: var(--sp-12) var(--sp-24);
-    background: var(--bg-glass);
+  background: var(--bg-glass);
     backdrop-filter: blur(12px) saturate(1.4);
     -webkit-backdrop-filter: blur(12px) saturate(1.4);
     border-bottom: 1px solid var(--border-primary);
@@ -243,7 +243,7 @@ pre {
   flex-direction: column;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-primary);
-  }
+}
 .sidebar-header {
   padding: var(--sp-24);
   border-bottom: 1px solid var(--border-primary);
@@ -262,7 +262,7 @@ pre {
   font-size: 20px;
   font-weight: 700;
   color: var(--text-bright);
-    letter-spacing: -0.03em;
+  letter-spacing: -0.03em;
 }
 .logo-version {
   font-size: 11px;
@@ -283,13 +283,13 @@ pre {
   align-items: center;
   gap: var(--sp-12);
   padding: var(--sp-8) var(--sp-16);
-    border-radius: var(--radius-lg);
+  border-radius: var(--radius-lg);
   color: var(--text-secondary);
   background: transparent;
   border: none;
   cursor: pointer;
   font-size: var(--text-sm);
-    font-weight: 500;
+  font-weight: 500;
   width: 100%;
   text-align: left;
   transition: all var(--transition-fast);
@@ -323,7 +323,7 @@ pre {
   border-top: 1px solid var(--border-primary);
   display: flex;
   flex-direction: column;
-    gap: var(--sp-2);
+  gap: var(--sp-2);
 }
 
 .sync-btn {
@@ -338,7 +338,7 @@ pre {
   flex-direction: column;
   gap: var(--sp-8);
   flex: 1;
-    max-width: 640px;
+  max-width: 640px;
 }
 
 .search-row {
@@ -379,7 +379,7 @@ pre {
   color: var(--text-secondary);
   cursor: pointer;
   font-size: var(--text-sm);
-    transition: all var(--transition-fast);
+  transition: all var(--transition-fast);
     white-space: nowrap;
 }
 
@@ -685,7 +685,7 @@ pre {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-    margin-bottom: var(--sp-12);
+  margin-bottom: var(--sp-12);
     padding-bottom: var(--sp-8);
     border-bottom: 1px solid rgba(79, 70, 229, 0.12);
 }
@@ -992,7 +992,7 @@ pre {
   flex-direction: column;
   gap: var(--sp-6);
   padding: var(--sp-16) var(--sp-20);
-    background: var(--bg-tertiary);
+  background: var(--bg-tertiary);
   border: 1px solid var(--border-secondary);
   border-radius: var(--radius-lg);
   cursor: pointer;
@@ -1220,7 +1220,7 @@ pre {
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-primary);
   z-index: 200;
-    overflow-y: auto;
+  overflow-y: auto;
     transition: right var(--transition-slow);
     box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12);
 }
@@ -1236,7 +1236,7 @@ pre {
   display: flex;
   justify-content: space-between;
   align-items: center;
-    padding: var(--sp-16) var(--sp-24);
+  padding: var(--sp-16) var(--sp-24);
     background: var(--bg-glass);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -1306,7 +1306,7 @@ pre {
   border-bottom: 2px solid transparent !important;
   margin-bottom: -2px !important;
   transition:
-      color var(--transition-fast),
+    color var(--transition-fast),
       border-color var(--transition-fast) !important;
   white-space: nowrap !important;
 }
@@ -1367,7 +1367,7 @@ pre {
   height: 100%;
   min-height: 400px;
   padding: var(--sp-48);
-    text-align: center;
+  text-align: center;
     color: var(--text-muted);
   background: linear-gradient(180deg,
         var(--bg-secondary) 0%,
@@ -1475,7 +1475,7 @@ pre {
   cursor: pointer;
   margin-bottom: var(--sp-16);
   font-size: var(--text-sm);
-    transition: all var(--transition-fast);
+  transition: all var(--transition-fast);
 }
 
 .back-btn:hover {
@@ -1503,7 +1503,7 @@ pre {
   align-items: center;
   gap: var(--sp-8);
   color: var(--text-secondary);
-    font-size: var(--text-sm);
+  font-size: var(--text-sm);
 }
 
 .time-range {
@@ -1520,7 +1520,7 @@ pre {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-12);
-    color: var(--text-primary);
+  color: var(--text-primary);
     font-size: var(--text-sm);
 }
 
@@ -1585,7 +1585,7 @@ pre {
 .category-label {
   width: 80px;
   font-size: var(--text-xs);
-    color: var(--text-primary);
+  color: var(--text-primary);
     text-align: right;
   text-transform: capitalize;
   font-weight: 500;
@@ -1608,7 +1608,7 @@ pre {
 .category-pct {
   width: 38px;
   font-size: var(--text-xs);
-    color: var(--text-muted);
+  color: var(--text-muted);
   font-family: var(--font-mono);
   text-align: right;
 }
@@ -1670,7 +1670,7 @@ pre {
   justify-content: space-between;
   margin-top: var(--sp-4);
   font-size: 11px;
-    color: var(--text-muted);
+  color: var(--text-muted);
   font-family: var(--font-mono);
 }
 
@@ -1815,7 +1815,7 @@ pre {
 .event-card {
   display: flex;
   gap: var(--sp-12);
-    padding: var(--sp-16);
+  padding: var(--sp-16);
     background: var(--bg-tertiary);
     border: 1px solid var(--border-secondary);
   border-radius: var(--radius-lg);
@@ -1917,7 +1917,7 @@ pre {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 2px 10px;
-    border-radius: var(--radius-full);
+  border-radius: var(--radius-full);
 }
 
 .event-category.work {
@@ -2030,7 +2030,7 @@ pre {
   font-size: var(--text-xs);
   color: var(--text-muted);
   display: flex;
-    align-items: center;
+  align-items: center;
     gap: var(--sp-4);
   }
 
@@ -2054,14 +2054,14 @@ pre {
   background: var(--accent-primary);
   border-radius: var(--radius-sm) 0 0 var(--radius-sm);
   opacity: 0;
-    transition: opacity var(--transition-fast);
+  transition: opacity var(--transition-fast);
   }
 
 .event-item:hover {
   border-color: var(--accent-primary);
   transform: translateX(3px);
   box-shadow: var(--shadow-md);
-  }
+}
 
 .event-item:hover::before {
   opacity: 1;
@@ -2143,7 +2143,7 @@ pre {
   flex-wrap: wrap;
   gap: var(--sp-4);
   margin-top: var(--sp-12);
-    padding-top: var(--sp-8);
+  padding-top: var(--sp-8);
     border-top: 1px dashed var(--border-secondary);
 }
 
@@ -2151,7 +2151,7 @@ pre {
   font-size: var(--text-xs);
   font-weight: 500;
   padding: 3px 10px;
-    background: var(--bg-secondary);
+  background: var(--bg-secondary);
     border: 1px solid var(--border-secondary);
     border-radius: var(--radius-full);
     color: var(--text-secondary);
@@ -2170,7 +2170,7 @@ pre {
   align-items: center;
   gap: var(--sp-4);
   padding: var(--sp-4) var(--sp-8);
-    background: var(--bg-tertiary);
+  background: var(--bg-tertiary);
     border: 1px solid var(--border-secondary);
     border-radius: var(--radius-sm);
     font-size: var(--text-xs);
@@ -2224,7 +2224,7 @@ pre {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-    gap: var(--sp-20);
+  gap: var(--sp-20);
 }
 
 /* ── Topics controls ──────────────────────────────────────── */
@@ -2282,7 +2282,7 @@ pre {
 .topic-card {
   display: flex;
   justify-content: space-between;
-    align-items: center;
+  align-items: center;
     padding: var(--sp-12) var(--sp-16);
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
@@ -2295,7 +2295,7 @@ pre {
   border-color: var(--accent-primary);
   background: var(--bg-tertiary);
   transform: translateY(-2px);
-    box-shadow: var(--shadow-md), var(--shadow-glow);
+  box-shadow: var(--shadow-md), var(--shadow-glow);
 }
 
 .topic-name {
@@ -2310,7 +2310,7 @@ pre {
   font-family: var(--font-mono);
   background: var(--bg-tertiary);
   padding: 2px 8px;
-    border-radius: var(--radius-full);
+  border-radius: var(--radius-full);
   }
 
 .topics-empty {
@@ -2356,7 +2356,7 @@ pre {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-    font-size: var(--text-sm);
+  font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
@@ -2372,13 +2372,13 @@ pre {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-8);
-    margin-top: var(--sp-8);
+  margin-top: var(--sp-8);
 }
 
 .timeline-dot {
   font-size: var(--text-xs);
   color: var(--accent-primary);
-    background: rgba(9, 105, 218, 0.08);
+  background: rgba(9, 105, 218, 0.08);
     padding: var(--sp-4) var(--sp-12);
     border-radius: var(--radius-full);
     font-family: var(--font-mono);
@@ -2404,7 +2404,7 @@ pre {
   background: var(--bg-secondary);
   border: 1px solid var(--border-secondary);
   border-radius: var(--radius-lg);
-    cursor: pointer;
+  cursor: pointer;
     transition: all var(--transition-fast);
   }
 
@@ -2418,7 +2418,7 @@ pre {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
-    margin-bottom: var(--sp-6);
+  margin-bottom: var(--sp-6);
     font-size: var(--text-xs);
   }
 
@@ -2524,7 +2524,7 @@ pre {
   border-radius: var(--radius-lg);
   color: var(--text-secondary);
   font-size: var(--text-xs);
-    cursor: pointer;
+  cursor: pointer;
     transition: all var(--transition-fast);
 }
 
@@ -2558,7 +2558,7 @@ pre {
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   color: var(--text-primary);
-    cursor: pointer;
+  cursor: pointer;
     font-size: var(--text-xs);
     white-space: nowrap;
     transition: all var(--transition-fast);
@@ -2599,14 +2599,14 @@ pre {
   text-align: center;
   gap: var(--sp-8);
   color: var(--text-muted);
-  }
+}
 
 .graph-legend {
   display: flex;
   align-items: center;
   gap: var(--sp-8);
   padding: var(--sp-8) var(--sp-16);
-    margin-top: var(--sp-8);
+  margin-top: var(--sp-8);
     flex-wrap: wrap;
     font-size: var(--text-xs);
     color: var(--text-secondary);
@@ -2763,7 +2763,7 @@ pre {
   color: var(--accent-primary);
   font-size: var(--text-xs);
   font-weight: 600;
-    text-transform: uppercase;
+  text-transform: uppercase;
     letter-spacing: 0.05em;
     background: rgba(9, 105, 218, 0.08);
     padding: var(--sp-2) var(--sp-8);
@@ -2885,7 +2885,7 @@ pre {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
-    padding: var(--sp-16);
+  padding: var(--sp-16);
     background: var(--bg-tertiary);
     border: 1px solid var(--border-secondary);
     border-radius: var(--radius-lg);
@@ -3171,7 +3171,7 @@ pre {
 .charts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    gap: var(--sp-20);
+  gap: var(--sp-20);
   }
 .chart-card {
   background: var(--bg-secondary);
@@ -3236,13 +3236,13 @@ a.plaud-connect-btn:hover {
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-xl);
   padding: var(--sp-24);
-    margin-bottom: var(--sp-20);
+  margin-bottom: var(--sp-20);
 }
 
 .sync-status-card h4 {
   margin: 0 0 var(--sp-16);
   font-size: var(--text-sm);
-    color: var(--text-muted);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 700;
@@ -3287,7 +3287,7 @@ a.plaud-connect-btn:hover {
 .sync-options h4 {
   margin: 0 0 var(--sp-12);
   font-size: var(--text-sm);
-    color: var(--text-muted);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 700;
@@ -3336,7 +3336,7 @@ a.plaud-connect-btn:hover {
   border: none;
   border-radius: var(--radius-lg);
   font-size: var(--text-base);
-    font-weight: 600;
+  font-weight: 600;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
@@ -3344,7 +3344,7 @@ a.plaud-connect-btn:hover {
 .sync-action-btn:hover {
   background: #0550ae;
   transform: translateY(-1px);
-    box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-md);
   }
 
 .sync-action-btn.secondary {
@@ -3366,7 +3366,7 @@ a.plaud-connect-btn:hover {
 .sync-result {
   margin-top: var(--sp-20);
   padding: var(--sp-16);
-    border-radius: var(--radius-lg);
+  border-radius: var(--radius-lg);
 }
 
 .sync-success {
@@ -3472,7 +3472,7 @@ a.plaud-connect-btn:hover {
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-xl);
   padding: var(--sp-24);
-    margin-bottom: var(--sp-16);
+  margin-bottom: var(--sp-16);
 }
 
 .settings-section h4 {
@@ -3601,7 +3601,7 @@ a.plaud-connect-btn:hover {
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-    word-break: break-all;
+  word-break: break-all;
 }
 
 .param-note {
@@ -3616,7 +3616,7 @@ a.plaud-connect-btn:hover {
 .settings-action-buttons {
   display: flex;
   gap: var(--sp-8);
-    flex-wrap: wrap;
+  flex-wrap: wrap;
     margin-top: var(--sp-16);
 }
 
@@ -3641,7 +3641,7 @@ a.plaud-connect-btn:hover {
 .settings-action-btn.secondary {
   border-color: var(--accent-red);
   color: var(--accent-red);
-  }
+}
 
 .settings-action-btn.secondary:hover {
   background: rgba(207, 34, 46, 0.1);
@@ -3726,7 +3726,7 @@ a.plaud-connect-btn:hover {
 .ctl-output {
   margin-top: var(--sp-12);
   padding: var(--sp-12);
-    background: var(--bg-primary);
+  background: var(--bg-primary);
     border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   font-family: var(--font-mono);
@@ -3734,7 +3734,7 @@ a.plaud-connect-btn:hover {
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 220px;
-    overflow-y: auto;
+  overflow-y: auto;
     color: var(--text-secondary);
 }
 .about-stack {
@@ -3770,7 +3770,7 @@ a.plaud-connect-btn:hover {
   color: var(--text-secondary);
   .loading-spinner {
     width: 24px;
-      height: 24px;
+    height: 24px;
       border: 2px solid var(--bg-tertiary);
       border-top-color: var(--accent-primary);
       border-radius: 50%;
@@ -4163,7 +4163,7 @@ a.plaud-connect-btn:hover {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
-    margin-top: var(--sp-6);
+  margin-top: var(--sp-6);
 }
 
 .webhook-item {
@@ -4171,7 +4171,7 @@ a.plaud-connect-btn:hover {
   align-items: center;
   gap: var(--sp-8);
   padding: var(--sp-6) var(--sp-8);
-    border-radius: var(--radius-sm);
+  border-radius: var(--radius-sm);
     background: var(--surface-secondary);
     font-size: 0.82rem;
 }
@@ -4203,7 +4203,7 @@ a.plaud-connect-btn:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-    margin-bottom: var(--sp-8);
+  margin-bottom: var(--sp-8);
 }
 
 .heatmap-title {
@@ -4247,9 +4247,9 @@ a.plaud-connect-btn:hover {
   align-items: center;
   justify-content: center;
   transition:
-      transform 0.15s ease,
+    transform 0.15s ease,
       box-shadow 0.15s ease;
-    min-height: 28px;
+      min-height: 28px;
 }
 
 .heatmap-cell:hover {
@@ -4319,7 +4319,7 @@ a.plaud-connect-btn:hover {
   display: flex;
   align-items: center;
   gap: 6px;
-    margin: 4px 0 8px;
+  margin: 4px 0 8px;
 }
 
 .ambient-tag {
@@ -4457,7 +4457,7 @@ a.plaud-connect-btn:hover {
   align-items: center;
   gap: 6px;
   padding: var(--sp-6) 0;
-    margin-bottom: var(--sp-8);
+  margin-bottom: var(--sp-8);
     font-size: 0.78rem;
 }
 
@@ -4480,7 +4480,7 @@ a.plaud-connect-btn:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-    margin-top: var(--sp-6);
+  margin-top: var(--sp-6);
     flex-wrap: wrap;
 }
 
@@ -4489,7 +4489,7 @@ a.plaud-connect-btn:hover {
   align-items: center;
   padding: 3px 10px;
   border-radius: 999px;
-    font-size: 0.72rem;
+  font-size: 0.72rem;
     background: var(--surface-tertiary);
   color: var(--text-secondary);
   border: 1px solid var(--border-subtle);
@@ -4543,7 +4543,7 @@ a.plaud-connect-btn:hover {
   font-size: 0.75rem;
   color: var(--text-muted);
   font-family: var(--font-mono);
-    white-space: nowrap;
+  white-space: nowrap;
     min-width: 72px;
   }
 
@@ -4552,7 +4552,7 @@ a.plaud-connect-btn:hover {
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 0.68rem;
-    color: #fff;
+  color: #fff;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
@@ -4619,7 +4619,7 @@ a.plaud-connect-btn:hover {
   color: var(--text-secondary);
   z-index: 9999;
   pointer-events: none;
-    opacity: 0;
+  opacity: 0;
     transition: opacity 0.3s ease;
 }
 
@@ -4631,7 +4631,7 @@ a.plaud-connect-btn:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-    gap: var(--sp-8);
+  gap: var(--sp-8);
     margin-bottom: var(--sp-8);
   }
 
@@ -4643,7 +4643,7 @@ a.plaud-connect-btn:hover {
   font-size: 0.8rem;
   color: var(--text-primary);
   width: 180px;
-    transition: border-color 0.2s;
+  transition: border-color 0.2s;
 }
 
 .event-filter-input:focus {
@@ -4655,7 +4655,7 @@ a.plaud-connect-btn:hover {
 @keyframes skeleton-pulse {
   0%,
   100% {
-      opacity: 0.4;
+    opacity: 0.4;
     }
 
     50% {
@@ -4772,7 +4772,7 @@ a.plaud-connect-btn:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
-    justify-content: center;
+  justify-content: center;
     min-height: 400px;
     text-align: center;
     padding: var(--sp-48);
@@ -4859,7 +4859,7 @@ a.plaud-connect-btn:hover {
   background: rgba(255, 255, 255, 0.02);
   border-left: 3px solid transparent;
   transition:
-      border-color 0.3s,
+    border-color 0.3s,
       background 0.3s;
 }
 
@@ -5277,7 +5277,7 @@ a.plaud-connect-btn:hover {
   font-weight: 600;
   cursor: pointer;
   transition:
-      background 0.2s,
+    background 0.2s,
       transform 0.1s;
   white-space: nowrap;
 }
@@ -5516,8 +5516,8 @@ a.plaud-connect-btn:hover {
   position: fixed;
   bottom: 16px;
   right: 16px;
-  width: 480px;
-  height: 380px;
+  width: 520px;
+    height: 400px;
   z-index: 9998;
   border-radius: 14px;
   overflow: hidden;
@@ -5526,10 +5526,10 @@ a.plaud-connect-btn:hover {
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid rgba(99, 102, 241, 0.25);
   box-shadow:
-      0 8px 40px rgba(0, 0, 0, 0.55),
+    0 8px 40px rgba(0, 0, 0, 0.55),
       0 0 16px rgba(99, 102, 241, 0.1);
-    font-family:
-      -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+      font-family:
+        -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
   font-size: 13px;
   color: #e2e8f0;
   display: flex;
@@ -5541,7 +5541,7 @@ a.plaud-connect-btn:hover {
 
 .xray-pip:hover {
   box-shadow:
-      0 8px 44px rgba(0, 0, 0, 0.6),
+    0 8px 44px rgba(0, 0, 0, 0.6),
       0 0 20px rgba(99, 102, 241, 0.15);
 }
 
@@ -5569,7 +5569,7 @@ a.plaud-connect-btn:hover {
   flex-shrink: 0;
   background: linear-gradient(180deg,
         rgba(22, 24, 40, 0.98) 0%,
-        rgba(14, 16, 28, 0.98) 100%);
+    rgba(14, 16, 28, 0.98) 100%);
   border-bottom: 1px solid rgba(30, 41, 59, 0.4);
   cursor: grab;
   user-select: none;
@@ -5639,7 +5639,7 @@ a.plaud-connect-btn:hover {
 
 @keyframes xp-pulse {
   0%,
-    100% {
+  100% {
       opacity: 1;
     }
   
@@ -5768,30 +5768,48 @@ a.plaud-connect-btn:hover {
 }
 
 .xp-row {
+  padding: 6px 12px 5px;
+    border-bottom: 1px solid rgba(30, 41, 59, 0.15);
+    animation: xp-slide 0.25s ease-out;
+    transition: background 0.15s;
+    min-height: 28px;
+  }
+  
+  .xp-meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 12px;
-  border-bottom: 1px solid rgba(30, 41, 59, 0.15);
-  animation: xp-fade 0.18s ease-out;
-  transition: background 0.1s;
-  min-height: 28px;
+  min-height: 22px;
 }
 
-@keyframes xp-fade {
+@keyframes xp-slide {
   from {
-      opacity: 0;
-      transform: translateY(-2px);
+    opacity: 0;
+    transform: translateY(-8px);
     }
-  
+    
     to {
       opacity: 1;
       transform: translateY(0);
     }
+    }
+.xp-fresh {
+  animation:
+    xp-slide 0.25s ease-out,
+    xp-glow 2.5s ease-out;
+}
+
+@keyframes xp-glow {
+  0% {
+    background: rgba(99, 102, 241, 0.12);
   }
-  
-  .xp-row:hover {
-    background: rgba(99, 102, 241, 0.04);
+
+  100% {
+    background: transparent;
+  }
+}
+.xp-row:hover {
+  background: rgba(99, 102, 241, 0.06);
   }
   
   .xp-row.warn {
@@ -5930,11 +5948,13 @@ a.plaud-connect-btn:hover {
 
 .xp-msg {
   color: #e2e8f0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 0.82rem;
+  line-height: 1.45;
+    word-break: break-word;
+    padding: 2px 0 1px 54px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
 }
 
 .xp-dur {
@@ -5994,13 +6014,14 @@ a.plaud-connect-btn:hover {
 .xp-dtl {
   color: #94a3b8;
   font-size: 0.72rem;
-  max-width: 140px;
+  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   background: rgba(30, 41, 59, 0.25);
   padding: 2px 6px;
   border-radius: 4px;
+  flex-shrink: 0;
 }
 
 .xp-empty {
@@ -6098,12 +6119,12 @@ a.plaud-connect-btn:hover {
 .notion-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-    border-radius: var(--radius-xl);
+  border-radius: var(--radius-xl);
     padding: var(--sp-20) var(--sp-24);
   transition:
-      box-shadow 0.2s ease,
+    box-shadow 0.2s ease,
       border-color 0.2s ease;
-  }
+    }
 
 .notion-card:hover {
   box-shadow: var(--shadow-sm);
@@ -6112,7 +6133,7 @@ a.plaud-connect-btn:hover {
 .notion-card h3 {
   margin: 0 0 var(--sp-12);
   font-size: var(--text-lg);
-    font-weight: 650;
+  font-weight: 650;
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
@@ -6133,7 +6154,7 @@ a.plaud-connect-btn:hover {
 .notion-config-hint code {
   background: rgba(9, 105, 218, 0.08);
   color: var(--accent-primary);
-    padding: 2px 6px;
+  padding: 2px 6px;
     border-radius: var(--radius-sm);
     font-size: var(--text-xs);
     font-family: var(--font-mono);
@@ -6158,7 +6179,7 @@ a.plaud-connect-btn:hover {
   color: var(--text-secondary);
   padding: var(--sp-4) var(--sp-12);
   background: var(--bg-tertiary);
-    border-radius: var(--radius-full);
+  border-radius: var(--radius-full);
 }
 
 .notion-status-item .status-icon {
@@ -6180,7 +6201,7 @@ a.plaud-connect-btn:hover {
 .notion-error {
   margin-top: var(--sp-12);
   padding: var(--sp-8) var(--sp-16);
-    background: rgba(207, 34, 46, 0.05);
+  background: rgba(207, 34, 46, 0.05);
     border: 1px solid rgba(207, 34, 46, 0.15);
     border-radius: var(--radius-md);
     font-size: var(--text-sm);
@@ -6190,7 +6211,7 @@ a.plaud-connect-btn:hover {
 .notion-error-panel {
   padding: var(--sp-16);
   background: rgba(207, 34, 46, 0.04);
-    border: 1px solid rgba(207, 34, 46, 0.12);
+  border: 1px solid rgba(207, 34, 46, 0.12);
     border-radius: var(--radius-md);
 }
 
@@ -6227,12 +6248,12 @@ a.plaud-connect-btn:hover {
   flex-direction: column;
   padding: var(--sp-16);
   border-radius: var(--radius-lg);
-    background: var(--bg-tertiary);
+  background: var(--bg-tertiary);
     border: 1px solid var(--border-secondary);
   transition:
-      transform 0.15s ease,
+    transform 0.15s ease,
       box-shadow 0.15s ease;
-  }
+    }
 
 .interplay-stat:hover {
   transform: translateY(-2px);
@@ -6312,7 +6333,7 @@ a.plaud-connect-btn:hover {
   display: flex;
   gap: var(--sp-16);
   margin-top: var(--sp-8);
-    font-size: var(--text-xs);
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -6345,7 +6366,7 @@ a.plaud-connect-btn:hover {
   align-items: center;
   padding: var(--sp-6) var(--sp-12);
   background: var(--bg-tertiary);
-    border-radius: var(--radius-md);
+  border-radius: var(--radius-md);
     font-size: var(--text-xs);
     transition: background 0.1s ease;
   }
@@ -6362,7 +6383,7 @@ a.plaud-connect-btn:hover {
 .schema-type {
   padding: 2px 8px;
   border-radius: var(--radius-full);
-    font-size: 0.65rem;
+  font-size: 0.65rem;
     font-weight: 500;
     background: rgba(9, 105, 218, 0.08);
     color: var(--accent-primary);
@@ -6434,7 +6455,7 @@ a.plaud-connect-btn:hover {
   align-items: center;
   padding: var(--sp-8) 0;
   border-bottom: 2px solid var(--border-primary);
-    margin-bottom: var(--sp-8);
+  margin-bottom: var(--sp-8);
 }
 
 .notion-date-label {
@@ -6448,7 +6469,7 @@ a.plaud-connect-btn:hover {
   color: var(--text-muted);
   background: var(--bg-tertiary);
   padding: var(--sp-2) var(--sp-8);
-    border-radius: var(--radius-full);
+  border-radius: var(--radius-full);
 }
 
 /* ── Recording Row ────────────────────────────────────────────────────────── */
@@ -6456,7 +6477,7 @@ a.plaud-connect-btn:hover {
 .notion-rec-row {
   padding: var(--sp-12) var(--sp-16);
   border-radius: var(--radius-lg);
-    margin-bottom: var(--sp-6);
+  margin-bottom: var(--sp-6);
   cursor: pointer;
   transition: all 0.15s ease;
   border: 1px solid transparent;
@@ -6466,7 +6487,7 @@ a.plaud-connect-btn:hover {
 .notion-rec-row:hover {
   background: var(--bg-hover);
   border-color: var(--border-primary);
-    box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-sm);
 }
 
 .notion-rec-row.in-chronos {
@@ -6508,7 +6529,7 @@ a.plaud-connect-btn:hover {
 .notion-badge {
   font-size: var(--text-xs);
   padding: var(--sp-2) var(--sp-8);
-    border-radius: var(--radius-full);
+  border-radius: var(--radius-full);
   white-space: nowrap;
   font-weight: 600;
 }
@@ -6530,7 +6551,6 @@ a.plaud-connect-btn:hover {
 }
 
 @keyframes stale-pulse {
-
   0%,
   100% {
     opacity: 1;
@@ -6562,7 +6582,7 @@ a.plaud-connect-btn:hover {
 .notion-tag {
   font-size: 0.65rem;
   padding: var(--sp-2) var(--sp-8);
-    border-radius: var(--radius-full);
+  border-radius: var(--radius-full);
     background: rgba(130, 80, 223, 0.07);
     color: var(--accent-purple);
     font-weight: 500;
@@ -6580,7 +6600,7 @@ a.plaud-connect-btn:hover {
   align-items: flex-start;
   gap: var(--sp-12);
   margin-bottom: var(--sp-16);
-    padding-bottom: var(--sp-12);
+  padding-bottom: var(--sp-12);
     border-bottom: 1px solid var(--border-secondary);
 }
 
@@ -6608,7 +6628,7 @@ a.plaud-connect-btn:hover {
   color: var(--text-muted);
   margin-bottom: var(--sp-16);
   padding: var(--sp-8) var(--sp-12);
-    background: var(--bg-tertiary);
+  background: var(--bg-tertiary);
     border-radius: var(--radius-md);
 }
 
@@ -6619,7 +6639,7 @@ a.plaud-connect-btn:hover {
 .notion-detail-section h4 {
   margin: 0 0 var(--sp-8);
   font-size: var(--text-base);
-    font-weight: 600;
+  font-weight: 600;
     color: var(--text-primary);
 }
 
@@ -6637,7 +6657,7 @@ a.plaud-connect-btn:hover {
   overflow-y: auto;
   padding: var(--sp-16);
   background: var(--bg-tertiary);
-    border: 1px solid var(--border-secondary);
+  border: 1px solid var(--border-secondary);
     border-radius: var(--radius-lg);
   white-space: pre-wrap;
 }
@@ -6650,7 +6670,7 @@ a.plaud-connect-btn:hover {
   overflow-y: auto;
   padding: var(--sp-16);
   background: var(--bg-tertiary);
-    border: 1px solid var(--border-secondary);
+  border: 1px solid var(--border-secondary);
     border-radius: var(--radius-lg);
   white-space: pre-wrap;
   font-family: inherit;
@@ -6664,7 +6684,7 @@ a.plaud-connect-btn:hover {
   cursor: pointer;
   font-size: var(--text-sm);
   font-weight: 500;
-    color: var(--text-secondary);
+  color: var(--text-secondary);
     padding: var(--sp-8) 0;
     transition: color 0.1s ease;
   }
@@ -6722,7 +6742,7 @@ a.plaud-connect-btn:hover {
   cursor: default;
   position: relative;
   transition:
-      transform 0.15s ease,
+    transform 0.15s ease,
       box-shadow 0.15s ease;
   min-width: 0;
 }
@@ -6763,7 +6783,7 @@ a.plaud-connect-btn:hover {
   display: flex;
   gap: var(--sp-16);
   padding: var(--sp-12) 0;
-    margin-top: var(--sp-8);
+  margin-top: var(--sp-8);
     border-top: 1px solid var(--border-secondary);
     font-size: var(--text-xs);
   color: var(--text-muted);
@@ -6774,7 +6794,7 @@ a.plaud-connect-btn:hover {
 .calendar-coverage-pct {
   font-weight: 700;
   font-size: var(--text-sm);
-    font-family: var(--font-mono);
+  font-family: var(--font-mono);
     color: var(--accent-green);
 }
 
@@ -6812,7 +6832,7 @@ a.plaud-connect-btn:hover {
 .notion-action-btn {
   padding: var(--sp-6) var(--sp-16);
   border-radius: var(--radius-md);
-    border: 1px solid var(--border-primary);
+  border: 1px solid var(--border-primary);
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     font-size: var(--text-xs);
@@ -6825,26 +6845,26 @@ a.plaud-connect-btn:hover {
 .notion-action-btn:hover {
   background: var(--bg-hover);
   border-color: var(--accent-primary);
-    color: var(--accent-primary);
+  color: var(--accent-primary);
     box-shadow: var(--shadow-sm);
 }
 
 .notion-import-btn {
   background: rgba(26, 127, 55, 0.06);
   color: var(--accent-green);
-    border-color: rgba(26, 127, 55, 0.2);
+  border-color: rgba(26, 127, 55, 0.2);
 }
 
 .notion-import-btn:hover {
   background: rgba(26, 127, 55, 0.12);
   border-color: var(--accent-green);
-    color: #116329;
+  color: #116329;
 }
 
 .notion-import-small {
   padding: var(--sp-4) var(--sp-12);
   border-radius: var(--radius-md);
-    border: 1px solid rgba(26, 127, 55, 0.2);
+  border: 1px solid rgba(26, 127, 55, 0.2);
     background: rgba(26, 127, 55, 0.05);
     color: var(--accent-green);
     font-size: var(--text-xs);
@@ -6861,7 +6881,7 @@ a.plaud-connect-btn:hover {
 .notion-writeback-btn {
   padding: var(--sp-4) var(--sp-12);
   border-radius: var(--radius-md);
-    border: 1px solid rgba(154, 103, 0, 0.2);
+  border: 1px solid rgba(154, 103, 0, 0.2);
     background: rgba(154, 103, 0, 0.05);
     color: var(--accent-yellow);
     font-size: var(--text-xs);
@@ -6889,20 +6909,20 @@ a.plaud-connect-btn:hover {
 .notion-import-result {
   padding: var(--sp-8) var(--sp-16);
   border-radius: var(--radius-md);
-    font-size: var(--text-sm);
+  font-size: var(--text-sm);
     margin: var(--sp-4) 0;
 }
 
 .notion-import-success {
   background: rgba(26, 127, 55, 0.06);
   border: 1px solid rgba(26, 127, 55, 0.15);
-    color: var(--accent-green);
+  color: var(--accent-green);
 }
 
 .notion-import-error {
   background: rgba(207, 34, 46, 0.05);
   border: 1px solid rgba(207, 34, 46, 0.15);
-    color: var(--accent-red);
+  color: var(--accent-red);
 }
 
 .notion-import-running {
@@ -6986,7 +7006,7 @@ a.plaud-connect-btn:hover {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: var(--sp-8);
-    margin-top: var(--sp-12);
+  margin-top: var(--sp-12);
     max-height: 400px;
     overflow-y: auto;
     padding-right: var(--sp-4);
@@ -7008,7 +7028,7 @@ a.plaud-connect-btn:hover {
 .notion-db-card {
   padding: var(--sp-12) var(--sp-16);
   border-radius: var(--radius-lg);
-    border: 1px solid var(--border-primary);
+  border: 1px solid var(--border-primary);
     background: var(--bg-secondary);
     transition: all 0.2s ease;
 }
@@ -7016,14 +7036,14 @@ a.plaud-connect-btn:hover {
 .notion-db-card:hover {
   border-color: rgba(9, 105, 218, 0.3);
   background: rgba(9, 105, 218, 0.02);
-    box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-sm);
     transform: translateY(-1px);
 }
 
 .notion-db-selected {
   border-color: rgba(26, 127, 55, 0.4) !important;
   background: rgba(26, 127, 55, 0.03) !important;
-    box-shadow: 0 0 0 3px rgba(26, 127, 55, 0.08);
+  box-shadow: 0 0 0 3px rgba(26, 127, 55, 0.08);
 }
 
 .notion-db-card-header {
@@ -7070,7 +7090,7 @@ a.plaud-connect-btn:hover {
 .notion-db-active-btn {
   background: rgba(26, 127, 55, 0.08) !important;
   color: var(--accent-green) !important;
-    border-color: rgba(26, 127, 55, 0.2) !important;
+  border-color: rgba(26, 127, 55, 0.2) !important;
   cursor: default !important;
 }
 
@@ -7095,12 +7115,12 @@ a.plaud-connect-btn:hover {
   min-width: 200px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
-    border-radius: var(--radius-lg);
+  border-radius: var(--radius-lg);
     padding: 0 var(--sp-12);
   transition:
-      border-color 0.15s ease,
+    border-color 0.15s ease,
       box-shadow 0.15s ease;
-  }
+    }
 
 .notion-search-box:focus-within {
   border-color: var(--accent-primary);
@@ -7120,7 +7140,7 @@ a.plaud-connect-btn:hover {
   color: var(--text-primary) !important;
   font-size: var(--text-sm) !important;
   font-family: var(--font-sans) !important;
-    padding: var(--sp-8) var(--sp-4) !important;
+  padding: var(--sp-8) var(--sp-4) !important;
   outline: none;
 }
 
@@ -7169,7 +7189,7 @@ a.plaud-connect-btn:hover {
 .notion-filter-btn {
   padding: var(--sp-4) var(--sp-12);
   border-radius: var(--radius-full);
-    border: 1px solid var(--border-primary);
+  border: 1px solid var(--border-primary);
     background: var(--bg-secondary);
   color: var(--text-secondary);
   font-size: var(--text-xs);
@@ -7182,13 +7202,13 @@ a.plaud-connect-btn:hover {
 .notion-filter-btn:hover {
   background: rgba(9, 105, 218, 0.06);
   border-color: rgba(9, 105, 218, 0.25);
-    color: var(--accent-primary);
+  color: var(--accent-primary);
 }
 
 .notion-filter-active {
   background: rgba(9, 105, 218, 0.08);
   border-color: rgba(9, 105, 218, 0.3);
-    color: var(--accent-primary);
+  color: var(--accent-primary);
   font-weight: 600;
 }
 
@@ -7322,10 +7342,10 @@ a.plaud-connect-btn:hover {
   background:
     radial-gradient(circle at top right,
         rgba(130, 80, 223, 0.1),
-        transparent 28%),
-      radial-gradient(circle at left center,
-        rgba(8, 145, 178, 0.1),
-        transparent 30%),
+      transparent 28%),
+        radial-gradient(circle at left center,
+          rgba(8, 145, 178, 0.1),
+      transparent 30%),
     linear-gradient(135deg, #fffef9 0%, #f7fbff 56%, #faf7ff 100%);
   box-shadow: 0 18px 40px rgba(9, 105, 218, 0.08);
 }
@@ -7500,7 +7520,7 @@ a.plaud-connect-btn:hover {
   justify-content: center;
   background: linear-gradient(180deg,
         rgba(9, 105, 218, 0.03),
-        rgba(130, 80, 223, 0.04));
+    rgba(130, 80, 223, 0.04));
 }
 
 .notion-detail-empty h3 {
@@ -7524,7 +7544,7 @@ a.plaud-connect-btn:hover {
 .notion-rec-row {
   background: linear-gradient(180deg,
         rgba(255, 255, 255, 0.98),
-        rgba(248, 250, 252, 0.98));
+    rgba(248, 250, 252, 0.98));
   border: 1px solid rgba(208, 215, 222, 0.9);
 }
 
@@ -7553,7 +7573,7 @@ a.plaud-connect-btn:hover {
 .notion-detail-panel {
   background: linear-gradient(180deg,
         rgba(255, 255, 255, 1),
-        rgba(248, 250, 252, 0.86));
+    rgba(248, 250, 252, 0.86));
 }
 
 .notion-db-picker-card > details > summary {
@@ -7565,13 +7585,13 @@ a.plaud-connect-btn:hover {
 .notion-db-card {
   background: linear-gradient(180deg,
         rgba(255, 255, 255, 0.98),
-        rgba(248, 250, 252, 0.92));
+    rgba(248, 250, 252, 0.92));
 }
 
 .notion-toolbar-card {
   background: linear-gradient(180deg,
         rgba(247, 250, 255, 1),
-        rgba(255, 255, 255, 0.98));
+    rgba(255, 255, 255, 0.98));
 }
 
 .sync-view {
@@ -7599,10 +7619,10 @@ a.plaud-connect-btn:hover {
   margin-bottom: 0;
   background: linear-gradient(180deg,
         rgba(255, 255, 255, 1),
-        rgba(248, 250, 252, 0.95));
+    rgba(248, 250, 252, 0.95));
   box-shadow: 0 12px 26px rgba(15, 23, 42, 0.05);
   transition:
-      transform 0.15s ease,
+    transform 0.15s ease,
       box-shadow 0.15s ease,
       border-color 0.15s ease;
 }
@@ -7620,7 +7640,7 @@ a.plaud-connect-btn:hover {
   background:
     radial-gradient(circle at top right,
         rgba(9, 105, 218, 0.08),
-        transparent 28%),
+      transparent 28%),
     linear-gradient(180deg, #ffffff, #f8fbff);
 }
 
@@ -7697,7 +7717,7 @@ a.plaud-connect-btn:hover {
 .workflow-monitor-card {
   background: linear-gradient(180deg,
         rgba(255, 255, 255, 0.98),
-        rgba(248, 250, 252, 0.92));
+    rgba(248, 250, 252, 0.92));
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-lg);
   padding: var(--sp-12) var(--sp-14);
@@ -7716,7 +7736,7 @@ a.plaud-connect-btn:hover {
   border: 1px solid rgba(9, 105, 218, 0.14) !important;
   background: linear-gradient(180deg,
         rgba(247, 250, 255, 1),
-        rgba(255, 255, 255, 0.96));
+    rgba(255, 255, 255, 0.96));
 }
 
 .upload-candidates-list {
