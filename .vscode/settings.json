@@ -14,6 +14,9 @@
       "source.organizeImports": "explicit"
     }
   },
+  "[css]": {
+    "editor.formatOnSave": false
+  },
   "files.exclude": {
     "**/__pycache__": true,
     "**/*.pyc": true,

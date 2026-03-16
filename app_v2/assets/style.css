@@ -11,9 +11,9 @@
   --bg-primary: #f8f9fb;
   --bg-secondary: #ffffff;
   --bg-tertiary: #f0f2f5;
-    --bg-hover: #e8ebef;
-    --bg-elevated: #ffffff;
-    --bg-glass: rgba(255, 255, 255, 0.82);
+  --bg-hover: #e8ebef;
+  --bg-elevated: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.82);
 
   --text-primary: #1a1d21;
   --text-secondary: #57606a;
@@ -29,32 +29,32 @@
   --accent-primary: #0969da;
   --accent-green: #1a7f37;
   --accent-yellow: #9a6700;
-    --accent-red: #cf222e;
-    --accent-purple: #8250df;
-    --accent-orange: #bc4c00;
-    --accent-pink: #bf3989;
-    --accent-cyan: #0891b2;
+  --accent-red: #cf222e;
+  --accent-purple: #8250df;
+  --accent-orange: #bc4c00;
+  --accent-pink: #bf3989;
+  --accent-cyan: #0891b2;
 
   /* ── Category Colors ───────────────────────────────────────────────────── */
   --cat-work: #0969da;
   --cat-personal: #8250df;
   --cat-meeting: #1a7f37;
-    --cat-reflection: #9a6700;
-    --cat-idea: #bf3989;
-    --cat-break: #6e7781;
-    --cat-deep-work: #116329;
+  --cat-reflection: #9a6700;
+  --cat-idea: #bf3989;
+  --cat-break: #6e7781;
+  --cat-deep-work: #116329;
 
   /* ── Spacing (fluid) ───────────────────────────────────────────────────── */
   --sp-2: 2px;
   --sp-4: 4px;
   --sp-6: 6px;
-    --sp-8: 8px;
-    --sp-12: 12px;
-    --sp-16: 16px;
-    --sp-20: 20px;
-    --sp-24: 24px;
-    --sp-32: 32px;
-    --sp-48: 48px;
+  --sp-8: 8px;
+  --sp-12: 12px;
+  --sp-16: 16px;
+  --sp-20: 20px;
+  --sp-24: 24px;
+  --sp-32: 32px;
+  --sp-48: 48px;
 
   /* kept for backwards compat with inline styles */
   --spacing-xs: 4px;
@@ -74,9 +74,9 @@
   --text-sm: 0.8125rem;
   --text-base: 0.9375rem;
   --text-lg: 1.0625rem;
-    --text-xl: 1.1875rem;
-    --text-2xl: 1.375rem;
-    --text-3xl: 1.75rem;
+  --text-xl: 1.1875rem;
+  --text-2xl: 1.375rem;
+  --text-3xl: 1.75rem;
 
   --leading-tight: 1.25;
   --leading-snug: 1.375;
@@ -94,7 +94,7 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
-    --shadow-glow: 0 0 24px rgba(9, 105, 218, 0.08);
+  --shadow-glow: 0 0 24px rgba(9, 105, 218, 0.08);
 
   /* ── Transitions ───────────────────────────────────────────────────────── */
   --transition-fast: 120ms ease;
@@ -220,9 +220,9 @@ pre {
   padding: var(--sp-12) var(--sp-24);
   background: var(--bg-glass);
   backdrop-filter: blur(12px) saturate(1.4);
-    -webkit-backdrop-filter: blur(12px) saturate(1.4);
-    border-bottom: 1px solid var(--border-primary);
-  }
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border-bottom: 1px solid var(--border-primary);
+}
 .content-container {
   flex: 1;
   padding: var(--sp-24);
@@ -446,7 +446,7 @@ pre {
   box-shadow: none !important;
 }
 
-.is-focused>.Select-control {
+.is-focused > .Select-control {
   border-color: var(--accent-primary) !important;
   box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.12) !important;
   background: var(--bg-hover) !important;
@@ -455,7 +455,7 @@ pre {
 /* Selected value text */
 .Select-value,
 .Select-value-label,
-.Select--single>.Select-control .Select-value .Select-value-label {
+.Select--single > .Select-control .Select-value .Select-value-label {
   color: var(--text-primary) !important;
   font-size: var(--text-sm) !important;
   line-height: 34px !important;
@@ -463,12 +463,12 @@ pre {
 
 /* Placeholder */
 .Select-placeholder,
-.Select-input>input {
+.Select-input > input {
   color: var(--text-muted) !important;
   font-size: var(--text-sm) !important;
 }
 
-.Select-input>input {
+.Select-input > input {
   color: var(--text-primary) !important;
 }
 
@@ -673,9 +673,11 @@ pre {
 
 /* ── AI Answer Section ───────────────────────────────────────────────────── */
 .ai-answer-section {
-  background: linear-gradient(135deg,
-        rgba(79, 70, 229, 0.07),
-    rgba(109, 40, 217, 0.04));
+  background: linear-gradient(
+    135deg,
+    rgba(79, 70, 229, 0.07),
+    rgba(109, 40, 217, 0.04)
+  );
   border: 1px solid rgba(79, 70, 229, 0.2);
   border-radius: var(--radius-xl);
   padding: var(--sp-16) var(--sp-20);
@@ -687,7 +689,7 @@ pre {
   gap: var(--sp-8);
   margin-bottom: var(--sp-12);
   padding-bottom: var(--sp-8);
-    border-bottom: 1px solid rgba(79, 70, 229, 0.12);
+  border-bottom: 1px solid rgba(79, 70, 229, 0.12);
 }
 
 .ai-answer-header .ai-icon {
@@ -790,6 +792,22 @@ pre {
 .day-card.expanded {
   border-color: var(--accent-primary);
   box-shadow: var(--shadow-lg), var(--shadow-glow);
+}
+
+.day-card.heatmap-highlight {
+  animation: heatmap-pulse 2s ease-out;
+}
+
+@keyframes heatmap-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.6);
+  }
+  30% {
+    box-shadow: 0 0 16px 4px rgba(99, 102, 241, 0.4);
+  }
+  100% {
+    box-shadow: var(--shadow-sm);
+  }
 }
 
 .day-header {
@@ -1222,7 +1240,7 @@ pre {
   z-index: 200;
   overflow-y: auto;
   transition: right var(--transition-slow);
-    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12);
 }
 
 .detail-panel.open {
@@ -1238,9 +1256,9 @@ pre {
   align-items: center;
   padding: var(--sp-16) var(--sp-24);
   background: var(--bg-glass);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border-primary);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .detail-panel-title {
@@ -1369,10 +1387,12 @@ pre {
   padding: var(--sp-48);
   text-align: center;
   color: var(--text-muted);
-  background: linear-gradient(180deg,
-        var(--bg-secondary) 0%,
-    var(--bg-primary) 100%);
-      border-radius: var(--radius-xl);
+  background: linear-gradient(
+    180deg,
+    var(--bg-secondary) 0%,
+    var(--bg-primary) 100%
+  );
+  border-radius: var(--radius-xl);
 }
 
 .recording-placeholder .placeholder-icon {
@@ -1396,9 +1416,11 @@ pre {
 /* ── Detail Header ───────────────────────────────────────────────────── */
 .recording-detail-header {
   padding: var(--sp-24);
-  background: linear-gradient(135deg,
-        var(--bg-elevated) 0%,
-    var(--bg-secondary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--bg-elevated) 0%,
+    var(--bg-secondary) 100%
+  );
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-secondary);
 }
@@ -1817,7 +1839,7 @@ pre {
   gap: var(--sp-12);
   padding: var(--sp-16);
   background: var(--bg-tertiary);
-    border: 1px solid var(--border-secondary);
+  border: 1px solid var(--border-secondary);
   border-radius: var(--radius-lg);
   transition: all var(--transition-normal);
   position: relative;
@@ -2032,7 +2054,7 @@ pre {
   display: flex;
   align-items: center;
   gap: var(--sp-4);
-  }
+}
 
 /* Also support the event-item variant from the detail view template */
 .event-item {
@@ -2153,10 +2175,10 @@ pre {
   padding: 3px 10px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-secondary);
-    border-radius: var(--radius-full);
-    color: var(--text-secondary);
-    transition: all var(--transition-fast);
-  }
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+}
 
 .event-keyword:hover {
   background: var(--accent-primary);
@@ -2172,9 +2194,9 @@ pre {
   padding: var(--sp-4) var(--sp-8);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-secondary);
-    border-radius: var(--radius-sm);
-    font-size: var(--text-xs);
-  }
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
 
 .category-dot {
   width: 8px;
@@ -2380,8 +2402,8 @@ pre {
   color: var(--accent-primary);
   background: rgba(9, 105, 218, 0.08);
   padding: var(--sp-4) var(--sp-12);
-    border-radius: var(--radius-full);
-    font-family: var(--font-mono);
+  border-radius: var(--radius-full);
+  font-family: var(--font-mono);
 }
 
 .timeline-dot.active {
@@ -2406,7 +2428,7 @@ pre {
   border-radius: var(--radius-lg);
   cursor: pointer;
   transition: all var(--transition-fast);
-  }
+}
 
 .occurrence-card:hover {
   border-color: var(--accent-primary);
@@ -2420,7 +2442,7 @@ pre {
   gap: var(--sp-8);
   margin-bottom: var(--sp-6);
   font-size: var(--text-xs);
-  }
+}
 
 .occ-date {
   color: var(--text-primary);
@@ -2528,7 +2550,7 @@ pre {
   transition: all var(--transition-fast);
 }
 
-.graph-mode-toggle input[type="radio"]:checked+label,
+.graph-mode-toggle input[type="radio"]:checked + label,
 .graph-mode-toggle label:has(input:checked) {
   background: var(--accent-primary);
   color: #ffffff;
@@ -2560,9 +2582,9 @@ pre {
   color: var(--text-primary);
   cursor: pointer;
   font-size: var(--text-xs);
-    white-space: nowrap;
-    transition: all var(--transition-fast);
-  }
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
 
 .graph-btn:hover {
   background: var(--accent-primary);
@@ -2608,8 +2630,8 @@ pre {
   padding: var(--sp-8) var(--sp-16);
   margin-top: var(--sp-8);
   flex-wrap: wrap;
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
 }
 
 .legend-title {
@@ -2765,9 +2787,9 @@ pre {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-    background: rgba(9, 105, 218, 0.08);
-    padding: var(--sp-2) var(--sp-8);
-    border-radius: var(--radius-md);
+  background: rgba(9, 105, 218, 0.08);
+  padding: var(--sp-2) var(--sp-8);
+  border-radius: var(--radius-md);
 }
 
 .day-meta {
@@ -2887,8 +2909,8 @@ pre {
   gap: var(--sp-4);
   padding: var(--sp-16);
   background: var(--bg-tertiary);
-    border: 1px solid var(--border-secondary);
-    border-radius: var(--radius-lg);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-lg);
 }
 
 .insight-label {
@@ -3718,9 +3740,11 @@ a.plaud-connect-btn:hover {
 }
 .settings-save-section {
   border-color: var(--accent-primary) !important;
-  background: linear-gradient(135deg,
-        var(--bg-secondary) 0%,
-    rgba(9, 105, 218, 0.03) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--bg-secondary) 0%,
+    rgba(9, 105, 218, 0.03) 100%
+  );
 }
 
 .ctl-output {
@@ -3772,47 +3796,47 @@ a.plaud-connect-btn:hover {
     width: 24px;
     height: 24px;
     border: 2px solid var(--bg-tertiary);
-      border-top-color: var(--accent-primary);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
 
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
     }
+  }
 
-    .empty-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: var(--sp-48);
-      text-align: center;
-      color: var(--text-muted);
-    }
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sp-48);
+    text-align: center;
+    color: var(--text-muted);
+  }
 
-    .empty-icon,
-    .empty-state-icon {
-      font-size: 48px;
-      margin-bottom: var(--sp-16);
-      opacity: 0.4;
-    }
+  .empty-icon,
+  .empty-state-icon {
+    font-size: 48px;
+    margin-bottom: var(--sp-16);
+    opacity: 0.4;
+  }
 
-    .empty-title,
-    .empty-state-title {
-      font-size: var(--text-xl);
-      font-weight: 600;
-      color: var(--text-secondary);
-      margin-bottom: var(--sp-8);
-    }
+  .empty-title,
+  .empty-state-title {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--sp-8);
+  }
 
-    .empty-description,
-    .empty-state-desc {
-      font-size: var(--text-base);
-      line-height: var(--leading-relaxed);
-      max-width: 400px;
+  .empty-description,
+  .empty-state-desc {
+    font-size: var(--text-base);
+    line-height: var(--leading-relaxed);
+    max-width: 400px;
     color: var(--text-muted);
   }
 }
@@ -3876,10 +3900,12 @@ a.plaud-connect-btn:hover {
 }
 
 .skeleton {
-  background: linear-gradient(90deg,
-        var(--bg-tertiary) 0%,
-        var(--bg-secondary) 50%,
-    var(--bg-tertiary) 100%);
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 0%,
+    var(--bg-secondary) 50%,
+    var(--bg-tertiary) 100%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: var(--radius-md);
@@ -4000,16 +4026,16 @@ a.plaud-connect-btn:hover {
     width: 56px;
     min-width: 56px;
   }
-    .logo-text,
-    .logo-version,
-    .nav-label {
-      display: none;
-    }
+  .logo-text,
+  .logo-version,
+  .nav-label {
+    display: none;
+  }
 
-    .nav-item {
-      justify-content: center;
-      padding: var(--sp-12);
-    }
+  .nav-item {
+    justify-content: center;
+    padding: var(--sp-12);
+  }
 
   .main-content {
     margin-left: 56px;
@@ -4173,7 +4199,7 @@ a.plaud-connect-btn:hover {
   padding: var(--sp-6) var(--sp-8);
   border-radius: var(--radius-sm);
   background: var(--surface-secondary);
-    font-size: 0.82rem;
+  font-size: 0.82rem;
 }
 
 .webhook-url {
@@ -4249,7 +4275,7 @@ a.plaud-connect-btn:hover {
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease;
-      min-height: 28px;
+  min-height: 28px;
 }
 
 .heatmap-cell:hover {
@@ -4499,9 +4525,11 @@ a.plaud-connect-btn:hover {
 .ai-summary-section {
   margin: var(--sp-12) 0;
   padding: var(--sp-12);
-  background: linear-gradient(135deg,
-        rgba(99, 102, 241, 0.08),
-    rgba(139, 92, 246, 0.06));
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.08),
+    rgba(139, 92, 246, 0.06)
+  );
   border-radius: var(--radius-md);
   border: 1px solid rgba(99, 102, 241, 0.2);
 }
@@ -4545,7 +4573,7 @@ a.plaud-connect-btn:hover {
   font-family: var(--font-mono);
   white-space: nowrap;
   min-width: 72px;
-  }
+}
 
 .moment-category {
   display: inline-flex;
@@ -4554,9 +4582,9 @@ a.plaud-connect-btn:hover {
   font-size: 0.68rem;
   color: #fff;
   font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .moment-text {
@@ -4633,7 +4661,7 @@ a.plaud-connect-btn:hover {
   justify-content: space-between;
   gap: var(--sp-8);
   margin-bottom: var(--sp-8);
-  }
+}
 
 .event-filter-input {
   background: var(--bg-elevated);
@@ -4656,18 +4684,19 @@ a.plaud-connect-btn:hover {
   0%,
   100% {
     opacity: 0.4;
-  
-
-    50% {
-      opacity: 0.8;
-    }
+  }
+  50% {
+    opacity: 0.8;
+  }
 }
 
 .skeleton {
-  background: linear-gradient(90deg,
-        var(--bg-elevated) 25%,
-        var(--bg-tertiary) 50%,
-    var(--bg-elevated) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    var(--bg-tertiary) 50%,
+    var(--bg-elevated) 75%
+  );
   background-size: 200% 100%;
   animation: skeleton-pulse 1.5s ease-in-out infinite;
   border-radius: var(--radius-sm);
@@ -4740,9 +4769,9 @@ a.plaud-connect-btn:hover {
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.6);
   }
 
-    100% {
-      box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
-    }
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  }
 }
 
 /* ── Keyboard Hints ────────────────────────────────────────────────────────── */
@@ -4774,9 +4803,9 @@ a.plaud-connect-btn:hover {
   align-items: center;
   justify-content: center;
   min-height: 400px;
-    text-align: center;
-    padding: var(--sp-48);
-    opacity: 0.7;
+  text-align: center;
+  padding: var(--sp-48);
+  opacity: 0.7;
 }
 
 .recording-placeholder .placeholder-icon {
@@ -4932,9 +4961,9 @@ a.plaud-connect-btn:hover {
     opacity: 1;
   }
 
-    50% {
-      opacity: 0.5;
-    }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* Progress bar */
@@ -4964,9 +4993,9 @@ a.plaud-connect-btn:hover {
     background-position: 200% 0;
   }
 
-    100% {
-      background-position: -200% 0;
-    }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* Detail text */
@@ -5528,8 +5557,8 @@ a.plaud-connect-btn:hover {
   box-shadow:
     0 8px 40px rgba(0, 0, 0, 0.55),
     0 0 16px rgba(99, 102, 241, 0.1);
-      font-family:
-        -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
   font-size: 13px;
   color: #e2e8f0;
   display: flex;
@@ -5567,9 +5596,11 @@ a.plaud-connect-btn:hover {
   padding: 0 12px;
   height: 38px;
   flex-shrink: 0;
-  background: linear-gradient(180deg,
-        rgba(22, 24, 40, 0.98) 0%,
-    rgba(14, 16, 28, 0.98) 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(22, 24, 40, 0.98) 0%,
+    rgba(14, 16, 28, 0.98) 100%
+  );
   border-bottom: 1px solid rgba(30, 41, 59, 0.4);
   cursor: grab;
   user-select: none;
@@ -5641,11 +5672,10 @@ a.plaud-connect-btn:hover {
   0%,
   100% {
     opacity: 1;
-    }
-    
-    50% {
-      opacity: 0.35;
-    }
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .xp-winbtn {
@@ -5770,12 +5800,12 @@ a.plaud-connect-btn:hover {
 .xp-row {
   padding: 6px 12px 5px;
   border-bottom: 1px solid rgba(30, 41, 59, 0.15);
-    animation: xp-slide 0.25s ease-out;
-    transition: background 0.15s;
-    min-height: 28px;
-  }
-  
-  .xp-meta {
+  animation: xp-slide 0.25s ease-out;
+  transition: background 0.15s;
+  min-height: 28px;
+}
+
+.xp-meta {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -5786,11 +5816,13 @@ a.plaud-connect-btn:hover {
   from {
     opacity: 0;
     transform: translateY(-8px);
+  }
   to {
     opacity: 1;
     transform: translateY(0);
   }
-  }
+}
+
 .xp-fresh {
   animation:
     xp-slide 0.25s ease-out,
@@ -5949,10 +5981,7 @@ a.plaud-connect-btn:hover {
   font-size: 0.82rem;
   line-height: 1.45;
   word-break: break-word;
-    padding: 2px 0 1px 54px;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
+  padding: 2px 0 1px 0;
 }
 
 .xp-dur {
@@ -6122,7 +6151,7 @@ a.plaud-connect-btn:hover {
   transition:
     box-shadow 0.2s ease,
     border-color 0.2s ease;
-    }
+}
 
 .notion-card:hover {
   box-shadow: var(--shadow-sm);
@@ -6154,8 +6183,8 @@ a.plaud-connect-btn:hover {
   color: var(--accent-primary);
   padding: 2px 6px;
   border-radius: var(--radius-sm);
-    font-size: var(--text-xs);
-    font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
 }
 
 /* ── Connection Status ────────────────────────────────────────────────────── */
@@ -6201,9 +6230,9 @@ a.plaud-connect-btn:hover {
   padding: var(--sp-8) var(--sp-16);
   background: rgba(207, 34, 46, 0.05);
   border: 1px solid rgba(207, 34, 46, 0.15);
-    border-radius: var(--radius-md);
-    font-size: var(--text-sm);
-    color: var(--accent-red);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--accent-red);
 }
 
 .notion-error-panel {
@@ -6251,7 +6280,7 @@ a.plaud-connect-btn:hover {
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease;
-    }
+}
 
 .interplay-stat:hover {
   transform: translateY(-2px);
@@ -6366,8 +6395,8 @@ a.plaud-connect-btn:hover {
   background: var(--bg-tertiary);
   border-radius: var(--radius-md);
   font-size: var(--text-xs);
-    transition: background 0.1s ease;
-  }
+  transition: background 0.1s ease;
+}
 
 .schema-item:hover {
   background: var(--bg-hover);
@@ -6383,8 +6412,8 @@ a.plaud-connect-btn:hover {
   border-radius: var(--radius-full);
   font-size: 0.65rem;
   font-weight: 500;
-    background: rgba(9, 105, 218, 0.08);
-    color: var(--accent-primary);
+  background: rgba(9, 105, 218, 0.08);
+  color: var(--accent-primary);
 }
 
 .schema-type-title {
@@ -6582,8 +6611,8 @@ a.plaud-connect-btn:hover {
   padding: var(--sp-2) var(--sp-8);
   border-radius: var(--radius-full);
   background: rgba(130, 80, 223, 0.07);
-    color: var(--accent-purple);
-    font-weight: 500;
+  color: var(--accent-purple);
+  font-weight: 500;
 }
 
 /* ── Page Detail Panel ────────────────────────────────────────────────────── */
@@ -6684,8 +6713,8 @@ a.plaud-connect-btn:hover {
   font-weight: 500;
   color: var(--text-secondary);
   padding: var(--sp-8) 0;
-    transition: color 0.1s ease;
-  }
+  transition: color 0.1s ease;
+}
 
 .notion-detail-props summary:hover {
   color: var(--text-primary);
@@ -6783,7 +6812,7 @@ a.plaud-connect-btn:hover {
   padding: var(--sp-12) 0;
   margin-top: var(--sp-8);
   border-top: 1px solid var(--border-secondary);
-    font-size: var(--text-xs);
+  font-size: var(--text-xs);
   color: var(--text-muted);
   align-items: center;
   flex-wrap: wrap;
@@ -6832,9 +6861,9 @@ a.plaud-connect-btn:hover {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-primary);
   background: var(--bg-tertiary);
-    color: var(--text-secondary);
-    font-size: var(--text-xs);
-    font-weight: 600;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
@@ -6864,9 +6893,9 @@ a.plaud-connect-btn:hover {
   border-radius: var(--radius-md);
   border: 1px solid rgba(26, 127, 55, 0.2);
   background: rgba(26, 127, 55, 0.05);
-    color: var(--accent-green);
-    font-size: var(--text-xs);
-    font-weight: 500;
+  color: var(--accent-green);
+  font-size: var(--text-xs);
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -6881,9 +6910,9 @@ a.plaud-connect-btn:hover {
   border-radius: var(--radius-md);
   border: 1px solid rgba(154, 103, 0, 0.2);
   background: rgba(154, 103, 0, 0.05);
-    color: var(--accent-yellow);
-    font-size: var(--text-xs);
-    font-weight: 500;
+  color: var(--accent-yellow);
+  font-size: var(--text-xs);
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -7048,11 +7077,11 @@ a.plaud-connect-btn:hover {
   border-left: 3px solid var(--accent-yellow);
 }
 
-.notion-db-picker-card>details {
+.notion-db-picker-card > details {
   margin-top: var(--sp-8);
 }
 
-.notion-db-picker-card>details>summary {
+.notion-db-picker-card > details > summary {
   cursor: pointer;
   font-size: var(--text-sm);
   font-weight: 500;
@@ -7062,11 +7091,11 @@ a.plaud-connect-btn:hover {
   transition: color 0.1s ease;
 }
 
-.notion-db-picker-card>details>summary:hover {
+.notion-db-picker-card > details > summary:hover {
   color: var(--text-primary);
 }
 
-.notion-db-picker-card>details[open]>summary {
+.notion-db-picker-card > details[open] > summary {
   margin-bottom: var(--sp-8);
 }
 
@@ -7076,9 +7105,9 @@ a.plaud-connect-btn:hover {
   gap: var(--sp-8);
   margin-top: var(--sp-12);
   max-height: 400px;
-    overflow-y: auto;
-    padding-right: var(--sp-4);
-  }
+  overflow-y: auto;
+  padding-right: var(--sp-4);
+}
 
 .notion-db-grid::-webkit-scrollbar {
   width: 5px;
@@ -7098,7 +7127,7 @@ a.plaud-connect-btn:hover {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-primary);
   background: var(--bg-secondary);
-    transition: all 0.2s ease;
+  transition: all 0.2s ease;
 }
 
 .notion-db-card:hover {
@@ -7188,7 +7217,7 @@ a.plaud-connect-btn:hover {
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
-    }
+}
 
 .notion-search-box:focus-within {
   border-color: var(--accent-primary);
@@ -7408,12 +7437,16 @@ a.plaud-connect-btn:hover {
   overflow: hidden;
   border-color: rgba(9, 105, 218, 0.16);
   background:
-    radial-gradient(circle at top right,
-        rgba(130, 80, 223, 0.1),
-      transparent 28%),
-        radial-gradient(circle at left center,
-          rgba(8, 145, 178, 0.1),
-      transparent 30%),
+    radial-gradient(
+      circle at top right,
+      rgba(130, 80, 223, 0.1),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at left center,
+      rgba(8, 145, 178, 0.1),
+      transparent 30%
+    ),
     linear-gradient(135deg, #fffef9 0%, #f7fbff 56%, #faf7ff 100%);
   box-shadow: 0 18px 40px rgba(9, 105, 218, 0.08);
 }
@@ -7586,9 +7619,11 @@ a.plaud-connect-btn:hover {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  background: linear-gradient(180deg,
-        rgba(9, 105, 218, 0.03),
-    rgba(130, 80, 223, 0.04));
+  background: linear-gradient(
+    180deg,
+    rgba(9, 105, 218, 0.03),
+    rgba(130, 80, 223, 0.04)
+  );
 }
 
 .notion-detail-empty h3 {
@@ -7610,9 +7645,11 @@ a.plaud-connect-btn:hover {
 }
 
 .notion-rec-row {
-  background: linear-gradient(180deg,
-        rgba(255, 255, 255, 0.98),
-    rgba(248, 250, 252, 0.98));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(248, 250, 252, 0.98)
+  );
   border: 1px solid rgba(208, 215, 222, 0.9);
 }
 
@@ -7639,9 +7676,11 @@ a.plaud-connect-btn:hover {
 .notion-toolbar-card,
 .notion-recordings-card,
 .notion-detail-panel {
-  background: linear-gradient(180deg,
-        rgba(255, 255, 255, 1),
-    rgba(248, 250, 252, 0.86));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 1),
+    rgba(248, 250, 252, 0.86)
+  );
 }
 
 .notion-db-picker-card > details > summary {
@@ -7651,15 +7690,19 @@ a.plaud-connect-btn:hover {
 }
 
 .notion-db-card {
-  background: linear-gradient(180deg,
-        rgba(255, 255, 255, 0.98),
-    rgba(248, 250, 252, 0.92));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(248, 250, 252, 0.92)
+  );
 }
 
 .notion-toolbar-card {
-  background: linear-gradient(180deg,
-        rgba(247, 250, 255, 1),
-    rgba(255, 255, 255, 0.98));
+  background: linear-gradient(
+    180deg,
+    rgba(247, 250, 255, 1),
+    rgba(255, 255, 255, 0.98)
+  );
 }
 
 .sync-view {
@@ -7685,14 +7728,16 @@ a.plaud-connect-btn:hover {
 .sync-status-card,
 .sync-options {
   margin-bottom: 0;
-  background: linear-gradient(180deg,
-        rgba(255, 255, 255, 1),
-    rgba(248, 250, 252, 0.95));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 1),
+    rgba(248, 250, 252, 0.95)
+  );
   box-shadow: 0 12px 26px rgba(15, 23, 42, 0.05);
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease,
-      border-color 0.15s ease;
+    border-color 0.15s ease;
 }
 
 .sync-status-card:hover,
@@ -7706,9 +7751,11 @@ a.plaud-connect-btn:hover {
   top: var(--sp-16);
   border-color: rgba(9, 105, 218, 0.14);
   background:
-    radial-gradient(circle at top right,
-        rgba(9, 105, 218, 0.08),
-      transparent 28%),
+    radial-gradient(
+      circle at top right,
+      rgba(9, 105, 218, 0.08),
+      transparent 28%
+    ),
     linear-gradient(180deg, #ffffff, #f8fbff);
 }
 
@@ -7783,9 +7830,11 @@ a.plaud-connect-btn:hover {
 }
 
 .workflow-monitor-card {
-  background: linear-gradient(180deg,
-        rgba(255, 255, 255, 0.98),
-    rgba(248, 250, 252, 0.92));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(248, 250, 252, 0.92)
+  );
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-lg);
   padding: var(--sp-12) var(--sp-14);
@@ -7802,9 +7851,11 @@ a.plaud-connect-btn:hover {
 
 .upload-section {
   border: 1px solid rgba(9, 105, 218, 0.14) !important;
-  background: linear-gradient(180deg,
-        rgba(247, 250, 255, 1),
-    rgba(255, 255, 255, 0.96));
+  background: linear-gradient(
+    180deg,
+    rgba(247, 250, 255, 1),
+    rgba(255, 255, 255, 0.96)
+  );
 }
 
 .upload-candidates-list {

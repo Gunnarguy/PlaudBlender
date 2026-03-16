@@ -1,7 +1,6 @@
 """Native Qdrant client for Chronos temporal-vector indexing.
 
-This module provides a clean, Qdrant-native interface WITHOUT the
-Pinecone compatibility shim. It exposes Qdrant's full payload filtering
+Provides a clean Qdrant-native interface with full payload filtering
 and temporal search capabilities required by the Chronos architecture.
 """
 
@@ -37,7 +36,7 @@ class ChronosQdrantClient:
     - Payload indexes for day_of_week, hour_of_day, timestamp
     - Hybrid search: semantic + temporal filters
     - Scroll API for bulk analytics
-    - No Pinecone compatibility cruft
+    - Clean, purpose-built API surface
     """
 
     def __init__(self, collection_name: Optional[str] = None):

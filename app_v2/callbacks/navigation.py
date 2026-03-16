@@ -1315,8 +1315,8 @@ def create_settings_view(preferences=None) -> html.Div:
                                         "value": "gemini-embedding-2-preview",
                                     },
                                     {
-                                        "label": "gemini-embedding-001 (text-only legacy)",
-                                        "value": "gemini-embedding-001",
+                                        "label": "gemini-embedding-exp-03-07 (experimental)",
+                                        "value": "gemini-embedding-exp-03-07",
                                     },
                                 ],
                                 value=settings.chronos_embedding_model,
@@ -2140,16 +2140,22 @@ def register_navigation_callbacks(app):
 
         try:
             lines = env_path.read_text().splitlines()
-            existing_keys = set()
+            existing_keys = {}
             new_lines = []
+            changed = 0
 
             for line in lines:
                 stripped = line.strip()
                 if stripped and not stripped.startswith("#") and "=" in stripped:
-                    key = stripped.split("=", 1)[0].strip()
+                    key, _, old_val = stripped.partition("=")
+                    key = key.strip()
+                    old_val = old_val.strip()
                     if key in updates and updates[key] is not None:
-                        new_lines.append(f"{key}={updates[key]}")
-                        existing_keys.add(key)
+                        new_val = str(updates[key])
+                        new_lines.append(f"{key}={new_val}")
+                        existing_keys[key] = True
+                        if old_val != new_val:
+                            changed += 1
                         continue
                 new_lines.append(line)
 
@@ -2157,11 +2163,13 @@ def register_navigation_callbacks(app):
             for key, value in updates.items():
                 if key not in existing_keys and value is not None:
                     new_lines.append(f"{key}={value}")
+                    changed += 1
 
             env_path.write_text("\n".join(new_lines) + "\n")
 
-            changed = len(updates)
-            return f"✅ Saved {changed} settings to .env — restart app to apply"
+            if changed == 0:
+                return "✅ Settings unchanged — nothing to save"
+            return f"✅ Saved {changed} changed setting{'s' if changed != 1 else ''} to .env — restart app to apply"
 
         except Exception as e:
             return f"❌ Failed to save: {e}"

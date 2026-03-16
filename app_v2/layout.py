@@ -17,6 +17,7 @@ def create_layout() -> html.Div:
             dcc.Store(id="selected-topic", data=None),
             dcc.Store(id="search-query", data=None),
             dcc.Store(id="days-data", data=None),
+            dcc.Store(id="heatmap-scroll-target", data=None),
             dcc.Store(id="app-preferences", storage_type="local", data=None),
             # Auto-refresh interval (every 60 seconds)
             dcc.Interval(id="auto-refresh", interval=60000, n_intervals=0),

@@ -162,3 +162,86 @@ def register_day_view_callbacks(app):
             topics.sort(key=lambda x: x[0].lower(), reverse=True)
 
         return [create_topic_card(t, c) for t, c in topics[:100]]
+
+    # ── Timeline range filter → re-render day cards ──────────────
+    @app.callback(
+        Output("days-list", "children"),
+        Input("timeline-range-select", "value"),
+        prevent_initial_call=True,
+    )
+    def filter_timeline_range(range_days):
+        """Filter day cards by selected time range."""
+        from datetime import datetime, timedelta
+        from app_v2.components.day_view import create_day_card
+        from app_v2.services.xray import xray_log
+
+        service = get_data_service()
+        days = service.get_days()
+
+        if range_days and range_days > 0:
+            cutoff = (datetime.now() - timedelta(days=range_days)).strftime("%Y-%m-%d")
+            days = [d for d in days if d.date >= cutoff]
+            xray_log(
+                "nav",
+                "filter",
+                f"Showing last {range_days} days ({len(days)} with recordings)",
+            )
+        else:
+            xray_log("nav", "filter", f"Showing all time ({len(days)} days)")
+
+        if not days:
+            return [
+                html.Div("No recordings in this range", className="empty-state-text")
+            ]
+
+        return [create_day_card(day, expanded=(i == 0)) for i, day in enumerate(days)]
+
+    # ── Heatmap cell click → scroll to matching day card ─────────
+    app.clientside_callback(
+        """
+        function() {
+            const ctx = dash_clientside.callback_context;
+            if (!ctx.triggered || !ctx.triggered.length)
+                return window.dash_clientside.no_update;
+
+            var t = ctx.triggered[0];
+            if (!t.value) return window.dash_clientside.no_update;
+
+            try {
+                var propId = JSON.parse(t.prop_id.split('.')[0]);
+                var targetDate = propId.date;
+            } catch(e) {
+                return window.dash_clientside.no_update;
+            }
+
+            // Find the day-header with matching date
+            var headers = document.querySelectorAll('.day-header');
+            for (var i = 0; i < headers.length; i++) {
+                try {
+                    var hid = JSON.parse(headers[i].id);
+                    if (hid.type === 'day-header' && hid.date === targetDate) {
+                        var card = headers[i].closest('.day-card');
+                        if (card) {
+                            card.scrollIntoView({behavior: 'smooth', block: 'start'});
+                            // Expand if collapsed
+                            var recs = card.querySelector('.day-recordings');
+                            if (recs && recs.style.display === 'none') {
+                                headers[i].click();
+                            }
+                            // Brief highlight pulse
+                            card.classList.add('heatmap-highlight');
+                            setTimeout(function() {
+                                card.classList.remove('heatmap-highlight');
+                            }, 2000);
+                        }
+                        return targetDate;
+                    }
+                } catch(e) {}
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output("heatmap-scroll-target", "data"),
+        Input({"type": "heatmap-cell", "date": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )

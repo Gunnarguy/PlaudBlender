@@ -616,17 +616,23 @@ def write_back_to_notion(
         # Smart property mapping: find writable properties for our data
         def _set_rich_text(prop_name: str, text: str):
             if prop_name in schema_types and schema_types[prop_name] == "rich_text":
-                properties[prop_name] = {"rich_text": _build_rich_text_chunks(text)}
+                existing = existing_props.get(prop_name, {}).get("rich_text", [])
+                if not existing:
+                    properties[prop_name] = {"rich_text": _build_rich_text_chunks(text)}
 
         def _set_select(prop_name: str, value: str):
             if prop_name in schema_types and schema_types[prop_name] == "select":
-                properties[prop_name] = {"select": {"name": value}}
+                existing = existing_props.get(prop_name, {}).get("select")
+                if not existing:
+                    properties[prop_name] = {"select": {"name": value}}
 
         def _set_multi_select(prop_name: str, values: list):
             if prop_name in schema_types and schema_types[prop_name] == "multi_select":
-                properties[prop_name] = {
-                    "multi_select": [{"name": v} for v in values[:10]]
-                }
+                existing = existing_props.get(prop_name, {}).get("multi_select", [])
+                if not existing:
+                    properties[prop_name] = {
+                        "multi_select": [{"name": v} for v in values[:10]]
+                    }
 
         def _set_number(prop_name: str, value: float):
             if prop_name in schema_types and schema_types[prop_name] == "number":
@@ -695,24 +701,44 @@ def write_back_all_matched(
     Returns:
         (success_count, fail_count, error_messages)
     """
+    from app_v2.services.xray import xray_log
+
     matched_page_ids = [pid for pid, cid in match_map.items() if cid]
     if not matched_page_ids:
         return 0, 0, ["No matched recordings to write back"]
+
+    total = len(matched_page_ids)
+    xray_log(
+        "data",
+        "notion-writeback",
+        f"Writing back Chronos insights to {total} Notion pages...",
+    )
 
     success = 0
     failed = 0
     errors = []
 
-    for page_id in matched_page_ids:
+    for i, page_id in enumerate(matched_page_ids):
         ok, msg = write_back_to_notion(page_id, session)
         if ok:
             success += 1
         else:
             failed += 1
             errors.append(f"{page_id[:8]}…: {msg}")
+            xray_log(
+                "data",
+                "notion-writeback",
+                f"[{i+1}/{total}] ✗ {page_id[:8]}…: {msg[:50]}",
+                level="warn",
+            )
 
+    xray_log(
+        "data",
+        "notion-writeback",
+        f"Write-back complete: {success} succeeded, {failed} failed out of {total}",
+    )
     logger.info(
-        f"Batch write-back: {success} succeeded, {failed} failed out of {len(matched_page_ids)}"
+        f"Batch write-back: {success} succeeded, {failed} failed out of {total}"
     )
     return success, failed, errors
 
@@ -731,6 +757,8 @@ def detect_stale_imports(
 
     Returns: {notion_page_id → True if stale (Notion edited after import)}
     """
+    from app_v2.services.xray import xray_log
+
     stale_map: Dict[str, bool] = {}
 
     # Build lookup: notion_page_id → ChronosRecording.ingested_at
@@ -776,6 +804,16 @@ def detect_stale_imports(
                 stale_map[page_id] = True
         except (ValueError, TypeError):
             pass
+
+    if stale_map:
+        xray_log(
+            "data",
+            "notion-stale",
+            f"Found {len(stale_map)} pages edited in Notion after import — may need re-import",
+            level="warn",
+        )
+    else:
+        xray_log("data", "notion-stale", "All imported pages are up to date")
 
     return stale_map
 
@@ -1312,20 +1350,21 @@ def reformat_notion_page(
             if enrichments.get("transcript"):
                 for name in ["Transcript", "transcript", "Text", "text"]:
                     if name in schema_types and schema_types[name] == "rich_text":
-                        properties_update[name] = {
-                            "rich_text": _build_rich_text_chunks(
-                                enrichments["transcript"]
-                            )
-                        }
                         old_rt = existing_props.get(name, {}).get("rich_text", [])
                         old_len = sum(
                             len(c.get("text", {}).get("content", "")) for c in old_rt
                         )
-                        new_len = len(enrichments["transcript"])
-                        result["changes"]["Transcript"] = {
-                            "old": f"{old_len} chars",
-                            "new": f"{new_len} chars",
-                        }
+                        if not old_rt:
+                            properties_update[name] = {
+                                "rich_text": _build_rich_text_chunks(
+                                    enrichments["transcript"]
+                                )
+                            }
+                            new_len = len(enrichments["transcript"])
+                            result["changes"]["Transcript"] = {
+                                "old": f"{old_len} chars",
+                                "new": f"{new_len} chars",
+                            }
                         break
 
         if not properties_update:
@@ -1430,18 +1469,36 @@ def reformat_all_notion_pages(
             nrec.page_id, nrec, session, match_map, dry_run=dry_run
         )
 
+        title_short = (nrec.title or "Untitled")[:40]
         if diff.get("error"):
-            errors.append(f"{nrec.title[:40]}: {diff['error']}")
+            errors.append(f"{title_short}: {diff['error']}")
             progress["failed"] += 1
+            xray_log(
+                "data",
+                "notion-reformat",
+                f"[{i+1}/{total}] ✗ {title_short}: {diff['error'][:60]}",
+                level="warn",
+            )
         elif diff["changes"]:
             reformatted += 1
             progress["completed"] = reformatted
             for change_key in diff["changes"]:
                 changes_by_type[change_key] = changes_by_type.get(change_key, 0) + 1
             diffs.append(diff)
+            change_list = ", ".join(diff["changes"][:3])
+            xray_log(
+                "data",
+                "notion-reformat",
+                f"[{i+1}/{total}] ✓ {title_short} — {change_list}",
+            )
         else:
             skipped += 1
             progress["skipped"] = skipped
+            xray_log(
+                "data",
+                "notion-reformat",
+                f"[{i+1}/{total}] · {title_short} — already OK",
+            )
 
         _save_reformat_progress(progress)
 
@@ -1744,16 +1801,27 @@ def push_all_chronos_only(
 
         result = push_chronos_to_notion(rec.recording_id, session, dry_run=dry_run)
 
+        title_short = (rec.title or "Untitled")[:40]
         if result.get("error"):
-            errors.append(f"{rec.title[:40]}: {result['error']}")
+            errors.append(f"{title_short}: {result['error']}")
             progress["failed"] += 1
+            xray_log(
+                "data",
+                "notion-push",
+                f"[{i+1}/{total}] ✗ {title_short}: {result['error'][:60]}",
+                level="warn",
+            )
         elif result.get("page_id") or dry_run:
             created += 1
             progress["completed"] = created
             pages.append(result)
+            xray_log("data", "notion-push", f"[{i+1}/{total}] ✓ {title_short}")
         else:
             skipped += 1
             progress["skipped"] = skipped
+            xray_log(
+                "data", "notion-push", f"[{i+1}/{total}] · {title_short} — skipped"
+            )
 
         _save_reformat_progress(progress)
 
