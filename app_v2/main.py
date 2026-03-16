@@ -94,15 +94,29 @@ def _register_auth_routes(server):
         if request.method == "OPTIONS":
             return _cors_response("", 204)
 
+        # Detect XHR vs browser redirect — XHR needs CORS-wrapped JSON,
+        # browser redirect can use redirect() or HTML pages.
+        is_xhr = (
+            bool(request.headers.get("Origin"))
+            or request.headers.get("X-Requested-With", "").lower() == "xmlhttprequest"
+        )
+
         error = request.args.get("error")
         if error:
+            msg = escape(str(error))
+            if is_xhr:
+                return _cors_response(f'{{"error": "{msg}"}}', 400, "application/json")
             return _cors_response(
-                _auth_error_page("Plaud Denied Access", escape(str(error))), 400
+                _auth_error_page("Plaud Denied Access", str(msg)), 400
             )
 
         code = request.args.get("code")
         state = request.args.get("state")
         if not code:
+            if is_xhr:
+                return _cors_response(
+                    '{"error": "missing code"}', 400, "application/json"
+                )
             return _cors_response(
                 _auth_error_page("Missing Code", "No authorization code received."),
                 400,
@@ -119,6 +133,10 @@ def _register_auth_routes(server):
             client = PlaudOAuthClient(redirect_uri=INAPP_REDIRECT_URI)
             if client.is_authenticated:
                 logger.info("CALLBACK: already authenticated — skipping exchange")
+                if is_xhr:
+                    return _cors_response(
+                        '{"status": "ok", "already": true}', 200, "application/json"
+                    )
                 return redirect("/")
         except Exception:
             pass
@@ -127,11 +145,19 @@ def _register_auth_routes(server):
             client = PlaudOAuthClient(redirect_uri=INAPP_REDIRECT_URI)
             token_data = client.exchange_code_for_token(code)
             logger.info("CALLBACK: token exchange SUCCESS — keys=%s", list(token_data.keys()))
+            if is_xhr:
+                return _cors_response('{"status": "ok"}', 200, "application/json")
             return redirect("/")
         except Exception as e:
             logger.error("CALLBACK: token exchange FAILED — %s", e)
             safe_msg = escape(str(e))
-            return _auth_error_page("Token Exchange Failed", str(safe_msg)), 500
+            if is_xhr:
+                return _cors_response(
+                    f'{{"error": "{safe_msg}"}}', 200, "application/json"
+                )
+            return _cors_response(
+                _auth_error_page("Token Exchange Failed", str(safe_msg)), 500
+            )
 
     @server.route("/auth/plaud/status")
     def auth_plaud_status():
