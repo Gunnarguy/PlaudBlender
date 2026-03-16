@@ -308,19 +308,45 @@ def create_recording_card(recording: RecordingSummary, day_date: str) -> html.Di
                     className="recording-header-right",
                     children=[
                         *(
-                            [html.Span("☁️", className="source-badge cloud",
-                                        title="Plaud Cloud + AI")]
+                            [
+                                html.Span(
+                                    "☁️",
+                                    className="source-badge cloud",
+                                    title="Plaud Cloud + AI",
+                                )
+                            ]
                             if recording.has_plaud_ai
                             else (
-                                [html.Span("☁️", className="source-badge cloud-only",
-                                            title="Plaud Cloud")]
+                                [
+                                    html.Span(
+                                        "☁️",
+                                        className="source-badge cloud-only",
+                                        title="Plaud Cloud",
+                                    )
+                                ]
                                 if recording.source == "plaud_cloud"
-                                else [html.Span("💾", className="source-badge local",
-                                                  title="Local (USB)")]
+                                else (
+                                    [
+                                        html.Span(
+                                            "📝",
+                                            className="source-badge notion",
+                                            title="Notion Import",
+                                        )
+                                    ]
+                                    if recording.source == "notion"
+                                    else [
+                                        html.Span(
+                                            "💾",
+                                            className="source-badge local",
+                                            title="Local (USB)",
+                                        )
+                                    ]
+                                )
                             )
                         ),
-                        html.Span(recording.duration_formatted,
-                                  className="recording-duration"),
+                        html.Span(
+                            recording.duration_formatted, className="recording-duration"
+                        ),
                         html.Span(
                             sentiment_icon,
                             className=f"sentiment-badge {sentiment_cls}",
