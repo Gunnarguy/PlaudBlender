@@ -160,18 +160,18 @@ def run_preflight(*, smoke_call: bool = False) -> int:
     chosen_clean = pick_first_available(
         configured_clean,
         "gemini-3-flash-preview",
-        "gemini-3-pro-preview",
+        "gemini-3.1-pro-preview",
         "gemini-2.5-flash",
     )
     chosen_analyst = pick_first_available(
         configured_analyst,
-        "gemini-3-pro-preview",
+        "gemini-3.1-pro-preview",
         "gemini-3-flash-preview",
         "gemini-2.5-flash",
     )
     chosen_embed = pick_first_available(
         configured_embed,
-        "gemini-embedding-001",
+        "gemini-embedding-2-preview",
     )
 
     def _present(label: str, configured: str, chosen: str | None) -> None:
@@ -190,7 +190,7 @@ def run_preflight(*, smoke_call: bool = False) -> int:
         from google.genai import types
 
         client = get_genai_client()
-        model = chosen_embed or configured_embed or "gemini-embedding-001"
+        model = chosen_embed or configured_embed or "gemini-embedding-2-preview"
         logger.info(f"Running embed smoke call with model={model!r}...")
         try:
             client.models.embed_content(
