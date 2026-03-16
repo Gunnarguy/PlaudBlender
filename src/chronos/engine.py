@@ -167,7 +167,7 @@ class ChronosEngine:
         fallback = pick_first_available(
             configured,
             "gemini-3-flash-preview",
-            "gemini-3-pro-preview",
+            "gemini-3.1-pro-preview",
             "gemini-2.5-flash",
         )
         self.model_name = fallback or configured or "gemini-3-flash-preview"

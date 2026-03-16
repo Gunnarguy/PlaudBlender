@@ -833,6 +833,319 @@ def register_notion_callbacks(app):
             active_category=active_category,
         )
 
+    # ── Sync Engine: Preview Reformat ────────────────────────────
+    @app.callback(
+        Output("notion-sync-result", "children", allow_duplicate=True),
+        Output("notion-sync-confirm-area", "style", allow_duplicate=True),
+        Input("notion-reformat-preview-btn", "n_clicks"),
+        State("notion-match-map-store", "data"),
+        prevent_initial_call=True,
+    )
+    def preview_reformat(n_clicks, match_map):
+        if not n_clicks:
+            raise PreventUpdate
+
+        from src.database.engine import SessionLocal
+        from src.chronos.notion_bridge import reformat_all_notion_pages
+        from app_v2.services.xray import xray_log
+
+        xray_log("data", "notion-reformat", "Running standardize preview...")
+
+        db = SessionLocal()
+        try:
+            result = reformat_all_notion_pages(db, match_map or {}, dry_run=True)
+        finally:
+            db.close()
+
+        total = result.get("total", 0)
+        reformatted = result.get("reformatted", 0)
+        skipped = result.get("skipped", 0)
+        errors = result.get("errors", [])
+        changes_by_type = result.get("changes_by_type", {})
+        diffs = result.get("diffs", [])
+
+        # Build preview summary
+        children = [
+            html.Div(
+                className="notion-import-result",
+                children=[
+                    html.H4(
+                        f"Standardize Preview — {reformatted} of {total} pages need changes"
+                    ),
+                    html.P(f"{skipped} pages already normalized, {len(errors)} errors"),
+                ],
+            ),
+        ]
+
+        if changes_by_type:
+            children.append(
+                html.Div(
+                    className="notion-sync-changes-summary",
+                    children=[
+                        html.Span(f"{k}: {v}", className="notion-sync-change-badge")
+                        for k, v in changes_by_type.items()
+                    ],
+                )
+            )
+
+        # Show sample diffs (first 10)
+        if diffs:
+            diff_items = []
+            for d in diffs[:10]:
+                items = []
+                for prop, val in d.get("changes", {}).items():
+                    old = val.get("old") or "—"
+                    new = val.get("new") or "—"
+                    items.append(html.Li(f"{prop}: {old} → {new}"))
+                diff_items.append(
+                    html.Div(
+                        className="notion-sync-diff-item",
+                        children=[
+                            html.Span(
+                                d.get("page_id", "")[:8] + "…", className="notion-muted"
+                            ),
+                            html.Ul(items),
+                        ],
+                    )
+                )
+            if len(diffs) > 10:
+                diff_items.append(
+                    html.P(f"… and {len(diffs) - 10} more", className="notion-muted")
+                )
+            children.append(
+                html.Div(className="notion-sync-diff-list", children=diff_items)
+            )
+
+        if errors:
+            children.append(
+                html.Div(
+                    className="notion-import-result notion-import-errors",
+                    children=[html.P(e) for e in errors[:5]],
+                )
+            )
+
+        show_confirm = {"display": "flex"} if reformatted > 0 else {"display": "none"}
+        return html.Div(children=children), show_confirm
+
+    # ── Sync Engine: Execute Reformat ────────────────────────────
+    @app.callback(
+        Output("notion-sync-result", "children", allow_duplicate=True),
+        Output("notion-sync-confirm-area", "style", allow_duplicate=True),
+        Output("notion-sync-poll", "disabled", allow_duplicate=True),
+        Input("notion-reformat-execute-btn", "n_clicks"),
+        State("notion-match-map-store", "data"),
+        prevent_initial_call=True,
+    )
+    def execute_reformat(n_clicks, match_map):
+        if not n_clicks:
+            raise PreventUpdate
+
+        import threading
+        from src.database.engine import SessionLocal
+        from src.chronos.notion_bridge import reformat_all_notion_pages
+        from app_v2.services.xray import xray_log
+
+        xray_log(
+            "data", "notion-reformat", "Executing standardize on all Notion pages..."
+        )
+
+        def _run():
+            db = SessionLocal()
+            try:
+                reformat_all_notion_pages(db, match_map or {}, dry_run=False)
+            finally:
+                db.close()
+
+        threading.Thread(target=_run, daemon=True).start()
+
+        return (
+            html.Div(
+                className="notion-import-result notion-import-running",
+                children=[
+                    html.Span("Standardizing Notion pages… check progress below.")
+                ],
+            ),
+            {"display": "none"},
+            False,  # Enable poll
+        )
+
+    # ── Sync Engine: Preview Push ────────────────────────────────
+    @app.callback(
+        Output("notion-sync-result", "children", allow_duplicate=True),
+        Output("notion-sync-confirm-area", "style", allow_duplicate=True),
+        Input("notion-push-preview-btn", "n_clicks"),
+        State("notion-match-map-store", "data"),
+        prevent_initial_call=True,
+    )
+    def preview_push(n_clicks, match_map):
+        if not n_clicks:
+            raise PreventUpdate
+
+        from src.database.engine import SessionLocal
+        from src.chronos.notion_bridge import push_all_chronos_only
+        from app_v2.services.xray import xray_log
+
+        xray_log("data", "notion-push", "Running push preview...")
+
+        db = SessionLocal()
+        try:
+            result = push_all_chronos_only(db, match_map or {}, dry_run=True)
+        finally:
+            db.close()
+
+        total = result.get("total", 0)
+        created = result.get("created", 0)
+        errors = result.get("errors", [])
+        pages = result.get("pages", [])
+
+        children = [
+            html.Div(
+                className="notion-import-result",
+                children=[
+                    html.H4(
+                        f"Push Preview — {created} Chronos recordings to create in Notion"
+                    ),
+                    html.P(f"Out of {total} unmatched Plaud recordings"),
+                ],
+            ),
+        ]
+
+        if pages:
+            page_items = []
+            for p in pages[:15]:
+                props_str = ", ".join(p.get("properties", {}).keys())
+                page_items.append(
+                    html.Div(
+                        className="notion-sync-diff-item",
+                        children=[
+                            html.Strong(p.get("title", "Untitled")),
+                            html.Span(f" — {props_str}", className="notion-muted"),
+                        ],
+                    )
+                )
+            if len(pages) > 15:
+                page_items.append(
+                    html.P(f"… and {len(pages) - 15} more", className="notion-muted")
+                )
+            children.append(
+                html.Div(className="notion-sync-diff-list", children=page_items)
+            )
+
+        if errors:
+            children.append(
+                html.Div(
+                    className="notion-import-result notion-import-errors",
+                    children=[html.P(e) for e in errors[:5]],
+                )
+            )
+
+        show_confirm = {"display": "flex"} if created > 0 else {"display": "none"}
+        return html.Div(children=children), show_confirm
+
+    # ── Sync Engine: Execute Push ────────────────────────────────
+    @app.callback(
+        Output("notion-sync-result", "children", allow_duplicate=True),
+        Output("notion-sync-confirm-area", "style", allow_duplicate=True),
+        Output("notion-sync-poll", "disabled", allow_duplicate=True),
+        Input("notion-push-execute-btn", "n_clicks"),
+        State("notion-match-map-store", "data"),
+        prevent_initial_call=True,
+    )
+    def execute_push(n_clicks, match_map):
+        if not n_clicks:
+            raise PreventUpdate
+
+        import threading
+        from src.database.engine import SessionLocal
+        from src.chronos.notion_bridge import push_all_chronos_only
+        from app_v2.services.xray import xray_log
+
+        xray_log("data", "notion-push", "Pushing Chronos recordings to Notion...")
+
+        def _run():
+            db = SessionLocal()
+            try:
+                push_all_chronos_only(db, match_map or {}, dry_run=False)
+            finally:
+                db.close()
+
+        threading.Thread(target=_run, daemon=True).start()
+
+        return (
+            html.Div(
+                className="notion-import-result notion-import-running",
+                children=[
+                    html.Span(
+                        "Pushing Chronos recordings to Notion… check progress below."
+                    )
+                ],
+            ),
+            {"display": "none"},
+            False,  # Enable poll
+        )
+
+    # ── Sync Engine: Poll Progress ───────────────────────────────
+    @app.callback(
+        Output("notion-sync-result", "children", allow_duplicate=True),
+        Output("notion-sync-poll", "disabled", allow_duplicate=True),
+        Input("notion-sync-poll", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    def poll_sync_progress(n_intervals):
+        from src.chronos.notion_bridge import get_reformat_progress
+
+        progress = get_reformat_progress()
+        if not progress:
+            raise PreventUpdate
+
+        status = progress.get("status", "")
+        total = progress.get("total", 1)
+        completed = progress.get("completed", 0)
+        failed = progress.get("failed", 0)
+        mode = progress.get("mode", "")
+        current = progress.get("current_title", "")
+        idx = progress.get("current_index", 0)
+        done_count = completed + failed
+        pct = int((done_count / max(total, 1)) * 100)
+
+        if status == "done":
+            errs = progress.get("errors", [])
+            result_div = html.Div(
+                className="notion-import-result",
+                children=[
+                    html.H4(
+                        f"{'Standardize' if 'run' in mode or 'execute' in mode else 'Push'} Complete"
+                    ),
+                    html.P(f"{completed} succeeded, {failed} failed out of {total}"),
+                ]
+                + ([html.P(e) for e in errs[:5]] if errs else []),
+            )
+            return result_div, True  # Disable poll
+
+        return (
+            html.Div(
+                className="notion-import-result notion-import-running",
+                children=[
+                    html.Span(
+                        f"{'Standardizing' if 'execute' in mode else 'Pushing'} — {completed} done, {failed} failed"
+                    ),
+                    html.Div(
+                        className="notion-progress-bar-container",
+                        children=[
+                            html.Div(
+                                className="notion-progress-bar",
+                                style={"width": f"{pct}%"},
+                            )
+                        ],
+                    ),
+                    html.Span(
+                        f"[{idx}/{total}] {current}", className="notion-progress-label"
+                    ),
+                ],
+            ),
+            False,  # Keep polling
+        )
+
 
 def _do_full_fetch_data():
     """Fetch all Notion data and return kwargs dict for create_notion_view.

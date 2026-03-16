@@ -144,6 +144,67 @@ def _build_notion_hero(
     )
 
 
+def _build_sync_engine_section(recordings, matched_count: int) -> html.Div:
+    """Build the Sync Engine section with Standardize and Push buttons."""
+    total = len(recordings or [])
+    if total == 0:
+        return html.Div()  # Nothing to show if no recordings loaded
+
+    return html.Div(
+        className="notion-card notion-sync-engine-card",
+        children=[
+            html.Div(
+                className="notion-sync-engine-header",
+                children=[
+                    html.Span("Sync Engine", className="notion-detail-kicker"),
+                    html.H3("Standardize & Push"),
+                    html.P(
+                        "Normalize all Notion titles to MM-DD-YYYY format, set Date properties for sorting, "
+                        "enrich matched pages with AI data, and push Chronos-only recordings to Notion.",
+                        className="notion-muted",
+                    ),
+                ],
+            ),
+            html.Div(
+                className="notion-sync-engine-actions",
+                children=[
+                    html.Button(
+                        f"Preview Standardize ({total} pages)",
+                        id="notion-reformat-preview-btn",
+                        className="sync-action-btn",
+                        n_clicks=0,
+                    ),
+                    html.Button(
+                        "Push Chronos to Notion",
+                        id="notion-push-preview-btn",
+                        className="sync-action-btn notion-import-btn",
+                        n_clicks=0,
+                    ),
+                ],
+            ),
+            # Confirmation buttons (hidden by default, shown after preview)
+            html.Div(
+                id="notion-sync-confirm-area",
+                style={"display": "none"},
+                children=[
+                    html.Button(
+                        "Execute Standardize",
+                        id="notion-reformat-execute-btn",
+                        className="sync-action-btn notion-writeback-btn",
+                        n_clicks=0,
+                    ),
+                    html.Button(
+                        "Execute Push",
+                        id="notion-push-execute-btn",
+                        className="sync-action-btn notion-writeback-btn",
+                        n_clicks=0,
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
 def _build_empty_detail_panel() -> html.Div:
     """Default detail placeholder before a page is selected."""
     return html.Div(
@@ -221,6 +282,14 @@ def create_notion_view(
             # Poll interval for batch import progress (disabled by default)
             dcc.Interval(
                 id="notion-import-poll",
+                interval=2000,
+                disabled=True,
+            ),
+            # ── Sync Engine: Reformat & Push ─────────────────────────
+            _build_sync_engine_section(recordings, matched_count),
+            html.Div(id="notion-sync-result", className="notion-sync-result"),
+            dcc.Interval(
+                id="notion-sync-poll",
                 interval=2000,
                 disabled=True,
             ),

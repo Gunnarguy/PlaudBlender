@@ -616,9 +616,7 @@ def write_back_to_notion(
         # Smart property mapping: find writable properties for our data
         def _set_rich_text(prop_name: str, text: str):
             if prop_name in schema_types and schema_types[prop_name] == "rich_text":
-                properties[prop_name] = {
-                    "rich_text": [{"text": {"content": text[:2000]}}]
-                }
+                properties[prop_name] = {"rich_text": _build_rich_text_chunks(text)}
 
         def _set_select(prop_name: str, value: str):
             if prop_name in schema_types and schema_types[prop_name] == "select":
@@ -939,3 +937,844 @@ def _index_recording_events(session: Session, recording_id: str) -> int:
             continue
 
     return indexed
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Notion Sync & Reformat Engine
+# ═══════════════════════════════════════════════════════════════════
+
+_REFORMAT_PROGRESS_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "data",
+    "notion_reformat_progress.json",
+)
+
+
+def _save_reformat_progress(data: Dict) -> None:
+    os.makedirs(os.path.dirname(_REFORMAT_PROGRESS_FILE), exist_ok=True)
+    with open(_REFORMAT_PROGRESS_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _load_reformat_progress() -> Dict:
+    try:
+        with open(_REFORMAT_PROGRESS_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _clear_reformat_progress() -> None:
+    try:
+        os.remove(_REFORMAT_PROGRESS_FILE)
+    except FileNotFoundError:
+        pass
+
+
+def get_reformat_progress() -> Optional[Dict]:
+    """Get current reformat/push progress for the UI."""
+    data = _load_reformat_progress()
+    return data if data else None
+
+
+# ── Title Normalizer ─────────────────────────────────────────────
+
+
+def normalize_notion_title(title: str, created_time: str = "") -> str:
+    """Normalize a Notion page title to MM-DD-YYYY prefix format.
+
+    Rules:
+    1. Parse existing date from title (YYYY-MM-DD, MM-DD, or MM-DD-YYYY)
+    2. If no date found, fall back to created_time (ISO 8601)
+    3. Strip any existing date prefix, prepend MM-DD-YYYY
+    4. If title IS just a date/timestamp, keep as MM-DD-YYYY only
+    """
+    import re
+    from datetime import date as _date
+
+    cleaned_title = (title or "").strip()
+    parsed_date = None
+
+    # Try YYYY-MM-DD prefix (e.g. '2026-02-11 22:39:55')
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})[\s T]?", cleaned_title)
+    if m:
+        try:
+            parsed_date = _date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            # Strip the date (and optional timestamp) prefix
+            rest = cleaned_title[m.end() :]
+            # Also strip trailing timestamp if the whole title was a timestamp
+            rest = re.sub(r"^\d{2}:\d{2}(:\d{2})?\s*", "", rest).strip()
+            cleaned_title = rest
+        except ValueError:
+            pass
+
+    # Try MM-DD-YYYY prefix (already in target format)
+    if not parsed_date:
+        m = re.match(r"^(\d{2})-(\d{2})-(\d{4})\s*", cleaned_title)
+        if m:
+            try:
+                parsed_date = _date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+                cleaned_title = cleaned_title[m.end() :].strip()
+            except ValueError:
+                pass
+
+    # Try MM-DD prefix (e.g. '03-13 Operational Briefing')
+    if not parsed_date:
+        m = re.match(r"^(\d{2})-(\d{2})\s+", cleaned_title)
+        if m:
+            month, day = int(m.group(1)), int(m.group(2))
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                # Infer year from created_time
+                year = datetime.utcnow().year
+                if created_time and len(created_time) >= 4:
+                    try:
+                        year = int(created_time[:4])
+                    except ValueError:
+                        pass
+                try:
+                    parsed_date = _date(year, month, day)
+                    cleaned_title = cleaned_title[m.end() :].strip()
+                except ValueError:
+                    pass
+
+    # Fallback: use created_time
+    if not parsed_date and created_time:
+        try:
+            ct = datetime.fromisoformat(created_time.replace("Z", "+00:00"))
+            parsed_date = ct.date()
+        except (ValueError, TypeError):
+            pass
+
+    # Last resort: today
+    if not parsed_date:
+        parsed_date = datetime.utcnow().date()
+
+    date_prefix = parsed_date.strftime("%m-%d-%Y")
+
+    if not cleaned_title:
+        return date_prefix
+
+    return f"{date_prefix} {cleaned_title}"
+
+
+# ── Rich Text Chunking ──────────────────────────────────────────
+
+
+def _build_rich_text_chunks(text: str, max_chunk: int = 2000) -> list:
+    """Split text into Notion rich_text array chunks at word boundaries.
+
+    Notion rich_text elements are limited to 2000 chars each,
+    but you can have multiple in an array for unlimited total length.
+    """
+    if not text:
+        return [{"text": {"content": ""}}]
+
+    chunks = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= max_chunk:
+            chunks.append({"text": {"content": remaining}})
+            break
+        # Find a word boundary to split at
+        split_at = remaining.rfind(" ", 0, max_chunk)
+        if split_at <= 0:
+            split_at = max_chunk  # No space found, hard split
+        chunks.append({"text": {"content": remaining[:split_at]}})
+        remaining = remaining[split_at:].lstrip()
+
+    return chunks
+
+
+# ── Page Reformatter ─────────────────────────────────────────────
+
+
+def reformat_notion_page(
+    page_id: str,
+    notion_rec,
+    session: Session,
+    match_map: Dict[str, Optional[str]],
+    dry_run: bool = True,
+) -> Dict:
+    """Compute (and optionally apply) reformatting for a single Notion page.
+
+    Returns a diff dict:
+    {
+        "page_id": str,
+        "changes": {property_name: {"old": ..., "new": ...}},
+        "applied": bool,
+        "error": str or None,
+    }
+    """
+    from app_v2.services.xray import xray_log
+
+    result = {"page_id": page_id, "changes": {}, "applied": False, "error": None}
+
+    try:
+        svc = get_notion_service()
+        client = svc._get_client()
+        old_title = (
+            notion_rec.title
+            if hasattr(notion_rec, "title")
+            else str(notion_rec.get("title", ""))
+        )
+        created_time = (
+            notion_rec.created_time
+            if hasattr(notion_rec, "created_time")
+            else str(notion_rec.get("created_time", ""))
+        )
+
+        # 1. Normalize title
+        new_title = normalize_notion_title(old_title, created_time)
+        if new_title != old_title:
+            result["changes"]["Title"] = {"old": old_title, "new": new_title}
+
+        # 2. Parse date for Date property
+        import re
+
+        date_match = re.match(r"^(\d{2})-(\d{2})-(\d{4})", new_title)
+        iso_date = None
+        if date_match:
+            m, d, y = (
+                int(date_match.group(1)),
+                int(date_match.group(2)),
+                int(date_match.group(3)),
+            )
+            iso_date = f"{y:04d}-{m:02d}-{d:02d}"
+
+        # 3. Check matched Chronos recording for AI enrichment
+        chronos_id = match_map.get(page_id)
+        enrichments = {}
+        if chronos_id:
+            events = (
+                session.query(ChronosEventDB).filter_by(recording_id=chronos_id).all()
+            )
+            rec = get_chronos_recording(session, chronos_id)
+            if events:
+                from collections import Counter
+
+                categories = Counter()
+                sentiments_list = []
+                all_keywords = set()
+                for ev in events:
+                    cat = ev.user_category_override or ev.category or "unknown"
+                    categories[cat] += 1
+                    if ev.sentiment is not None:
+                        sentiments_list.append(ev.sentiment)
+                    if ev.keywords:
+                        all_keywords.update(ev.keywords)
+
+                enrichments["category"] = (
+                    categories.most_common(1)[0][0] if categories else "unknown"
+                )
+                avg_sent = (
+                    sum(sentiments_list) / len(sentiments_list)
+                    if sentiments_list
+                    else 0
+                )
+                enrichments["sentiment"] = (
+                    "positive"
+                    if avg_sent > 0.2
+                    else ("negative" if avg_sent < -0.2 else "neutral")
+                )
+                enrichments["keywords"] = sorted(all_keywords)[:10]
+                enrichments["event_count"] = len(events)
+
+                # AI summary
+                if rec and rec.plaud_ai_summary:
+                    enrichments["summary"] = str(rec.plaud_ai_summary)
+                elif events:
+                    enrichments["summary"] = " | ".join(
+                        str(ev.clean_text)[:200] for ev in events[:5] if ev.clean_text
+                    )
+
+                # Full cleaned transcript
+                if rec and rec.transcript:
+                    enrichments["transcript"] = str(rec.transcript)
+
+        # Now retrieve page to check existing properties
+        page = client.pages.retrieve(page_id=page_id)
+        existing_props = page.get("properties", {})
+        schema_types = {name: prop.get("type") for name, prop in existing_props.items()}
+
+        properties_update = {}
+
+        # Title update — find the title property
+        title_prop_name = None
+        for name, ptype in schema_types.items():
+            if ptype == "title":
+                title_prop_name = name
+                break
+
+        if title_prop_name and new_title != old_title:
+            properties_update[title_prop_name] = {
+                "title": [{"text": {"content": new_title}}]
+            }
+
+        # Date property — find date-type property
+        if iso_date:
+            date_prop_name = None
+            for name in ["Date", "date", "Recording Date", "Created"]:
+                if name in schema_types and schema_types[name] == "date":
+                    date_prop_name = name
+                    break
+            if date_prop_name:
+                # Check existing date value
+                existing_date_val = existing_props.get(date_prop_name, {})
+                existing_date = None
+                if existing_date_val.get("date"):
+                    existing_date = existing_date_val["date"].get("start")
+
+                if existing_date != iso_date:
+                    properties_update[date_prop_name] = {"date": {"start": iso_date}}
+                    result["changes"]["Date"] = {"old": existing_date, "new": iso_date}
+
+        # Enrichment properties — only fill if field is empty/missing
+        if enrichments:
+            for name in ["Category", "category", "Type", "type"]:
+                if name in schema_types and schema_types[name] == "select":
+                    existing_val = existing_props.get(name, {}).get("select")
+                    if not existing_val:
+                        properties_update[name] = {
+                            "select": {"name": enrichments["category"]}
+                        }
+                        result["changes"]["Category"] = {
+                            "old": None,
+                            "new": enrichments["category"],
+                        }
+                    break
+
+            for name in ["Sentiment", "sentiment", "Mood", "mood"]:
+                if name in schema_types and schema_types[name] == "select":
+                    existing_val = existing_props.get(name, {}).get("select")
+                    if not existing_val:
+                        properties_update[name] = {
+                            "select": {"name": enrichments["sentiment"]}
+                        }
+                        result["changes"]["Sentiment"] = {
+                            "old": None,
+                            "new": enrichments["sentiment"],
+                        }
+                    break
+                if name in schema_types and schema_types[name] == "rich_text":
+                    existing_val = existing_props.get(name, {}).get("rich_text", [])
+                    if not existing_val:
+                        properties_update[name] = {
+                            "rich_text": [
+                                {"text": {"content": enrichments["sentiment"]}}
+                            ]
+                        }
+                        result["changes"]["Sentiment"] = {
+                            "old": None,
+                            "new": enrichments["sentiment"],
+                        }
+                    break
+
+            for name in ["Keywords", "keywords", "Tags", "tags", "Topics", "topics"]:
+                if name in schema_types and schema_types[name] == "multi_select":
+                    existing_val = existing_props.get(name, {}).get("multi_select", [])
+                    if not existing_val and enrichments.get("keywords"):
+                        properties_update[name] = {
+                            "multi_select": [
+                                {"name": v} for v in enrichments["keywords"]
+                            ]
+                        }
+                        result["changes"]["Keywords"] = {
+                            "old": [],
+                            "new": enrichments["keywords"],
+                        }
+                    break
+
+            for name in ["Events", "events", "Event Count", "event_count"]:
+                if name in schema_types and schema_types[name] == "number":
+                    properties_update[name] = {"number": enrichments["event_count"]}
+                    result["changes"]["Event Count"] = {
+                        "old": None,
+                        "new": enrichments["event_count"],
+                    }
+                    break
+
+            if enrichments.get("summary"):
+                for name in ["Summary", "summary", "ChatGPT Summary", "AI Summary"]:
+                    if name in schema_types and schema_types[name] == "rich_text":
+                        existing_val = existing_props.get(name, {}).get("rich_text", [])
+                        if not existing_val:
+                            properties_update[name] = {
+                                "rich_text": _build_rich_text_chunks(
+                                    enrichments["summary"]
+                                )
+                            }
+                            result["changes"]["Summary"] = {
+                                "old": None,
+                                "new": enrichments["summary"][:100] + "...",
+                            }
+                        break
+
+            if enrichments.get("transcript"):
+                for name in ["Transcript", "transcript", "Text", "text"]:
+                    if name in schema_types and schema_types[name] == "rich_text":
+                        properties_update[name] = {
+                            "rich_text": _build_rich_text_chunks(
+                                enrichments["transcript"]
+                            )
+                        }
+                        old_rt = existing_props.get(name, {}).get("rich_text", [])
+                        old_len = sum(
+                            len(c.get("text", {}).get("content", "")) for c in old_rt
+                        )
+                        new_len = len(enrichments["transcript"])
+                        result["changes"]["Transcript"] = {
+                            "old": f"{old_len} chars",
+                            "new": f"{new_len} chars",
+                        }
+                        break
+
+        if not properties_update:
+            return result  # Nothing to change
+
+        if dry_run:
+            return result
+
+        # Execute the update
+        client.pages.update(page_id=page_id, properties=properties_update)
+        result["applied"] = True
+        xray_log("data", "notion-reformat", f"Reformatted: {new_title[:50]}")
+
+    except Exception as e:
+        logger.error(f"Error reformatting page {page_id}: {e}", exc_info=True)
+        result["error"] = str(e)
+
+    return result
+
+
+# ── Batch Reformat ───────────────────────────────────────────────
+
+
+def reformat_all_notion_pages(
+    session: Session,
+    match_map: Dict[str, Optional[str]],
+    dry_run: bool = True,
+) -> Dict:
+    """Reformat all Notion pages for consistent titles, dates, and enrichment.
+
+    In dry_run mode: returns proposed changes without writing.
+    In execute mode: applies changes with progress tracking and rate limiting.
+
+    Returns: {total, reformatted, skipped, errors, changes_by_type, backup_file, diffs}
+    """
+    from app_v2.services.xray import xray_log
+
+    svc = get_notion_service()
+    recordings = svc.fetch_recordings(limit=1000)
+
+    if not recordings:
+        return {
+            "total": 0,
+            "reformatted": 0,
+            "skipped": 0,
+            "errors": [],
+            "changes_by_type": {},
+            "diffs": [],
+        }
+
+    total = len(recordings)
+    reformatted = 0
+    skipped = 0
+    errors = []
+    changes_by_type: Dict[str, int] = {}
+    diffs = []
+
+    # Backup originals before any writes (execute mode only)
+    backup_file = None
+    if not dry_run:
+        backup_data = []
+        for r in recordings:
+            backup_data.append(
+                {
+                    "page_id": r.page_id,
+                    "title": r.title,
+                    "created_time": r.created_time,
+                    "date": r.date,
+                }
+            )
+        backup_file = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "data",
+            f"notion_reformat_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json",
+        )
+        os.makedirs(os.path.dirname(backup_file), exist_ok=True)
+        with open(backup_file, "w") as f:
+            json.dump(backup_data, f, indent=2)
+        xray_log(
+            "data", "notion-reformat", f"Backup saved: {os.path.basename(backup_file)}"
+        )
+
+    progress = {
+        "total": total,
+        "completed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "current_title": "",
+        "current_index": 0,
+        "status": "running",
+        "mode": "dry-run" if dry_run else "execute",
+        "errors": [],
+    }
+    _save_reformat_progress(progress)
+
+    for i, nrec in enumerate(recordings):
+        progress["current_index"] = i + 1
+        progress["current_title"] = (nrec.title or "Untitled")[:60]
+        _save_reformat_progress(progress)
+
+        diff = reformat_notion_page(
+            nrec.page_id, nrec, session, match_map, dry_run=dry_run
+        )
+
+        if diff.get("error"):
+            errors.append(f"{nrec.title[:40]}: {diff['error']}")
+            progress["failed"] += 1
+        elif diff["changes"]:
+            reformatted += 1
+            progress["completed"] = reformatted
+            for change_key in diff["changes"]:
+                changes_by_type[change_key] = changes_by_type.get(change_key, 0) + 1
+            diffs.append(diff)
+        else:
+            skipped += 1
+            progress["skipped"] = skipped
+
+        _save_reformat_progress(progress)
+
+        # Rate limiting — only in execute mode (dry run just reads)
+        if not dry_run and diff["changes"]:
+            _time.sleep(0.35)  # ~3 req/sec
+
+    progress["status"] = "done"
+    _save_reformat_progress(progress)
+
+    mode_label = "Preview" if dry_run else "Reformat"
+    xray_log(
+        "data",
+        "notion-reformat",
+        f"{mode_label} complete: {reformatted} changed, {skipped} already OK, {len(errors)} errors",
+    )
+
+    return {
+        "total": total,
+        "reformatted": reformatted,
+        "skipped": skipped,
+        "errors": errors,
+        "changes_by_type": changes_by_type,
+        "backup_file": backup_file,
+        "diffs": diffs[:50],  # Cap preview diffs at 50
+    }
+
+
+# ── Push Chronos-Only Recordings to Notion ───────────────────────
+
+
+def push_chronos_to_notion(
+    recording_id: str,
+    session: Session,
+    dry_run: bool = True,
+) -> Dict:
+    """Create a new Notion page for a Chronos recording.
+
+    Returns: {recording_id, title, properties, page_id (if created), error}
+    """
+    from app_v2.services.xray import xray_log
+
+    result = {
+        "recording_id": recording_id,
+        "title": "",
+        "properties": {},
+        "page_id": None,
+        "error": None,
+        "dry_run": dry_run,
+    }
+
+    try:
+        rec = get_chronos_recording(session, recording_id)
+        if not rec:
+            result["error"] = f"Recording {recording_id} not found"
+            return result
+
+        events = (
+            session.query(ChronosEventDB).filter_by(recording_id=recording_id).all()
+        )
+
+        # Build title
+        rec_title = rec.title or "Untitled"
+        created_at = rec.created_at
+        created_iso = ""
+        if created_at:
+            if isinstance(created_at, datetime):
+                created_iso = created_at.isoformat()
+            else:
+                created_iso = str(created_at)
+        title = normalize_notion_title(rec_title, created_iso)
+        result["title"] = title
+
+        # Parse date for Date property
+        import re
+
+        date_match = re.match(r"^(\d{2})-(\d{2})-(\d{4})", title)
+        iso_date = None
+        if date_match:
+            mm, dd, yyyy = (
+                int(date_match.group(1)),
+                int(date_match.group(2)),
+                int(date_match.group(3)),
+            )
+            iso_date = f"{yyyy:04d}-{mm:02d}-{dd:02d}"
+
+        # Aggregate event data
+        from collections import Counter
+
+        categories = Counter()
+        sentiments_list = []
+        all_keywords = set()
+        for ev in events:
+            cat = ev.user_category_override or ev.category or "unknown"
+            categories[cat] += 1
+            if ev.sentiment is not None:
+                sentiments_list.append(ev.sentiment)
+            if ev.keywords:
+                all_keywords.update(ev.keywords)
+
+        top_category = categories.most_common(1)[0][0] if categories else "unknown"
+        avg_sent = sum(sentiments_list) / len(sentiments_list) if sentiments_list else 0
+        sentiment_label = (
+            "positive"
+            if avg_sent > 0.2
+            else ("negative" if avg_sent < -0.2 else "neutral")
+        )
+        top_keywords = sorted(all_keywords)[:10]
+
+        # Summary
+        summary = ""
+        if rec.plaud_ai_summary:
+            summary = str(rec.plaud_ai_summary)
+        elif events:
+            summary = " | ".join(
+                str(ev.clean_text)[:200] for ev in events[:5] if ev.clean_text
+            )
+
+        # Transcript
+        transcript = str(rec.transcript) if rec.transcript else ""
+
+        # Build Notion properties
+        settings = get_settings()
+        db_id = settings.notion_database_id
+        if not db_id:
+            result["error"] = "NOTION_DATABASE_ID not configured"
+            return result
+
+        # Discover the database schema to build properties correctly
+        svc = get_notion_service()
+        client = svc._get_client()
+
+        # Retrieve DB schema
+        db_info = client.databases.retrieve(database_id=db_id)
+        db_schema = db_info.get("properties", {})
+        schema_types = {name: prop.get("type") for name, prop in db_schema.items()}
+
+        properties = {}
+
+        # Title property (required)
+        title_prop_name = None
+        for name, ptype in schema_types.items():
+            if ptype == "title":
+                title_prop_name = name
+                break
+        if title_prop_name:
+            properties[title_prop_name] = {"title": [{"text": {"content": title}}]}
+
+        # Date
+        for name in ["Date", "date", "Recording Date", "Created"]:
+            if name in schema_types and schema_types[name] == "date" and iso_date:
+                properties[name] = {"date": {"start": iso_date}}
+                break
+
+        # Category
+        for name in ["Category", "category", "Type", "type"]:
+            if name in schema_types and schema_types[name] == "select":
+                properties[name] = {"select": {"name": top_category}}
+                break
+
+        # Sentiment
+        for name in ["Sentiment", "sentiment", "Mood", "mood"]:
+            if name in schema_types and schema_types[name] == "select":
+                properties[name] = {"select": {"name": sentiment_label}}
+                break
+            if name in schema_types and schema_types[name] == "rich_text":
+                properties[name] = {
+                    "rich_text": [
+                        {"text": {"content": f"{sentiment_label} ({avg_sent:+.2f})"}}
+                    ]
+                }
+                break
+
+        # Keywords
+        for name in ["Keywords", "keywords", "Tags", "tags", "Topics", "topics"]:
+            if name in schema_types and schema_types[name] == "multi_select":
+                properties[name] = {"multi_select": [{"name": v} for v in top_keywords]}
+                break
+
+        # Event count
+        for name in ["Events", "events", "Event Count", "event_count"]:
+            if name in schema_types and schema_types[name] == "number":
+                properties[name] = {"number": len(events)}
+                break
+
+        # Summary
+        if summary:
+            for name in ["Summary", "summary", "ChatGPT Summary", "AI Summary"]:
+                if name in schema_types and schema_types[name] == "rich_text":
+                    properties[name] = {"rich_text": _build_rich_text_chunks(summary)}
+                    break
+
+        # Transcript
+        if transcript:
+            for name in ["Transcript", "transcript", "Text", "text"]:
+                if name in schema_types and schema_types[name] == "rich_text":
+                    properties[name] = {
+                        "rich_text": _build_rich_text_chunks(transcript)
+                    }
+                    break
+
+        result["properties"] = {k: "set" for k in properties}
+
+        if dry_run:
+            return result
+
+        # Create the page
+        new_page = client.pages.create(
+            parent={"database_id": db_id},
+            properties=properties,
+        )
+        result["page_id"] = new_page["id"]
+        xray_log("data", "notion-push", f"Created Notion page: {title[:50]}")
+
+    except Exception as e:
+        logger.error(f"Error pushing {recording_id} to Notion: {e}", exc_info=True)
+        result["error"] = str(e)
+
+    return result
+
+
+def push_all_chronos_only(
+    session: Session,
+    match_map: Dict[str, Optional[str]],
+    dry_run: bool = True,
+) -> Dict:
+    """Push all Chronos-only recordings (not in Notion) as new Notion pages.
+
+    Only pushes source="plaud" recordings (won't re-push Notion imports).
+    Sorted by created_at ascending for chronological insertion.
+
+    Returns: {total, created, skipped, errors, pages}
+    """
+    from app_v2.services.xray import xray_log
+
+    # Get all matched Chronos recording IDs (already in Notion)
+    matched_chronos_ids = set(cid for cid in match_map.values() if cid)
+
+    # Also include notion-imported recordings (source="notion")
+    notion_imported_ids = set()
+    for rec in (
+        session.query(ChronosRecording)
+        .filter(ChronosRecording.source == "notion")
+        .all()
+    ):
+        notion_imported_ids.add(rec.recording_id)
+
+    # Find Chronos recordings NOT matched to Notion
+    all_recordings = (
+        session.query(ChronosRecording)
+        .filter(
+            ChronosRecording.source != "notion",
+        )
+        .all()
+    )
+
+    to_push = []
+    for rec in all_recordings:
+        if rec.recording_id in matched_chronos_ids:
+            continue
+        if rec.processing_status != "completed":
+            continue
+        to_push.append(rec)
+
+    # Sort oldest first for chronological Notion insertion
+    to_push.sort(key=lambda r: r.created_at or datetime.min)
+
+    if not to_push:
+        return {"total": 0, "created": 0, "skipped": 0, "errors": [], "pages": []}
+
+    total = len(to_push)
+    created = 0
+    skipped = 0
+    errors = []
+    pages = []
+
+    progress = {
+        "total": total,
+        "completed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "current_title": "",
+        "current_index": 0,
+        "status": "running",
+        "mode": "dry-run" if dry_run else "push",
+        "errors": [],
+    }
+    _save_reformat_progress(progress)
+
+    xray_log(
+        "data",
+        "notion-push",
+        f"{'Preview' if dry_run else 'Pushing'} {total} Chronos recordings to Notion...",
+    )
+
+    for i, rec in enumerate(to_push):
+        progress["current_index"] = i + 1
+        progress["current_title"] = (rec.title or "Untitled")[:60]
+        _save_reformat_progress(progress)
+
+        result = push_chronos_to_notion(rec.recording_id, session, dry_run=dry_run)
+
+        if result.get("error"):
+            errors.append(f"{rec.title[:40]}: {result['error']}")
+            progress["failed"] += 1
+        elif result.get("page_id") or dry_run:
+            created += 1
+            progress["completed"] = created
+            pages.append(result)
+        else:
+            skipped += 1
+            progress["skipped"] = skipped
+
+        _save_reformat_progress(progress)
+
+        # Rate limiting in execute mode
+        if not dry_run and not result.get("error"):
+            _time.sleep(0.35)
+
+    progress["status"] = "done"
+    _save_reformat_progress(progress)
+
+    mode_label = "Preview" if dry_run else "Push"
+    xray_log(
+        "data",
+        "notion-push",
+        f"{mode_label} complete: {created} pages, {skipped} skipped, {len(errors)} errors",
+    )
+
+    return {
+        "total": total,
+        "created": created,
+        "skipped": skipped,
+        "errors": errors,
+        "pages": pages[:50],
+    }
