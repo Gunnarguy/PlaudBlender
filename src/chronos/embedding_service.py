@@ -275,3 +275,63 @@ class ChronosEmbeddingService:
             return None
 
         return types.Part.from_bytes(data=data, mime_type=mime)
+
+    # ------------------------------------------------------------------
+    # Batch multimodal embedding (parallel)
+    # ------------------------------------------------------------------
+
+    def embed_batch_with_audio(
+        self,
+        items: List[tuple],
+        task_type: str = "RETRIEVAL_DOCUMENT",
+        max_workers: int = 5,
+    ) -> List[List[float]]:
+        """Embed multiple (text, audio_path) pairs in parallel.
+
+        Each item is a tuple of (text, audio_path). Uses a thread pool to
+        speed up what would otherwise be O(n) serial API calls.
+
+        Args:
+            items: List of (text, audio_path) tuples
+            task_type: Gemini task type
+            max_workers: Max concurrent API calls (5 is safe for free tier)
+
+        Returns:
+            List of embedding vectors in the same order as items
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from app_v2.services.xray import xray_log
+
+        if not items:
+            return []
+
+        _t0 = _time.perf_counter()
+        xray_log(
+            "embed",
+            "batch-multimodal",
+            f"Starting parallel embedding of {len(items)} items ({max_workers} workers)",
+        )
+
+        results: List[Optional[List[float]]] = [None] * len(items)
+
+        def _embed_one(idx: int, text: str, audio_path: str) -> tuple:
+            vec = self.embed_text_with_audio(text, audio_path, task_type=task_type)
+            return idx, vec
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(_embed_one, i, text, audio): i
+                for i, (text, audio) in enumerate(items)
+            }
+            for future in as_completed(futures):
+                idx, vec = future.result()
+                results[idx] = vec
+
+        _ms = (_time.perf_counter() - _t0) * 1000
+        xray_log(
+            "embed",
+            "batch-multimodal",
+            f"Parallel embedding done — {len(items)} items in {_ms / 1000:.1f}s",
+            duration_ms=round(_ms, 1),
+        )
+        return results  # type: ignore[return-value]

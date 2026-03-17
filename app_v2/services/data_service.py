@@ -50,6 +50,7 @@ class Event:
     day_of_week: str
     hour_of_day: int
     category_confidence: Optional[float] = None
+    duration_capped: bool = False
 
     @classmethod
     def from_qdrant(cls, point_id: str, payload: Dict[str, Any]) -> "Event":
@@ -71,7 +72,8 @@ class Event:
         # Cap individual event duration to 4 hours — Gemini sometimes
         # hallucinates end_ts months into the future.
         MAX_EVENT_DURATION = 4 * 3600  # 4 hours
-        if (end_dt - start_dt).total_seconds() > MAX_EVENT_DURATION:
+        was_capped = (end_dt - start_dt).total_seconds() > MAX_EVENT_DURATION
+        if was_capped:
             end_dt = start_dt + timedelta(seconds=MAX_EVENT_DURATION)
 
         capped_duration = min(
@@ -93,6 +95,7 @@ class Event:
             day_of_week=payload.get("day_of_week", ""),
             hour_of_day=payload.get("hour_of_day", 0),
             category_confidence=payload.get("category_confidence"),
+            duration_capped=was_capped,
         )
 
 
@@ -243,6 +246,8 @@ class Stats:
     plaud_cloud_stats: Optional[Dict[str, Any]] = None
     # Hour × category matrix: {hour: {category: count}}
     categories_by_hour: Dict[int, Dict[str, int]] = field(default_factory=dict)
+    # Data quality: events whose duration was capped (Gemini hallucination fix)
+    events_duration_capped: int = 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -579,8 +584,8 @@ class ChronosDataService:
                             day_ai_summary += "."
                 finally:
                     db.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("AI summary aggregation failed for %s: %s", day_key, e)
 
             result.append(
                 DaySummary(
@@ -1211,6 +1216,7 @@ class ChronosDataService:
         sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0}
         recording_durations: Dict[str, float] = defaultdict(float)
         recording_event_counts: Dict[str, int] = defaultdict(int)
+        capped_count = 0
 
         for event in events:
             recording_ids.add(event.recording_id)
@@ -1223,6 +1229,8 @@ class ChronosDataService:
             cats_by_hour[event.hour_of_day][event.category] += 1
             total_duration += event.duration_seconds
             total_sentiment += event.sentiment
+            if event.duration_capped:
+                capped_count += 1
             recording_durations[event.recording_id] += event.duration_seconds
             recording_event_counts[event.recording_id] += 1
 
@@ -1263,7 +1271,10 @@ class ChronosDataService:
                 real_longest_rec_min = max(rec_durations, default=0) / 60
             finally:
                 _db.close()
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "DB recording duration query failed, falling back to event-based: %s", e
+            )
             # Fallback to event-based (inaccurate but better than nothing)
             real_total_duration_sec = total_duration
             real_avg_duration_min = (
@@ -1287,8 +1298,8 @@ class ChronosDataService:
             total_db = sum(db_stats.values())
             completed = db_stats.get("completed", 0)
             pipeline_rate = (completed / total_db * 100) if total_db else 0.0
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Pipeline rate calculation failed: %s", e)
 
         # Plaud cloud stats (non-blocking)
         plaud_stats = None
@@ -1320,6 +1331,7 @@ class ChronosDataService:
             pipeline_completion_rate=pipeline_rate,
             plaud_cloud_stats=plaud_stats,
             categories_by_hour={h: dict(c) for h, c in cats_by_hour.items()},
+            events_duration_capped=capped_count,
         )
 
     def refresh_cache(self):
@@ -1493,16 +1505,16 @@ class ChronosDataService:
                     chronos_record.plaud_workflow_submitted_at = datetime.fromisoformat(
                         submitted_at
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Workflow submitted_at parse failed: %s", e)
             completed_at = workflow_metadata.get("completed_at")
             if completed_at and isinstance(completed_at, str):
                 try:
                     chronos_record.plaud_workflow_completed_at = datetime.fromisoformat(
                         completed_at
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Workflow completed_at parse failed: %s", e)
             template_id = workflow_metadata.get("template_id")
             if template_id:
                 chronos_record.plaud_workflow_template_id = str(template_id)

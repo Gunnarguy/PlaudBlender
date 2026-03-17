@@ -381,6 +381,17 @@ def create_stats_view(stats: Stats) -> html.Div:
                         "Pipeline",
                         f"{stats.pipeline_completion_rate:.0f}%",
                     ),
+                    *(
+                        [
+                            create_stat_card(
+                                "⚠️",
+                                "Duration Capped",
+                                str(stats.events_duration_capped),
+                            )
+                        ]
+                        if stats.events_duration_capped
+                        else []
+                    ),
                 ],
             ),
             # Plaud cloud stats (if available)

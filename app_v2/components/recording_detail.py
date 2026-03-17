@@ -161,6 +161,17 @@ def create_event_card(event: Event, index: int, highlighted: bool = False) -> ht
                                 f"Duration: {int(event.duration_seconds)}s",
                                 className="meta-item",
                             ),
+                            *(
+                                [
+                                    html.Span(
+                                        "⚠️ duration capped",
+                                        className="meta-item capped-badge",
+                                        title="Original duration exceeded 4 hours — likely a Gemini hallucination. Capped to 4h.",
+                                    )
+                                ]
+                                if event.duration_capped
+                                else []
+                            ),
                         ],
                     ),
                 ],

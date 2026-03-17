@@ -22,6 +22,7 @@ Run with:
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -82,17 +83,46 @@ def _get_data_service():
 
 
 # ---------------------------------------------------------------------------
+# Timeout protection for MCP tools
+# ---------------------------------------------------------------------------
+
+MCP_TOOL_TIMEOUT = 30  # seconds — prevents hung API calls from blocking MCP
+
+
+def _with_timeout(timeout_sec: int = MCP_TOOL_TIMEOUT):
+    """Decorator: wraps an async MCP tool with asyncio.wait_for timeout."""
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            try:
+                return await asyncio.wait_for(fn(*args, **kwargs), timeout=timeout_sec)
+            except asyncio.TimeoutError:
+                name = fn.__name__
+                logger.error("MCP tool '%s' timed out after %ds", name, timeout_sec)
+                return json.dumps(
+                    {"error": f"Tool '{name}' timed out after {timeout_sec}s"}
+                )
+
+        return wrapper
+
+    return decorator
+
+
+# ---------------------------------------------------------------------------
 # MCP Tools
 # ---------------------------------------------------------------------------
 
 
 @server.tool()
+@_with_timeout(5)
 async def ping() -> str:
     """Health check — returns pong if server is alive."""
     return "pong"
 
 
 @server.tool()
+@_with_timeout()
 async def search_events(
     query: str,
     category: str = "",
@@ -154,6 +184,7 @@ async def search_events(
 
 
 @server.tool()
+@_with_timeout()
 async def get_recording(recording_id: str) -> str:
     """Get full details for a specific recording including all extracted events.
 
@@ -203,6 +234,7 @@ async def get_recording(recording_id: str) -> str:
 
 
 @server.tool()
+@_with_timeout()
 async def list_recordings(
     status: str = "completed",
     limit: int = 20,
@@ -262,6 +294,7 @@ async def list_recordings(
 
 
 @server.tool()
+@_with_timeout()
 async def get_timeline(date: str = "", days: int = 1) -> str:
     """Get the event timeline for a specific date or date range.
 
@@ -322,6 +355,7 @@ async def get_timeline(date: str = "", days: int = 1) -> str:
 
 
 @server.tool()
+@_with_timeout()
 async def get_stats() -> str:
     """Get comprehensive Chronos system statistics.
 
@@ -362,6 +396,7 @@ async def get_stats() -> str:
 
 
 @server.tool()
+@_with_timeout()
 async def get_topics() -> str:
     """List all topic categories with event counts sorted by frequency."""
     try:
@@ -375,6 +410,7 @@ async def get_topics() -> str:
 
 
 @server.tool()
+@_with_timeout()
 async def get_graph(max_nodes: int = 50, entity_types: str = "") -> str:
     """Get knowledge graph data — entities and relationships extracted from recordings.
 
@@ -440,6 +476,7 @@ async def get_graph(max_nodes: int = 50, entity_types: str = "") -> str:
 
 
 @server.tool()
+@_with_timeout(660)
 async def run_pipeline(stage: str = "full") -> str:
     """Run the Chronos pipeline to sync and process recordings.
 
@@ -494,6 +531,7 @@ async def run_pipeline(stage: str = "full") -> str:
 
 
 @server.tool()
+@_with_timeout()
 async def system_status() -> str:
     """Check health of all Chronos services — database, Qdrant, Plaud API, Gemini."""
     status = {}
@@ -552,6 +590,7 @@ async def system_status() -> str:
 
 
 @server.tool()
+@_with_timeout(60)
 async def ask_chronos(question: str, reasoning: str = "none") -> str:
     """Ask a natural language question about your recordings and get an AI answer.
 

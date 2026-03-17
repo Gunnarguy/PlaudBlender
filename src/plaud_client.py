@@ -64,7 +64,8 @@ class PlaudClient:
         try:
             # Plaud timestamps are usually ISO-8601
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except Exception:
+        except Exception as e:
+            logger.debug("Could not parse Plaud timestamp %r: %s", value, e)
             return datetime.utcnow()
 
     def _get_headers(self) -> dict:
@@ -147,6 +148,12 @@ class PlaudClient:
                 raise
 
             except Exception as e:
+                logger.warning(
+                    "Plaud API error on attempt %d: %s (endpoint=%s)",
+                    attempt + 1,
+                    e,
+                    endpoint,
+                )
                 last_error = str(e)
                 if attempt < retries - 1:
                     time.sleep(RETRY_DELAY)
@@ -396,7 +403,10 @@ class PlaudClient:
                     rec_time = self._parse_datetime(created)
                     if rec_time >= cutoff:
                         recent.append(rec)
-                except Exception:
+                except Exception as e:
+                    logger.debug(
+                        "Could not parse timestamp for recording filter: %s", e
+                    )
                     pass
         return recent
 
@@ -768,7 +778,8 @@ class PlaudClient:
             for rec in cloud_recs:
                 n = rec.get("name") or rec.get("title") or ""
                 cloud_names.add(n.strip().lower())
-        except Exception:
+        except Exception as e:
+            logger.debug("Could not fetch cloud recordings for dedup: %s", e)
             pass
 
         candidates = []
