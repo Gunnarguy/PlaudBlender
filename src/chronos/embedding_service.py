@@ -108,6 +108,10 @@ class ChronosEmbeddingService:
         xray_log("embed", "text",
                  f"Turned {len(text.split())} words into a fingerprint the computer can compare",
                  duration_ms=round(_ms, 1))
+        # Embedding API doesn't return token counts — estimate ~1.3 tokens/word
+        from src.chronos.cost_tracker import track_usage
+
+        track_usage(self.model_name, "embed", input_tokens=int(len(text.split()) * 1.3))
         return self._normalize(vec) if self._needs_normalization else vec
 
     def embed_batch(
@@ -153,6 +157,11 @@ class ChronosEmbeddingService:
             xray_log("embed", "batch",
                      f"Group {_batch_num} done — {len(batch_embeddings)} fingerprints created",
                      duration_ms=round(_bt_ms, 1))
+            # Estimate tokens for batch
+            from src.chronos.cost_tracker import track_usage
+
+            _batch_words = sum(len(t.split()) for t in batch)
+            track_usage(self.model_name, "embed", input_tokens=int(_batch_words * 1.3))
             if self._needs_normalization:
                 embeddings.extend([self._normalize(e.values) for e in batch_embeddings])
             else:
@@ -236,6 +245,11 @@ class ChronosEmbeddingService:
             xray_log("embed", "multimodal",
                      f"Made a fingerprint from both the audio and text together",
                      duration_ms=round(_ms, 1))
+            from src.chronos.cost_tracker import track_usage
+
+            track_usage(
+                self.model_name, "embed", input_tokens=int(len(text.split()) * 1.3)
+            )
             return self._normalize(vec) if self._needs_normalization else vec
 
         except Exception as exc:

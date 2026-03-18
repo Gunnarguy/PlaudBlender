@@ -325,6 +325,15 @@ Return ONLY the JSON object, no other text."""
             prompt = self.EXTRACTION_PROMPT.replace("{text}", truncated_text)
             response = self.llm.complete(prompt).text.strip()
             self._last_call_ts = time.monotonic()
+            # Estimate tokens for entity extraction (llama_index has no usage API)
+            from src.chronos.cost_tracker import track_usage
+
+            track_usage(
+                self.llm.model,
+                "entity",
+                input_tokens=int(len(prompt.split()) * 1.3),
+                output_tokens=int(len(response.split()) * 1.3),
+            )
 
             # Parse JSON from response
             # Handle markdown code blocks
@@ -998,6 +1007,17 @@ Respond in JSON:
 
         try:
             response = client.models.generate_content(model=model_name, contents=prompt)
+            # Track cost
+            _usage = getattr(response, "usage_metadata", None)
+            if _usage:
+                from src.chronos.cost_tracker import track_usage
+
+                track_usage(
+                    model_name,
+                    "community",
+                    input_tokens=getattr(_usage, "prompt_token_count", 0),
+                    output_tokens=getattr(_usage, "candidates_token_count", 0),
+                )
             text = (response.text or "").strip()
 
             # Parse JSON

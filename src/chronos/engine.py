@@ -282,6 +282,19 @@ class ChronosEngine:
                     config=config,
                 )
 
+                # Track cost
+                _usage = getattr(response, "usage_metadata", None)
+                if _usage:
+                    from src.chronos.cost_tracker import track_usage as _track
+
+                    _track(
+                        self.model_name,
+                        "generate",
+                        input_tokens=getattr(_usage, "prompt_token_count", 0),
+                        output_tokens=getattr(_usage, "candidates_token_count", 0),
+                        recording_id=recording_id,
+                    )
+
                 # Parse JSON
                 output_data = getattr(response, "parsed", None)
                 if output_data is None:

@@ -307,6 +307,15 @@ Extract events from this transcript following the schema exactly."""
                         )
                         xray_log("gemini", "tokens",
                                  f"Gemini used {_in_tok:,} words reading + {_out_tok:,} words writing = {_in_tok + _out_tok:,} total")
+                        from src.chronos.cost_tracker import track_usage
+
+                        track_usage(
+                            self.engine.model_name,
+                            "generate",
+                            input_tokens=_in_tok,
+                            output_tokens=_out_tok,
+                            recording_id=recording_id,
+                        )
 
                     # Parse the accumulated response
                     raw_text = response_text.strip()
@@ -318,6 +327,21 @@ Extract events from this transcript following the schema exactly."""
                         config=config,
                     )
                     raw_text = (response.text or "").strip()
+
+                    # Track cost for non-verbose mode
+                    _nv_usage = getattr(response, "usage_metadata", None)
+                    if _nv_usage:
+                        from src.chronos.cost_tracker import track_usage
+
+                        track_usage(
+                            self.engine.model_name,
+                            "generate",
+                            input_tokens=getattr(_nv_usage, "prompt_token_count", 0),
+                            output_tokens=getattr(
+                                _nv_usage, "candidates_token_count", 0
+                            ),
+                            recording_id=recording_id,
+                        )
 
                     # Check for structured output in non-verbose mode
                     parsed = getattr(response, "parsed", None)

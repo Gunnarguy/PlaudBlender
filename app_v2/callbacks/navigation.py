@@ -1220,13 +1220,26 @@ def create_settings_view(preferences=None) -> html.Div:
     )
 
     # ── Section: AI Models ───────────────────────────────────────────────
+    from src.chronos.cost_tracker import get_pricing
+
+    def _model_label(name: str, note: str = "") -> str:
+        """Build a dropdown label with pricing info."""
+        p = get_pricing(name)
+        if p["tier"] == "free":
+            price = "FREE"
+        else:
+            price = f"${p['input_per_mtok']:.2f}/${p['output_per_mtok']:.2f} per MTok"
+        suffix = f" — {note}" if note else ""
+        return f"{name} ({price}{suffix})"
+
     models_section = html.Div(
         className="settings-section",
         children=[
             html.H4("🧠 AI Models"),
             html.P(
                 "Model selection for each processing stage. "
-                "Change via .env or the controls below.",
+                "Change via .env or the controls below. "
+                "Prices: input/output per 1M tokens.",
                 className="setting-note",
             ),
             html.Div(
@@ -1241,19 +1254,25 @@ def create_settings_view(preferences=None) -> html.Div:
                                 id="setting-cleaning-model",
                                 options=[
                                     {
-                                        "label": "gemini-3-flash-preview (free)",
+                                        "label": _model_label("gemini-3-flash-preview"),
                                         "value": "gemini-3-flash-preview",
                                     },
                                     {
-                                        "label": "gemini-2.5-flash (free, stable)",
+                                        "label": _model_label(
+                                            "gemini-2.5-flash", "stable"
+                                        ),
                                         "value": "gemini-2.5-flash",
                                     },
                                     {
-                                        "label": "gemini-3.1-pro-preview (best)",
+                                        "label": _model_label(
+                                            "gemini-3.1-pro-preview", "best"
+                                        ),
                                         "value": "gemini-3.1-pro-preview",
                                     },
                                     {
-                                        "label": "gemini-2.5-pro (stable thinking)",
+                                        "label": _model_label(
+                                            "gemini-2.5-pro", "stable thinking"
+                                        ),
                                         "value": "gemini-2.5-pro",
                                     },
                                 ],
@@ -1276,19 +1295,25 @@ def create_settings_view(preferences=None) -> html.Div:
                                 id="setting-analyst-model",
                                 options=[
                                     {
-                                        "label": "gemini-3.1-pro-preview (best)",
+                                        "label": _model_label(
+                                            "gemini-3.1-pro-preview", "best"
+                                        ),
                                         "value": "gemini-3.1-pro-preview",
                                     },
                                     {
-                                        "label": "gemini-2.5-pro (stable thinking)",
+                                        "label": _model_label(
+                                            "gemini-2.5-pro", "stable thinking"
+                                        ),
                                         "value": "gemini-2.5-pro",
                                     },
                                     {
-                                        "label": "gemini-3-flash-preview (free)",
+                                        "label": _model_label("gemini-3-flash-preview"),
                                         "value": "gemini-3-flash-preview",
                                     },
                                     {
-                                        "label": "gemini-2.5-flash (stable fast)",
+                                        "label": _model_label(
+                                            "gemini-2.5-flash", "stable fast"
+                                        ),
                                         "value": "gemini-2.5-flash",
                                     },
                                 ],
@@ -1338,27 +1363,39 @@ def create_settings_view(preferences=None) -> html.Div:
                                 id="setting-openai-model",
                                 options=[
                                     {
-                                        "label": "gpt-5.4 (flagship — $2.50/$15 MTok, 1.05M ctx)",
+                                        "label": _model_label(
+                                            "gpt-5.4", "flagship, 1.05M ctx"
+                                        ),
                                         "value": "gpt-5.4",
                                     },
                                     {
-                                        "label": "gpt-5.4-pro (smartest — precise/detailed)",
+                                        "label": _model_label(
+                                            "gpt-5.4-pro", "smartest"
+                                        ),
                                         "value": "gpt-5.4-pro",
                                     },
                                     {
-                                        "label": "gpt-5-mini (cost-effective — $0.25/$2 MTok)",
+                                        "label": _model_label(
+                                            "gpt-5-mini", "cost-effective"
+                                        ),
                                         "value": "gpt-5-mini",
                                     },
                                     {
-                                        "label": "gpt-5-nano (fastest/cheapest)",
+                                        "label": _model_label(
+                                            "gpt-5-nano", "fastest/cheapest"
+                                        ),
                                         "value": "gpt-5-nano",
                                     },
                                     {
-                                        "label": "gpt-5 (previous reasoning)",
+                                        "label": _model_label(
+                                            "gpt-5", "previous reasoning"
+                                        ),
                                         "value": "gpt-5",
                                     },
                                     {
-                                        "label": "gpt-4.1 (non-reasoning legacy)",
+                                        "label": _model_label(
+                                            "gpt-4.1", "non-reasoning legacy"
+                                        ),
                                         "value": "gpt-4.1",
                                     },
                                 ],
@@ -3035,3 +3072,25 @@ def register_navigation_callbacks(app):
                 return 0, True
         except Exception:
             return 0, True
+
+    # ── Cost tracker live-refresh ──────────────────────────────
+
+    @app.callback(
+        Output("cost-live-container", "children"),
+        Input("cost-refresh-interval", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    def refresh_cost_display(_n):
+        """Refresh cost cards every 5 seconds while Stats view is open."""
+        from app_v2.components.stats import create_cost_section
+
+        section = create_cost_section()
+        # Return only the live container children (skip the outer wrapper)
+        container = None
+        for child in section.children or []:
+            if getattr(child, "id", None) == "cost-live-container":
+                container = child
+                break
+        if container:
+            return container.children
+        raise PreventUpdate

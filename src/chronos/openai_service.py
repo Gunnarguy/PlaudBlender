@@ -109,13 +109,22 @@ Question: {question}"""
                         if content.type == "output_text":
                             answer += content.text
 
+            # Track cost
+            _inp_tok = response.usage.input_tokens
+            _out_tok = response.usage.output_tokens
+            from src.chronos.cost_tracker import track_usage
+
+            track_usage(
+                response.model, "search", input_tokens=_inp_tok, output_tokens=_out_tok
+            )
+
             return {
                 "answer": answer,
                 "model": response.model,
                 "response_id": response.id,
                 "usage": {
-                    "input_tokens": response.usage.input_tokens,
-                    "output_tokens": response.usage.output_tokens,
+                    "input_tokens": _inp_tok,
+                    "output_tokens": _out_tok,
                     "total_tokens": response.usage.total_tokens,
                 },
             }

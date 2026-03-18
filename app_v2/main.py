@@ -298,6 +298,7 @@ def _register_xray_routes(server):
                 "/"
             )
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         return response
 
     @server.route("/xray/api/events")
@@ -312,6 +313,19 @@ def _register_xray_routes(server):
         from app_v2.services.xray import clear_events
         clear_events()
         return jsonify({"ok": True})
+
+    @server.route("/xray/api/costs")
+    def xray_api_costs():
+        """Return session + historical cost data for the cost ticker."""
+        from src.chronos.cost_tracker import get_session_cost, get_cost_summary
+
+        days = request.args.get("days", 30, type=int)
+        return jsonify(
+            {
+                "session": get_session_cost(),
+                "historical": get_cost_summary(days=days),
+            }
+        )
 
 
 def _start_token_keepalive():

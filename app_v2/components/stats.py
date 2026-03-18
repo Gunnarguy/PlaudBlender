@@ -1,6 +1,6 @@
 """Stats view component with enhanced analytics."""
 
-from dash import html
+from dash import html, dcc
 from typing import Dict
 
 from app_v2.services.data_service import Stats
@@ -396,6 +396,8 @@ def create_stats_view(stats: Stats) -> html.Div:
             ),
             # Plaud cloud stats (if available)
             *plaud_section_children,
+            # API Cost tracker
+            create_cost_section(),
             # Insights callout
             html.Div(
                 className="stats-insights",
@@ -517,3 +519,325 @@ def _insight_card(label: str, value: str, detail: str) -> html.Div:
         children.append(html.Span(detail, className="insight-detail"))
 
     return html.Div(className="insight-card", children=children)
+
+
+# ════════════════════════════════════════════════════════════
+# API Cost Section
+# ════════════════════════════════════════════════════════════
+
+
+def _fmt_cost(usd: float) -> str:
+    """Format a USD cost to appropriate precision."""
+    if usd == 0:
+        return "FREE"
+    if usd < 0.01:
+        return f"${usd:.4f}"
+    if usd < 1:
+        return f"${usd:.3f}"
+    return f"${usd:.2f}"
+
+
+def _fmt_tokens(n: int) -> str:
+    """Format token count for display."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K"
+    return str(n)
+
+
+def create_cost_section() -> html.Div:
+    """Create the API cost tracking section for Stats view.
+
+    Renders a live-updating cost dashboard via a client-side interval
+    that polls /xray/api/costs every 5 seconds.
+    """
+    from src.chronos.cost_tracker import (
+        get_session_cost,
+        get_cost_summary,
+        get_model_pricing_table,
+    )
+
+    session = get_session_cost()
+    historical = get_cost_summary(days=30)
+    pricing = get_model_pricing_table()
+
+    # --- Session summary cards ---
+    session_cards = html.Div(
+        className="stats-grid",
+        id="cost-session-cards",
+        children=[
+            create_stat_card(
+                "💰", "Session Cost", _fmt_cost(session["total_cost_usd"])
+            ),
+            create_stat_card("📞", "API Calls", str(session["total_calls"])),
+            create_stat_card(
+                "📥",
+                "Input Tokens",
+                _fmt_tokens(session["total_input_tokens"]),
+            ),
+            create_stat_card(
+                "📤",
+                "Output Tokens",
+                _fmt_tokens(session["total_output_tokens"]),
+            ),
+        ],
+    )
+
+    # --- Historical summary (30 days) ---
+    hist_cards = html.Div(
+        className="stats-grid",
+        style={"marginTop": "8px"},
+        children=[
+            create_stat_card(
+                "📅", "30-Day Cost", _fmt_cost(historical["total_cost_usd"])
+            ),
+            create_stat_card("📊", "30-Day Calls", str(historical["total_calls"])),
+            create_stat_card(
+                "📥",
+                "30-Day Input",
+                _fmt_tokens(historical["total_input_tokens"]),
+            ),
+            create_stat_card(
+                "📤",
+                "30-Day Output",
+                _fmt_tokens(historical["total_output_tokens"]),
+            ),
+        ],
+    )
+
+    # --- Per-model breakdown (session) ---
+    model_rows = []
+    for model, data in sorted(
+        session["by_model"].items(),
+        key=lambda x: -x[1]["cost_usd"],
+    ):
+        model_rows.append(
+            html.Div(
+                className="cost-model-row",
+                children=[
+                    html.Span(model, className="cost-model-name"),
+                    html.Span(f'{data["calls"]} calls', className="cost-model-calls"),
+                    html.Span(
+                        f'{_fmt_tokens(data["input_tokens"])} → {_fmt_tokens(data["output_tokens"])}',
+                        className="cost-model-tokens",
+                    ),
+                    html.Span(
+                        _fmt_cost(data["cost_usd"]),
+                        className="cost-model-amount"
+                        + (" cost-free" if data["cost_usd"] == 0 else " cost-paid"),
+                    ),
+                ],
+            )
+        )
+
+    # Add historical models not in session
+    for model, data in sorted(
+        historical["by_model"].items(),
+        key=lambda x: -x[1]["cost_usd"],
+    ):
+        if model not in session["by_model"]:
+            model_rows.append(
+                html.Div(
+                    className="cost-model-row cost-historical",
+                    children=[
+                        html.Span(model, className="cost-model-name"),
+                        html.Span(
+                            f'{data["calls"]} calls (30d)',
+                            className="cost-model-calls",
+                        ),
+                        html.Span(
+                            f'{_fmt_tokens(data["input_tokens"])} → {_fmt_tokens(data["output_tokens"])}',
+                            className="cost-model-tokens",
+                        ),
+                        html.Span(
+                            _fmt_cost(data["cost_usd"]),
+                            className="cost-model-amount"
+                            + (" cost-free" if data["cost_usd"] == 0 else " cost-paid"),
+                        ),
+                    ],
+                )
+            )
+
+    model_breakdown = html.Div(
+        className="cost-model-breakdown",
+        children=(
+            model_rows
+            if model_rows
+            else [html.Div("No API calls recorded yet", className="cost-empty")]
+        ),
+    )
+
+    # --- Daily cost chart (last 30 days) ---
+    daily_bars = []
+    by_day = historical.get("by_day", [])
+    max_day_cost = max((d["cost_usd"] for d in by_day), default=0.01) or 0.01
+    for day_data in reversed(by_day[-14:]):  # Last 14 days
+        pct = (day_data["cost_usd"] / max_day_cost) * 100 if max_day_cost else 0
+        date_short = day_data["date"][-5:] if day_data["date"] else "?"  # MM-DD
+        daily_bars.append(
+            html.Div(
+                className="cost-day-bar",
+                children=[
+                    html.Div(
+                        className="bar-fill"
+                        + (
+                            " cost-bar-free"
+                            if day_data["cost_usd"] == 0
+                            else " cost-bar-paid"
+                        ),
+                        style={"height": f"{max(2, pct)}%"},
+                        title=f'{day_data["date"]}: {_fmt_cost(day_data["cost_usd"])} ({day_data["calls"]} calls)',
+                    ),
+                    html.Span(date_short, className="cost-day-label"),
+                ],
+            )
+        )
+
+    daily_chart = html.Div(
+        className="cost-daily-chart",
+        children=(
+            daily_bars
+            if daily_bars
+            else [html.Div("No daily data yet", className="cost-empty")]
+        ),
+    )
+
+    # --- Model pricing reference table ---
+    pricing_rows = []
+    for p in pricing:
+        inp_str = "FREE" if p["input_per_mtok"] == 0 else f'${p["input_per_mtok"]:.2f}'
+        out_str = (
+            "FREE" if p["output_per_mtok"] == 0 else f'${p["output_per_mtok"]:.2f}'
+        )
+        pricing_rows.append(
+            html.Tr(
+                className="pricing-row"
+                + (" pricing-free" if p["tier"] == "free" else ""),
+                children=[
+                    html.Td(p["label"], className="pricing-label"),
+                    html.Td(p["provider"].title(), className="pricing-provider"),
+                    html.Td(inp_str, className="pricing-input"),
+                    html.Td(out_str, className="pricing-output"),
+                    html.Td(
+                        "FREE" if p["tier"] == "free" else "Paid",
+                        className="pricing-tier"
+                        + (" tier-free" if p["tier"] == "free" else " tier-paid"),
+                    ),
+                ],
+            )
+        )
+
+    pricing_table = html.Table(
+        className="pricing-table",
+        children=[
+            html.Thead(
+                html.Tr(
+                    [
+                        html.Th("Model"),
+                        html.Th("Provider"),
+                        html.Th("Input/1M"),
+                        html.Th("Output/1M"),
+                        html.Th("Tier"),
+                    ]
+                )
+            ),
+            html.Tbody(pricing_rows),
+        ],
+    )
+
+    # --- Recent calls (last 20) ---
+    recent_rows = []
+    for r in session.get("recent", [])[:10]:
+        recent_rows.append(
+            html.Div(
+                className="cost-recent-row",
+                children=[
+                    html.Span(
+                        f'{r["ago_s"]:.0f}s ago',
+                        className="cost-recent-ago",
+                    ),
+                    html.Span(r["model"], className="cost-recent-model"),
+                    html.Span(r["type"], className="cost-recent-type"),
+                    html.Span(
+                        f'{_fmt_tokens(r["input_tokens"])}→{_fmt_tokens(r["output_tokens"])}',
+                        className="cost-recent-tokens",
+                    ),
+                    html.Span(
+                        _fmt_cost(r["cost_usd"]),
+                        className="cost-recent-cost"
+                        + (" cost-free" if r["cost_usd"] == 0 else " cost-paid"),
+                    ),
+                ],
+            )
+        )
+
+    recent_section = html.Div(
+        className="cost-recent-list",
+        children=(
+            recent_rows
+            if recent_rows
+            else [html.Div("No recent calls", className="cost-empty")]
+        ),
+    )
+
+    # --- Auto-refresh interval ---
+    interval = dcc.Interval(
+        id="cost-refresh-interval",
+        interval=5_000,  # 5 seconds
+        n_intervals=0,
+    )
+
+    return html.Div(
+        className="stats-section cost-section",
+        children=[
+            html.H3("💰 API Cost Tracker", className="section-title"),
+            html.P(
+                "Real-time spending across all AI models — session + 30-day history",
+                className="section-subtitle",
+            ),
+            interval,
+            html.Div(
+                id="cost-live-container",
+                children=[
+                    session_cards,
+                    hist_cards,
+                    # Model breakdown
+                    html.Div(
+                        className="cost-subsection",
+                        children=[
+                            html.H4("Per Model", className="cost-subsection-title"),
+                            model_breakdown,
+                        ],
+                    ),
+                    # Daily chart
+                    html.Div(
+                        className="cost-subsection",
+                        children=[
+                            html.H4(
+                                "Daily Cost (14 days)",
+                                className="cost-subsection-title",
+                            ),
+                            daily_chart,
+                        ],
+                    ),
+                    # Recent calls
+                    html.Div(
+                        className="cost-subsection",
+                        children=[
+                            html.H4("Recent Calls", className="cost-subsection-title"),
+                            recent_section,
+                        ],
+                    ),
+                ],
+            ),
+            # Pricing reference
+            html.Details(
+                className="cost-pricing-details",
+                children=[
+                    html.Summary("Model Pricing Reference (per 1M tokens)"),
+                    pricing_table,
+                ],
+            ),
+        ],
+    )

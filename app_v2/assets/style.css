@@ -8053,3 +8053,276 @@ a.plaud-connect-btn:hover {
     max-width: 100%;
   }
 }
+
+/* ════════════════════════════════════════════════════════════
+   API Cost Tracker Section
+   ════════════════════════════════════════════════════════════ */
+
+.cost-section {
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+  background: linear-gradient(
+    135deg,
+    rgba(16, 185, 129, 0.03),
+    rgba(59, 130, 246, 0.03)
+  );
+}
+
+.cost-section .section-title {
+  color: #10b981;
+}
+
+.cost-subsection {
+  margin-top: 16px;
+}
+
+.cost-subsection-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #94a3b8;
+  margin: 0 0 8px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Per-model breakdown rows */
+.cost-model-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cost-model-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  transition: background-color 0.15s;
+}
+
+.cost-model-row:hover {
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.cost-model-row.cost-historical {
+  opacity: 0.65;
+}
+
+.cost-model-name {
+  font-weight: 600;
+  color: #e2e8f0;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.8rem;
+}
+
+.cost-model-calls {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.cost-model-tokens {
+  color: #94a3b8;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.75rem;
+}
+
+.cost-model-amount {
+  font-weight: 700;
+  font-family: "SF Mono", "Fira Code", monospace;
+  min-width: 70px;
+  text-align: right;
+}
+
+.cost-model-amount.cost-free {
+  color: #10b981;
+}
+
+.cost-model-amount.cost-paid {
+  color: #f59e0b;
+}
+
+/* Daily cost chart */
+.cost-daily-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 100px;
+  padding: 0 4px;
+}
+
+.cost-day-bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.cost-day-bar .bar-fill {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  min-height: 2px;
+  transition: height 0.3s ease;
+}
+
+.cost-day-bar .bar-fill.cost-bar-free {
+  background: rgba(16, 185, 129, 0.4);
+}
+
+.cost-day-bar .bar-fill.cost-bar-paid {
+  background: linear-gradient(180deg, #f59e0b, #d97706);
+}
+
+.cost-day-label {
+  font-size: 0.6rem;
+  color: #64748b;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+/* Recent calls list */
+.cost-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.cost-recent-row {
+  display: grid;
+  grid-template-columns: 60px 1fr auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  border-radius: 4px;
+  background: rgba(30, 41, 59, 0.3);
+}
+
+.cost-recent-row:hover {
+  background: rgba(30, 41, 59, 0.5);
+}
+
+.cost-recent-ago {
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.cost-recent-model {
+  color: #e2e8f0;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cost-recent-type {
+  color: #94a3b8;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+}
+
+.cost-recent-tokens {
+  color: #64748b;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.72rem;
+}
+
+.cost-recent-cost.cost-free {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.cost-recent-cost.cost-paid {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+/* Pricing reference table */
+.cost-pricing-details {
+  margin-top: 16px;
+}
+
+.cost-pricing-details summary {
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  padding: 8px 0;
+  user-select: none;
+}
+
+.cost-pricing-details summary:hover {
+  color: #e2e8f0;
+}
+
+.pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 0.82rem;
+}
+
+.pricing-table th {
+  text-align: left;
+  padding: 8px 12px;
+  color: #64748b;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid rgba(100, 116, 139, 0.2);
+}
+
+.pricing-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(100, 116, 139, 0.1);
+}
+
+.pricing-row:hover {
+  background: rgba(30, 41, 59, 0.5);
+}
+
+.pricing-row.pricing-free td {
+  color: #10b981;
+}
+
+.pricing-label {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.pricing-provider {
+  color: #94a3b8;
+}
+
+.pricing-input,
+.pricing-output {
+  font-family: "SF Mono", "Fira Code", monospace;
+  color: #cbd5e1;
+}
+
+.tier-free {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.tier-paid {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.cost-empty {
+  color: #64748b;
+  font-style: italic;
+  padding: 12px;
+  text-align: center;
+}

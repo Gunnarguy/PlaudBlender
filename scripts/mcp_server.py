@@ -698,6 +698,17 @@ ANSWER:"""
             model=settings.chronos_analyst_model,
             contents=prompt,
         )
+        # Track cost
+        _usage = getattr(response, "usage_metadata", None)
+        if _usage:
+            from src.chronos.cost_tracker import track_usage
+
+            track_usage(
+                settings.chronos_analyst_model,
+                "generate",
+                input_tokens=getattr(_usage, "prompt_token_count", 0),
+                output_tokens=getattr(_usage, "candidates_token_count", 0),
+            )
         answer = response.text if response.text else "Unable to generate answer."
 
         return json.dumps(
