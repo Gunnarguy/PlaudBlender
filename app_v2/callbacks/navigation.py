@@ -2359,10 +2359,28 @@ def register_navigation_callbacks(app):
                 if has_db:
                     xray_log("nav", "data", "Loading Notion data for dashboard")
                     try:
-                        notion_data = _do_full_fetch_data()
+                        import concurrent.futures
+
+                        with concurrent.futures.ThreadPoolExecutor(
+                            max_workers=1
+                        ) as pool:
+                            future = pool.submit(_do_full_fetch_data)
+                            notion_data = future.result(timeout=45)
                         content = create_notion_view(**notion_data)
+                    except concurrent.futures.TimeoutError:
+                        logger.warning("Notion pre-fetch timed out after 45s")
+                        xray_log(
+                            "nav",
+                            "data",
+                            "Notion API is slow — showing empty view, hit Refresh to retry",
+                            level="warn",
+                        )
+                        content = create_notion_view(databases=databases)
                     except Exception as e:
                         logger.warning(f"Notion pre-fetch failed: {e}")
+                        xray_log(
+                            "nav", "data", f"Notion fetch error: {e}", level="warn"
+                        )
                         content = create_notion_view(databases=databases)
                 else:
                     content = create_notion_view(databases=databases)

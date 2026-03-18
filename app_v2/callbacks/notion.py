@@ -146,11 +146,13 @@ def register_notion_callbacks(app):
         if not n_clicks:
             raise PreventUpdate
 
-        from app_v2.services.xray import xray_log, xray_timer
+        import concurrent.futures
+        from app_v2.services.xray import xray_log
 
         xray_log("data", "notion", "Connecting to Notion...")
 
-        try:
+        def _do_fetch():
+            from app_v2.services.xray import xray_timer
             from src.notion_service import get_notion_service
 
             svc = get_notion_service()
@@ -229,6 +231,28 @@ def register_notion_callbacks(app):
 
             return recordings_data, status_dict, match_map, coverage, [], databases_data
 
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(_do_fetch)
+                return future.result(timeout=45)
+        except concurrent.futures.TimeoutError:
+            logger.warning("Notion fetch timed out after 45s")
+            xray_log(
+                "data",
+                "notion",
+                "Notion API timed out — try again in a moment",
+                level="warn",
+            )
+            return (
+                [],
+                {"connected": False, "error": "Request timed out"},
+                {},
+                [],
+                _build_error_message(
+                    "Notion API timed out after 45 seconds. Try again."
+                ),
+                [],
+            )
         except Exception as e:
             logger.error(f"Error fetching Notion recordings: {e}")
             xray_log("data", "notion", f"Error connecting to Notion: {e}", level="error")

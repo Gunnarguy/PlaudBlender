@@ -76,7 +76,11 @@ class NotionService:
             )
 
         from notion_client import Client
-        self._client = Client(auth=token, timeout_ms=15_000)
+
+        # notion_client overrides httpx timeout with timeout_ms / 1000.
+        # 30s per request is generous but prevents infinite hangs when the
+        # Notion API stalls mid-pagination (484 pages = ~5 paginated calls).
+        self._client = Client(auth=token, timeout_ms=30_000)
         return self._client
 
     def _resolve_token(self) -> str | None:

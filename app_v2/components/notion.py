@@ -457,7 +457,15 @@ def _build_database_picker(databases, has_db_id) -> html.Div:
 def _build_search_toolbar(recordings, active_category=None) -> html.Div:
     """Build search/filter/sort toolbar for the recordings list."""
     if not recordings:
-        return html.Div()
+        # Return hidden placeholder so callback inputs still resolve
+        return html.Div(
+            html.Button(
+                "All (0)",
+                id="notion-filter-all",
+                style={"display": "none"},
+                n_clicks=0,
+            )
+        )
 
     # Count categories for filter buttons
     categories = {}

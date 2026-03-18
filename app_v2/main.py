@@ -290,6 +290,16 @@ background:#0f172a;color:#e2e8f0;">
 def _register_xray_routes(server):
     """Register Flask API routes for the X-ray Activity Monitor PiP panel."""
 
+    @server.after_request
+    def _xray_cors(response):
+        """Allow same-origin fetch to X-ray endpoints under self-signed HTTPS."""
+        if request.path.startswith("/xray/"):
+            response.headers["Access-Control-Allow-Origin"] = request.host_url.rstrip(
+                "/"
+            )
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        return response
+
     @server.route("/xray/api/events")
     def xray_api_events():
         from app_v2.services.xray import get_recent_events
