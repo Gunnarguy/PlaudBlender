@@ -494,6 +494,15 @@ Return ONLY the JSON object, no other text."""
                     self._respect_rate_limit()
                     response = self.llm.complete(prompt).text.strip()
                     self._last_call_ts = time.monotonic()
+                    # Track cost for retry call
+                    from src.chronos.cost_tracker import track_usage
+
+                    track_usage(
+                        self.llm.model,
+                        "entity",
+                        input_tokens=int(len(prompt.split()) * 1.3),
+                        output_tokens=int(len(response.split()) * 1.3),
+                    )
                     if response.startswith("```"):
                         response = response.split("```", 2)[1]
                         if response.startswith("json"):

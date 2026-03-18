@@ -221,15 +221,31 @@ Return valid JSON matching the schema above."""
                 config=config,
             )
 
+            _last_chunk = None
             for chunk in stream:
                 chunk_text = chunk.text or ""
                 response_text += chunk_text
+                _last_chunk = chunk
 
             elapsed = time.time() - start_time
             events_found = response_text.count('"event_id"')
             print(
                 f"      📝 Response: {len(response_text):,} chars | {events_found} events | {elapsed:.0f}s"
             )
+            # Track cost
+            _usage = (
+                getattr(_last_chunk, "usage_metadata", None) if _last_chunk else None
+            )
+            if _usage:
+                from src.chronos.cost_tracker import track_usage
+
+                track_usage(
+                    engine.model_name,
+                    "generate",
+                    input_tokens=getattr(_usage, "prompt_token_count", 0),
+                    output_tokens=getattr(_usage, "candidates_token_count", 0),
+                    recording_id=recording_id,
+                )
 
             # Parse response
             raw_text = response_text.strip()

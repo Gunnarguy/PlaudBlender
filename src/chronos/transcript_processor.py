@@ -133,6 +133,17 @@ BROKEN_JSON:
             xray_log("gemini", "json-repair",
                      f"Gemini cleaned up its own mess ({len(repaired):,} chars)",
                      duration_ms=round(_ms, 1))
+            # Track cost for JSON repair call
+            _repair_usage = getattr(resp, "usage_metadata", None)
+            if _repair_usage:
+                from src.chronos.cost_tracker import track_usage
+
+                track_usage(
+                    model_name,
+                    "generate",
+                    input_tokens=getattr(_repair_usage, "prompt_token_count", 0),
+                    output_tokens=getattr(_repair_usage, "candidates_token_count", 0),
+                )
             return repaired
         except Exception as e:
             _ms = (_time.perf_counter() - _t0) * 1000
