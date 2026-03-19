@@ -52,15 +52,16 @@ python scripts/launch_app.py
 
 ## UI Views
 
-| View         | Description                                                                   |
-| ------------ | ----------------------------------------------------------------------------- |
-| **Timeline** | Date-grouped event timeline with horizontal strip, heat-map, recording detail |
-| **Topics**   | Events grouped by category (work, meeting, personal, health, etc.)            |
-| **Search**   | Semantic vector search with category/date filters + AI answers (GPT-5.4)      |
-| **Graph**    | Interactive Cytoscape knowledge graph — 6 layouts, node click details         |
-| **Stats**    | 8 stat cards, sentiment trends, productivity insights                         |
-| **Sync**     | Pipeline dashboard, Full Sync, Reset Stuck, Plaud workflow status monitoring  |
-| **Settings** | 12-section config (29+ params), .env save, live connectivity checks           |
+| View         | Description                                                                       |
+| ------------ | --------------------------------------------------------------------------------- |
+| **Timeline** | Date-grouped event timeline with horizontal strip, heat-map, recording detail     |
+| **Topics**   | Events grouped by category (work, meeting, personal, health, etc.)                |
+| **Search**   | Semantic vector search with category/date filters + AI answers (GPT-5.4)          |
+| **Graph**    | Interactive Cytoscape knowledge graph — 6 layouts, node click details             |
+| **Stats**    | 8 stat cards, sentiment trends, productivity insights, **API cost tracking**      |
+| **Notion**   | Notion uplink — OAuth, page filter, channel select, sync recordings to Notion     |
+| **Sync**     | Pipeline dashboard, Full Sync, Reset Stuck, Plaud workflow status monitoring      |
+| **Settings** | 12-section config (34 params), .env save, live connectivity checks, model pricing |
 
 ### X-ray Activity Monitor
 
@@ -78,13 +79,13 @@ Powered by a server-side ring buffer with monotonic sequence IDs and a client-si
 
 ```
 app_v2/                → Dash v2 UI (main application)
-  main.py              → App entry point + X-ray Flask API routes
+  main.py              → App entry point + 9 Flask API routes (OAuth, X-ray, costs)
   layout.py            → 3-column layout (sidebar | content | detail)
-  assets/style.css     → Dark theme CSS (~5400 lines)
+  assets/style.css     → Dark theme CSS (~5500 lines)
   assets/xray_pip.js   → X-ray Activity Monitor PiP panel (client-side JS)
-  components/          → sidebar, day_view, search, graph, stats, topics, recording_detail
-  callbacks/           → navigation, search, day_view, graph, recording_detail
-  services/            → data_service.py (data access), xray.py (telemetry ring buffer)
+  components/          → sidebar, day_view, search, graph, stats, topics, recording_detail, notion
+  callbacks/           → navigation, search, day_view, graph, recording_detail, notion, xray
+  services/            → data_service.py (~2150 lines), xray.py (telemetry ring buffer)
 
 scripts/               → CLI tools
   chronos_pipeline.py  → Full pipeline: ingest → process → index → graph
@@ -95,16 +96,21 @@ scripts/               → CLI tools
 src/chronos/           → Core engine
   ingest_service.py    → Fetch recordings from Plaud, store in SQLite
   transcript_processor → Process transcripts through Gemini AI
-  embedding_service.py — Gemini Embedding 2 multimodal (text+audio), L2 norm, MRL
+  embedding_service.py → Gemini Embedding 2 multimodal (text+audio), L2 norm, MRL
   qdrant_client.py     → Native Qdrant client with temporal payload indexes
   graph_service.py     → Entity extraction and NetworkX graph building
   graph_rag.py         → Graph-enhanced RAG with community detection
   openai_service.py    → OpenAI Responses API wrapper (GPT-5.4 RAG)
+  cost_tracker.py      → API usage tracking with Gemini/OpenAI pricing (~300 lines)
+  notion_bridge.py     → Notion integration bridge (OAuth + page sync)
+  pipeline_progress.py → Pipeline progress tracking
 
 src/plaud_*.py         → Plaud API clients (OAuth, device, webhook, USB watcher, workflows)
+src/notion_oauth.py    → Notion OAuth 2.0 client
+src/notion_service.py  → Notion API service (page creation, sync)
 src/database/          → SQLAlchemy models & repositories
 src/models/            → Pydantic schemas (chronos_schemas.py)
-tests/                 → 91 tests (pytest)
+tests/                 → 124 tests (pytest, 11 test files)
 ```
 
 ## MCP Server
@@ -142,18 +148,21 @@ Configure in your MCP client:
 
 ## Environment Variables
 
-| Variable                  | Required | Description                                                           |
-| ------------------------- | -------- | --------------------------------------------------------------------- |
-| `GEMINI_API_KEY`          | Yes      | Google Gemini API key                                                 |
-| `PLAUD_CLIENT_ID`         | Yes      | Plaud OAuth client ID                                                 |
-| `PLAUD_CLIENT_SECRET`     | Yes      | Plaud OAuth client secret                                             |
-| `PLAUD_REDIRECT_URI`      | No       | OAuth callback (default: `http://localhost:8050/auth/plaud/callback`) |
-| `QDRANT_URL`              | No       | Qdrant URL (default: `http://localhost:6333`)                         |
-| `QDRANT_COLLECTION_NAME`  | No       | Collection name (default: `chronos_events`)                           |
-| `CHRONOS_EMBEDDING_MODEL` | No       | Embedding model (default: `gemini-embedding-2-preview`)               |
-| `CHRONOS_EMBEDDING_DIM`   | No       | Embedding dim (default: 768, range 128–3072)                          |
-| `OPENAI_API_KEY`          | No       | OpenAI API key for RAG responses (Responses API)                      |
-| `OPENAI_MODEL`            | No       | OpenAI model (default: `gpt-5.4`)                                     |
+| Variable                  | Required | Description                                                                   |
+| ------------------------- | -------- | ----------------------------------------------------------------------------- |
+| `GEMINI_API_KEY`          | Yes      | Google Gemini API key                                                         |
+| `PLAUD_CLIENT_ID`         | Yes      | Plaud OAuth client ID                                                         |
+| `PLAUD_CLIENT_SECRET`     | Yes      | Plaud OAuth client secret                                                     |
+| `PLAUD_REDIRECT_URI`      | No       | OAuth callback (default: `http://localhost:8050/auth/plaud/callback`)         |
+| `QDRANT_URL`              | No       | Qdrant URL (default: `http://localhost:6333`)                                 |
+| `QDRANT_COLLECTION_NAME`  | No       | Collection name (default: `chronos_events`)                                   |
+| `CHRONOS_EMBEDDING_MODEL` | No       | Embedding model (default: `gemini-embedding-2-preview`)                       |
+| `CHRONOS_EMBEDDING_DIM`   | No       | Embedding dim (default: 768, range 128–3072)                                  |
+| `OPENAI_API_KEY`          | No       | OpenAI API key for RAG responses (Responses API)                              |
+| `OPENAI_MODEL`            | No       | OpenAI model (default: `gpt-5.4`)                                             |
+| `NOTION_CLIENT_ID`        | No       | Notion OAuth client ID (for Notion uplink)                                    |
+| `NOTION_CLIENT_SECRET`    | No       | Notion OAuth client secret                                                    |
+| `NOTION_REDIRECT_URI`     | No       | Notion OAuth callback (default: `http://localhost:8050/auth/notion/callback`) |
 
 ## Commands
 

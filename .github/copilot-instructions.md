@@ -10,7 +10,7 @@
 | **MVP spec**    | `docs/chronos-mvp.md` — complete Chronos system architecture                   |
 | **Entry point** | `python scripts/launch_app.py` — Dash v2 UI on port 8050                       |
 | **Pipeline**    | `python scripts/chronos_pipeline.py --full` — ingest → process → index → graph |
-| **Tests**       | `python -m pytest tests/` — 91 tests, run before committing                    |
+| **Tests**       | `python -m pytest tests/` — 124 tests, run before committing                   |
 
 ## What This Project Does
 
@@ -26,29 +26,30 @@
 
 ## UI Layout (Dash v2 — `app_v2/`)
 
-| View         | Purpose                                                              |
-| ------------ | -------------------------------------------------------------------- |
-| **Timeline** | Date-grouped event timeline, click recording → detail panel          |
-| **Topics**   | Events grouped by category (work, meeting, personal, etc.)           |
-| **Search**   | Semantic search with category/date filters + AI answers (GPT-5.4)    |
-| **Graph**    | Interactive Cytoscape knowledge graph, 6 layouts, node click details |
-| **Stats**    | 8 stat cards, sentiment chart, productivity insights                 |
-| **Sync**     | Pipeline dashboard: status counts, Full Sync, Reset Stuck            |
-| **Settings** | Real connectivity checks for Plaud, Gemini, Qdrant                   |
+| View         | Purpose                                                                   |
+| ------------ | ------------------------------------------------------------------------- |
+| **Timeline** | Date-grouped event timeline, click recording → detail panel               |
+| **Topics**   | Events grouped by category (work, meeting, personal, etc.)                |
+| **Search**   | Semantic search with category/date filters + AI answers (GPT-5.4)         |
+| **Graph**    | Interactive Cytoscape knowledge graph, 6 layouts, node click details      |
+| **Stats**    | 8 stat cards, sentiment chart, productivity insights, API cost tracking   |
+| **Notion**   | Notion uplink — OAuth, page filter, channel select, sync to Notion        |
+| **Sync**     | Pipeline dashboard: status counts, Full Sync, Reset Stuck                 |
+| **Settings** | Connectivity checks for Plaud, Gemini, Qdrant, model pricing in dropdowns |
 
 **X-ray Activity Monitor** — Floating PiP panel showing plain-English telemetry. 12 source categories, filter tabs, incremental polling with sequence IDs. Events persist across page navigations.
 
 ## Project Structure
 
 ```
-app_v2/                 → MAIN Dash v2 UI (23 callbacks)
-  main.py               → Run with: python scripts/launch_app.py (+ X-ray Flask routes)
+app_v2/                 → MAIN Dash v2 UI (50 callbacks)
+  main.py               → Run with: python scripts/launch_app.py (+ 9 Flask routes)
   layout.py             → 3-column layout (sidebar | content | detail)
-  assets/style.css      → ~5400 lines dark theme CSS
+  assets/style.css      → ~5500 lines dark theme CSS
   assets/xray_pip.js    → X-ray Activity Monitor PiP panel (client-side JS)
-  components/           → sidebar, day_view, search, graph, stats, topics, recording_detail
-  callbacks/            → navigation, search, day_view, graph, recording_detail
-  services/data_service.py → Data access layer (~1250 lines)
+  components/           → sidebar, day_view, search, graph, stats, topics, recording_detail, notion
+  callbacks/            → navigation, search, day_view, graph, recording_detail, notion, xray
+  services/data_service.py → Data access layer (~2150 lines)
   services/xray.py      → Telemetry ring buffer, xray_log(), seq IDs
 scripts/                → CLI tools
   chronos_pipeline.py   → Full pipeline runner (~688 lines)
@@ -57,11 +58,13 @@ scripts/                → CLI tools
   launch_app.py         → App launcher
   fix_recordings.py     → Diagnose + repair stuck recordings
   index_unindexed.py    → Batch index events to Qdrant
-src/chronos/            → Core engine (ingest, process, embed, search, graph)
+src/chronos/            → Core engine (ingest, process, embed, search, graph, cost tracking)
 src/plaud_*.py          → Plaud API clients + webhook + USB watcher
+src/notion_oauth.py     → Notion OAuth 2.0 client
+src/notion_service.py   → Notion API service (page sync)
 src/database/           → SQLAlchemy models & repositories
 src/models/             → Pydantic schemas
-tests/                  → Pytest suite (91 tests)
+tests/                  → Pytest suite (124 tests, 11 files)
 docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 ```
 
@@ -76,6 +79,8 @@ docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 | `graph_service`        | Entity extraction and NetworkX graph building                      |
 | `graph_rag`            | Graph-enhanced RAG with community detection + Gemini synthesis     |
 | `openai_service`       | OpenAI Responses API — RAG queries via GPT-5.4                     |
+| `cost_tracker`         | API cost tracking — session + historical, 12 models with pricing   |
+| `notion_bridge`        | Notion integration bridge for page sync                            |
 
 ## Coding Rules
 
@@ -85,6 +90,7 @@ docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 4. **Qdrant:** Use `src/chronos/qdrant_client.py` — native API with temporal indexes
 5. **Tests:** Run `pytest tests/` before any commit.
 6. **X-ray messages:** Use `xray_log(source, operation, message)` for telemetry. Messages must be **plain human English** — no dev jargon. Source is one of: `ingest`, `gemini`, `embed`, `qdrant`, `graph`, `search`, `data`, `nav`, `pipeline`, `detail`, `day`, `sync`.
+7. **Cost tracking:** All API calls must use `track_usage(model, call_type, input_tokens, output_tokens)` from `src.chronos.cost_tracker`.
 
 ## User Philosophy
 
@@ -104,3 +110,4 @@ docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 - Don't scatter `load_dotenv()` — use `src/config.py`
 - Don't use `ChronosRecording.status` — the field is `processing_status`
 - Don't use `gpt-4o` or `gpt-4o-mini` — we're on `gpt-5.4` (OpenAI flagship, 1.05M context)
+- Don't make billable API calls without `track_usage()` — every call must be cost-tracked

@@ -2,7 +2,7 @@
 
 > **Single source of truth** for architecture, roadmap, implementation status, and next steps.
 >
-> _Last updated: March 11, 2026_
+> _Last updated: March 18, 2026_
 
 ---
 
@@ -26,7 +26,7 @@
 PlaudBlender transforms **Plaud voice recordings** into a **searchable knowledge timeline** with:
 
 - A **Chronos system** for temporal-aware semantic search and knowledge graph
-- A **Dash v2 UI** (`app_v2/`) — recording-centric interface with 7 views and 23 callbacks
+- A **Dash v2 UI** (`app_v2/`) — recording-centric interface with 8 views and 50 callbacks
 - A **data pipeline** (Plaud API → SQLite → Gemini → Qdrant) for durable storage and fast retrieval
 - **Full Plaud API integration** (OAuth, transcripts, devices, workflows)
 - **Knowledge Graph** visualization (entity extraction → NetworkX → Cytoscape)
@@ -191,26 +191,29 @@ Models used:
 ```
 PlaudBlender/
 ├── app_v2/                     # ← MAIN UI (Dash v2)
-│   ├── main.py                 # Entry point + X-ray Flask API routes
+│   ├── main.py                 # Entry point + 9 Flask API routes (OAuth, X-ray, costs)
 │   ├── layout.py               # 3-column layout (sidebar | content | detail)
-│   ├── assets/style.css        # ~5400 lines of dark-theme CSS
+│   ├── assets/style.css        # ~5500 lines of dark-theme CSS
 │   ├── assets/xray_pip.js      # X-ray Activity Monitor PiP panel (client JS)
 │   ├── components/             # UI components
-│   │   ├── sidebar.py          # Navigation sidebar (7 views)
+│   │   ├── sidebar.py          # Navigation sidebar (8 views)
 │   │   ├── day_view.py         # Date-grouped event timeline
 │   │   ├── search.py           # Semantic search + category/date filters
 │   │   ├── graph.py            # Cytoscape knowledge graph
-│   │   ├── stats.py            # Analytics dashboard (8 cards + charts)
+│   │   ├── stats.py            # Analytics dashboard (8 cards + charts + cost tracking)
 │   │   ├── topics.py           # Category-grouped view
+│   │   ├── notion.py           # Notion uplink UI, page filter, sync preview
 │   │   └── recording_detail.py # Recording detail panel + transcript viewer
-│   ├── callbacks/              # Dash interactivity (23 callbacks)
-│   │   ├── navigation.py       # Main nav + sync/settings views (~1550 lines)
+│   ├── callbacks/              # Dash interactivity (50 callbacks)
+│   │   ├── navigation.py       # Main nav + sync/settings views (~3088 lines)
 │   │   ├── search.py           # Search + filter callbacks
 │   │   ├── day_view.py         # Day view interactions
 │   │   ├── graph.py            # Graph layout + node click
-│   │   └── recording_detail.py # Category overrides + detail interactions
+│   │   ├── recording_detail.py # Category overrides + detail interactions
+│   │   ├── notion.py           # Notion uplink callbacks (20 callbacks)
+│   │   └── xray.py             # X-ray Activity Monitor Flask routes
 │   └── services/
-│       ├── data_service.py     # Data access layer (~1250 lines)
+│       ├── data_service.py     # Data access layer (~2150 lines)
 │       └── xray.py             # X-ray telemetry ring buffer + seq IDs
 │
 ├── scripts/                    # CLI tools
@@ -222,11 +225,13 @@ PlaudBlender/
 │   └── plaud_auth_utils.py     # OAuth diagnostics
 │
 ├── src/                        # Core modules
-│   ├── config.py               # Single .env loader
+│   ├── config.py               # Single .env loader (34 params)
 │   ├── plaud_oauth.py          # OAuth 2.0 client
 │   ├── plaud_client.py         # Plaud API wrapper
 │   ├── plaud_device.py         # Device management
 │   ├── plaud_workflow.py       # Workflow API
+│   ├── notion_oauth.py         # Notion OAuth 2.0 client
+│   ├── notion_service.py       # Notion API service (page sync)
 │   ├── chronos/                # Chronos engine
 │   │   ├── engine.py           # Gemini processing + prompt template
 │   │   ├── transcript_processor.py  # Recording → events pipeline
@@ -237,6 +242,9 @@ PlaudBlender/
 │   │   ├── graph_service.py    # Entity extraction, NetworkX graphs
 │   │   ├── graph_rag.py        # Graph-enhanced RAG with community detection
 │   │   ├── openai_service.py   # OpenAI Responses API wrapper (GPT-5.4 RAG)
+│   │   ├── cost_tracker.py     # API cost tracking with Gemini/OpenAI pricing
+│   │   ├── notion_bridge.py    # Notion integration bridge (page sync)
+│   │   ├── pipeline_progress.py # Pipeline progress tracking
 │   │   └── genai_helpers.py    # Gemini client + model selection
 │   ├── database/               # SQLAlchemy engine + models
 │   │   ├── engine.py           # SessionLocal, init_db
@@ -245,13 +253,16 @@ PlaudBlender/
 │   └── models/
 │       └── chronos_schemas.py  # Pydantic: ChronosEvent, TemporalFilter, etc.
 │
-├── tests/                      # 91 tests
+├── tests/                      # 124 tests (11 files)
 │   ├── test_database_models.py
 │   ├── test_device_integration.py
+│   ├── test_mcp_server.py
+│   ├── test_plaud_workflow_sync.py
 │   ├── test_processing_engine.py
 │   ├── test_processing_indexer.py
 │   ├── test_schemas.py
 │   ├── test_services_smoke.py
+│   ├── test_tier3.py
 │   └── test_ui_smoke.py
 │
 ├── data/                       # Local data (gitignored)
@@ -316,6 +327,9 @@ NOTION_DATABASE_ID=
 OPENAI_API_KEY=             # RAG responses via Responses API (preferred over Gemini)
 OPENAI_MODEL=gpt-5.4        # gpt-5.4, gpt-5.4-pro, gpt-5-mini, gpt-5-nano, etc.
 OPENAI_TEMPERATURE=0.7      # 0.0 = deterministic, 2.0 = creative
+NOTION_CLIENT_ID=           # Notion OAuth (for Notion uplink)
+NOTION_CLIENT_SECRET=
+NOTION_REDIRECT_URI=http://localhost:8050/auth/notion/callback
 ```
 
 ---
@@ -324,7 +338,7 @@ OPENAI_TEMPERATURE=0.7      # 0.0 = deterministic, 2.0 = creative
 
 The UI runs on **Dash 4.0** at `http://localhost:8050` with a 3-column layout:
 
-### Views (7 total)
+### Views (8 total)
 
 | View         | Purpose                                                                          |
 | ------------ | -------------------------------------------------------------------------------- |
@@ -332,16 +346,17 @@ The UI runs on **Dash 4.0** at `http://localhost:8050` with a 3-column layout:
 | **Topics**   | Events grouped by category (work, meeting, personal, etc.)                       |
 | **Search**   | Semantic search with category/date filters, results ranked by score              |
 | **Graph**    | Interactive Cytoscape knowledge graph, 6 layout algorithms, node click → details |
-| **Stats**    | 8 stat cards, sentiment chart, productivity insights, pipeline health            |
+| **Stats**    | 8 stat cards, sentiment chart, productivity insights, **API cost tracking**      |
+| **Notion**   | Notion uplink — OAuth, page filter, channel select, batch sync to Notion         |
 | **Sync**     | Pipeline dashboard: status counts, Full Sync button, Reset Stuck button          |
-| **Settings** | Real connectivity checks for Plaud, Gemini, Qdrant with latency                  |
+| **Settings** | Real connectivity checks for Plaud, Gemini, Qdrant with latency, model pricing   |
 
 ### X-ray Activity Monitor (PiP Panel)
 
 A **floating Picture-in-Picture panel** (`app_v2/assets/xray_pip.js`) shows real-time telemetry in plain English.
 
 - **Server-side:** `app_v2/services/xray.py` — ring buffer (200 events), monotonic `seq` IDs, thread-safe
-- **Flask API:** `/xray/api/events?since=N` (incremental) + `/xray/api/clear` (POST)
+- **Flask API:** `/xray/api/events?since=N` (incremental) + `/xray/api/clear` (POST) + `/xray/api/costs` (cost tracker)
 - **Client-side:** JS polls every 800ms, accumulates up to 2,000 events across page navigations
 - **12 source categories:** Plaud, AI (Gemini), Embedding, Search DB (Qdrant), Knowledge Graph, Search, Data/Cache, Navigation, Pipeline, Recording Detail, Day View, Sync
 - **Filter tabs:** Pipeline, Search, Graph, Data, Errors
@@ -350,10 +365,13 @@ A **floating Picture-in-Picture panel** (`app_v2/assets/xray_pip.js`) shows real
 
 ### Key Features
 
-- **23 callbacks** registered for full interactivity
+- **50 callbacks** registered for full interactivity
 - **Auto-refresh** every 60 seconds on Timeline view
 - **Recording detail panel** with transcript viewer (collapsible, word/char count)
 - **Search filters** combine with semantic search (category multi-select + date range)
+- **API cost tracking** — real-time session costs, historical breakdown, per-model pricing
+- **Notion uplink** — sync recordings to Notion pages with OAuth
+- **Model pricing** shown inline in Settings dropdowns
 - **Dark theme** with consistent color palette
 
 ---
@@ -373,7 +391,7 @@ A **floating Picture-in-Picture panel** (`app_v2/assets/xray_pip.js`) shows real
 - [x] Analytics Stats — 8 stat cards, sentiment chart, productivity insights
 - [x] Real Settings — Plaud/Gemini/Qdrant connectivity checks with latency
 
-### Data Status (March 10, 2026)
+### Data Status (March 18, 2026)
 
 | Metric             | Value                        |
 | ------------------ | ---------------------------- |
@@ -381,7 +399,7 @@ A **floating Picture-in-Picture panel** (`app_v2/assets/xray_pip.js`) shows real
 | Embedding model    | `gemini-embedding-2-preview` |
 | Embedding dim      | 768 (MRL, L2-normalized)     |
 | Multimodal support | Text + audio (WAV/MP3 ≤80s)  |
-| Tests passing      | 91/91                        |
+| Tests passing      | 124/124                      |
 
 ### ✅ Tier 3 — Automation & Integration (COMPLETE)
 
@@ -418,6 +436,26 @@ A **floating Picture-in-Picture panel** (`app_v2/assets/xray_pip.js`) shows real
 - [x] All ~87 telemetry messages written in plain human English
 - [x] Events persist across page navigations (client-side accumulation up to 2,000)
 - [x] Deep instrumentation across all 6 core services + 5 callback files
+
+### ✅ API Cost Tracking (COMPLETE)
+
+- [x] Cost tracker module (`src/chronos/cost_tracker.py`) — thread-safe singleton with SQLite persistence
+- [x] Pricing table for 12 models (Gemini + OpenAI) with per-MTok input/output rates
+- [x] Session ledger (in-memory) + historical ledger (SQLite `api_usage_log` table)
+- [x] `track_usage()` instrumented across 13 API call sites in 8 files
+- [x] Stats view cost section (session costs, 30-day historical, per-model breakdown, daily chart)
+- [x] `/xray/api/costs` Flask endpoint for live cost data
+- [x] Model pricing shown inline in Settings dropdowns (Gemini + OpenAI)
+- [x] 5-second auto-refresh on cost display
+
+### ✅ Notion Uplink Integration (COMPLETE)
+
+- [x] Notion OAuth 2.0 flow (`src/notion_oauth.py`, Flask routes in `main.py`)
+- [x] Notion API service (`src/notion_service.py`) — page creation, property sync
+- [x] Notion bridge module (`src/chronos/notion_bridge.py`)
+- [x] Notion UI view (`app_v2/components/notion.py`) — page filter, channel select, sync preview
+- [x] 20 Notion callbacks (`app_v2/callbacks/notion.py`) — OAuth, filters, batch sync
+- [x] Sidebar Notion nav item with 📔 icon
 
 ---
 
@@ -457,7 +495,8 @@ python scripts/chronos_pipeline.py --reindex            # Re-embed all events (m
 2. **Imports:** Use `from src.X import Y` pattern. All `src/` subdirs have `__init__.py`.
 3. **Schemas:** Validate data with Pydantic (`src/models/chronos_schemas.py`).
 4. **Database field:** `ChronosRecording.processing_status` (NOT `.status`).
-5. **Tests:** Run `pytest tests/` before any commit. Currently 91 tests.
+5. **Tests:** Run `pytest tests/` before any commit. Currently 124 tests.
+6. **Cost tracking:** Use `track_usage(model, call_type, input_tokens, output_tokens)` for all API calls.
 
 ### Don't
 
@@ -467,6 +506,8 @@ python scripts/chronos_pipeline.py --reindex            # Re-embed all events (m
 - Don't use `gemini-3-pro-preview` — shut down 2026-03-09; use `gemini-3.1-pro-preview`
 - Don't scatter `load_dotenv()` — use `src/config.py`
 - Don't use `ChronosRecording.status` — the field is `processing_status`
+- Don't use `gpt-4o` or `gpt-4o-mini` — we're on `gpt-5.4` (OpenAI flagship, 1.05M context)
+- Don't make API calls without `track_usage()` — every billable call must be tracked
 
 ### Key Data Service Methods (`app_v2/services/data_service.py`)
 
@@ -479,6 +520,8 @@ python scripts/chronos_pipeline.py --reindex            # Re-embed all events (m
 | `get_transcript(recording_id)`          | Fetch raw transcript from SQLite                |
 | `get_recording_db_stats()`              | Pipeline status counts                          |
 | `reset_stuck_recordings()`              | Reset processing → pending                      |
+| `submit_plaud_workflow()`               | Submit Plaud AI workflow for recording          |
+| `refresh_plaud_workflows()`             | Poll and update Plaud workflow statuses         |
 
 ### Key Schema Fields (`src/models/chronos_schemas.py`)
 

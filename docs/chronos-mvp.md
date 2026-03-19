@@ -2,7 +2,7 @@
 
 **Version:** 2.0
 **Target Date:** Q1 2025 (original), Q1 2026 (Gemini Embedding 2 migration)
-**Status:** Complete — all MVP capabilities shipped, Gemini Embedding 2 multimodal integrated, OpenAI GPT-5.4 RAG, X-ray Activity Monitor
+**Status:** Complete — all MVP capabilities shipped, Gemini Embedding 2 multimodal integrated, OpenAI GPT-5.4 RAG, X-ray Activity Monitor, API cost tracking, Notion uplink
 
 ## Mission Statement
 
@@ -143,8 +143,7 @@ Transform 5–7 hour Plaud voice recordings from "jumbled mess" into a **clean, 
 - ❌ Multi-user support (single-user local-first only)
 - ❌ Real-time streaming transcription (batch-only)
 - ❌ Mobile app (desktop/browser only)
-- ❌ Notion sync (archive/legacy; focus on Qdrant)
-- ❌ Complex desktop GUI (replaced by Streamlit)
+- ❌ Complex desktop GUI (replaced by Dash)
 - ❌ Pinecone compatibility shim (Qdrant-only)
 
 ---
@@ -253,6 +252,7 @@ Transform 5–7 hour Plaud voice recordings from "jumbled mess" into a **clean, 
 - Qdrant (local Docker or cloud)
 - Plaud OAuth credentials
 - Dash + Cytoscape (replaced Streamlit)
+- Notion API (optional, for uplink sync)
 
 ---
 
@@ -277,6 +277,30 @@ Floating PiP panel showing real-time telemetry in plain English:
 - **~87 instrumented messages** across all core services and UI callbacks
 - Messages are plain English: "Gemini read it all — wrote 2,400 chars and spotted 8 moments"
 
+### API Cost Tracking (Complete)
+
+Real-time API usage monitoring with per-model pricing:
+
+- **Module:** `src/chronos/cost_tracker.py` — thread-safe singleton, SQLite persistence
+- **Pricing table:** 12 models (Gemini + OpenAI) with USD/MTok input/output rates
+- **Session ledger:** In-memory tracking since app start
+- **Historical ledger:** SQLite `api_usage_log` table with indexes on timestamp + model
+- **Instrumentation:** 13 `track_usage()` call sites across 8 files (every billable API call)
+- **UI:** Stats view cost section (session costs, 30-day breakdown, per-model, daily chart, pricing reference)
+- **API:** `/xray/api/costs` Flask endpoint for live cost data
+- **Settings:** Model pricing shown inline in dropdown labels ($X.XX/$Y.YY per MTok)
+
+### Notion Uplink (Complete)
+
+Sync recordings to Notion pages:
+
+- **OAuth:** Full Notion OAuth 2.0 flow (authorize, callback, status check)
+- **Service:** `src/notion_service.py` — page creation, property mapping
+- **Bridge:** `src/chronos/notion_bridge.py` — integration layer
+- **UI:** Notion view with page filter, channel select, sync preview
+- **Callbacks:** 20 Dash callbacks for full CRUD + batch sync
+- **Flask routes:** `/auth/notion`, `/auth/notion/callback`, `/auth/notion/status`
+
 ---
 
 ## Model Reference (March 2026)
@@ -288,6 +312,20 @@ Floating PiP panel showing real-time telemetry in plain English:
 | `gemini-embedding-2-preview` | Multimodal embeddings           | Text + audio + image + video + PDF. MRL 128–3072 dims.   |
 | `gpt-5.4`                    | RAG responses (Responses API)   | 1.05M ctx, 128K output, reasoning levels, $2.50/$15 MTok |
 
+### Pricing Reference (March 2026)
+
+| Model                        | Input ($/MTok) | Output ($/MTok) | Notes           |
+| ---------------------------- | -------------- | --------------- | --------------- |
+| `gemini-3-flash-preview`     | Free           | Free            | Standard tier   |
+| `gemini-3.1-pro-preview`     | $1.25          | $10.00          | Paid tier       |
+| `gemini-embedding-2-preview` | Free           | —               | Embeddings only |
+| `gpt-5.4`                    | $2.50          | $15.00          | Flagship        |
+| `gpt-5.4-pro`                | $5.00          | $30.00          | Deep reasoning  |
+| `gpt-5-mini`                 | $0.25          | $2.00           | Fast + cheap    |
+| `gpt-5-nano`                 | $0.10          | $0.40           | Lightest        |
+| `gpt-5`                      | $2.00          | $10.00          | Balanced        |
+| `gpt-4.1`                    | $2.00          | $8.00           | Legacy          |
+
 ### Embedding Details
 
 - **Default dim:** 768 (MRL truncation from 3072 native), L2-normalized
@@ -298,4 +336,4 @@ Floating PiP panel showing real-time telemetry in plain English:
 ---
 
 **Document Owner:** Gunnar Hostetler
-**Last Updated:** 2026-03-11
+**Last Updated:** 2026-03-18
