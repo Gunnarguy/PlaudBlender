@@ -28,6 +28,8 @@ def upsert_chronos_recording(
     source: str = "plaud",
     device_id: Optional[str] = None,
     checksum: Optional[str] = None,
+    time_is_estimated: Optional[bool] = None,
+    time_estimate_reason: Optional[str] = None,
 ) -> ChronosRecording:
     """Insert or update a Chronos recording.
 
@@ -56,6 +58,8 @@ def upsert_chronos_recording(
         rec.source = source
         rec.device_id = device_id
         rec.checksum = checksum
+        rec.time_is_estimated = time_is_estimated
+        rec.time_estimate_reason = time_estimate_reason
     else:
         # Insert new
         rec = ChronosRecording(
@@ -67,6 +71,8 @@ def upsert_chronos_recording(
             source=source,
             device_id=device_id,
             checksum=checksum,
+            time_is_estimated=time_is_estimated,
+            time_estimate_reason=time_estimate_reason,
         )
         session.add(rec)
 

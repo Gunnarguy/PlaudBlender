@@ -120,6 +120,11 @@ def create_day_timeline_strip(
                     f"{rec.duration_formatted}  •  "
                     f"{rec.top_category}  •  "
                     f"{rec.event_count} events"
+                    + (
+                        f"  •  estimated time ({rec.time_estimate_reason})"
+                        if rec.time_is_estimated
+                        else ""
+                    )
                 ),
                 children=[html.Span(label, className="block-label")],
             )
@@ -343,6 +348,20 @@ def create_recording_card(recording: RecordingSummary, day_date: str) -> html.Di
                                     ]
                                 )
                             )
+                        ),
+                        *(
+                            [
+                                html.Span(
+                                    "≈",
+                                    className="source-badge estimated",
+                                    title=(
+                                        recording.time_estimate_reason
+                                        or "Time estimated from Notion import defaults"
+                                    ),
+                                )
+                            ]
+                            if recording.time_is_estimated
+                            else []
                         ),
                         html.Span(
                             recording.duration_formatted, className="recording-duration"

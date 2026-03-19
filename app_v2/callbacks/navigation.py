@@ -1667,6 +1667,58 @@ def create_settings_view(preferences=None) -> html.Div:
         ],
     )
 
+    notion_import_section = html.Div(
+        className="settings-section",
+        children=[
+            html.H4("🗓️ Notion Import Defaults"),
+            html.P(
+                "Fallback start times used when a Notion page only provides a recording date.",
+                className="setting-note",
+            ),
+            html.Div(
+                className="settings-grid",
+                children=[
+                    html.Div(
+                        className="setting-control-row",
+                        children=[
+                            html.Label("Weekday Fallback Start"),
+                            dcc.Input(
+                                id="setting-notion-weekday-start",
+                                type="text",
+                                value=settings.notion_weekday_start_time,
+                                placeholder="07:30",
+                                className="settings-input",
+                                debounce=True,
+                            ),
+                            html.Span(
+                                "24-hour HH:MM, used Monday-Friday",
+                                className="param-note",
+                            ),
+                        ],
+                    ),
+                    html.Div(
+                        className="setting-control-row",
+                        children=[
+                            html.Label("Weekend Fallback Start"),
+                            dcc.Input(
+                                id="setting-notion-weekend-start",
+                                type="text",
+                                value=settings.notion_weekend_start_time,
+                                placeholder="12:00",
+                                className="settings-input",
+                                debounce=True,
+                            ),
+                            html.Span(
+                                "24-hour HH:MM, used Saturday-Sunday",
+                                className="param-note",
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+
     # ── Section: Data & Storage ──────────────────────────────────────────
     storage_section = html.Div(
         className="settings-section collapsible",
@@ -1973,6 +2025,7 @@ def create_settings_view(preferences=None) -> html.Div:
             embedding_section,
             qdrant_section,
             plaud_section,
+            notion_import_section,
             storage_section,
             logging_section,
             categories_section,
@@ -2132,6 +2185,8 @@ def register_navigation_callbacks(app):
         State("setting-plaud-diarization", "value"),
         State("setting-log-level", "value"),
         State("custom-categories-input", "value"),
+        State("setting-notion-weekday-start", "value"),
+        State("setting-notion-weekend-start", "value"),
         prevent_initial_call=True,
     )
     def save_env_settings(
@@ -2147,10 +2202,31 @@ def register_navigation_callbacks(app):
         plaud_diarization,
         log_level,
         custom_categories,
+        notion_weekday_start,
+        notion_weekend_start,
     ):
         """Write changed settings back to .env file."""
         if not n_clicks:
             raise PreventUpdate
+
+        def _valid_hhmm(value: str) -> bool:
+            try:
+                hour_text, minute_text = str(value).strip().split(":", 1)
+                hour = int(hour_text)
+                minute = int(minute_text)
+                return 0 <= hour <= 23 and 0 <= minute <= 59
+            except (AttributeError, TypeError, ValueError):
+                return False
+
+        if not _valid_hhmm(notion_weekday_start or ""):
+            return "❌ Weekday fallback start must be HH:MM in 24-hour time"
+        weekday_hour, weekday_minute = [
+            int(part) for part in str(notion_weekday_start).strip().split(":", 1)
+        ]
+        if (weekday_hour, weekday_minute) > (8, 0):
+            return "❌ Weekday fallback start must be 08:00 or earlier"
+        if not _valid_hhmm(notion_weekend_start or ""):
+            return "❌ Weekend fallback start must be HH:MM in 24-hour time"
 
         from pathlib import Path
 
@@ -2173,6 +2249,8 @@ def register_navigation_callbacks(app):
             ),
             "PB_LOG_LEVEL": log_level,
             "CHRONOS_CUSTOM_CATEGORIES": custom_categories or "",
+            "NOTION_WEEKDAY_START_TIME": notion_weekday_start or "07:30",
+            "NOTION_WEEKEND_START_TIME": notion_weekend_start or "12:00",
         }
 
         try:

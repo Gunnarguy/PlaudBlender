@@ -98,6 +98,10 @@ def _ensure_sqlite_additive_schema(eng: Engine) -> None:
             _add_column("chronos_recordings", "plaud_workflow_error TEXT")
         if "plaud_extracted_data" not in cols:
             _add_column("chronos_recordings", "plaud_extracted_data JSON")
+        if "time_is_estimated" not in cols:
+            _add_column("chronos_recordings", "time_is_estimated BOOLEAN")
+        if "time_estimate_reason" not in cols:
+            _add_column("chronos_recordings", "time_estimate_reason TEXT")
 
         # ChronosEvent: user-editable category override
         event_cols = _columns_for("chronos_events")

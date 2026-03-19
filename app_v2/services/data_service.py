@@ -14,13 +14,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.database import SessionLocal
+from src.config import get_local_timezone
 from src.database.models import (
     ChronosRecording as _ChronosRecordingModel,
     Recording as _RecordingModel,
 )
 
 # Detect local timezone once at import time so we convert UTC→local correctly
-_LOCAL_TZ = datetime.now().astimezone().tzinfo
+_LOCAL_TZ = get_local_timezone()
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,8 @@ class RecordingSummary:
     preview_text: str = ""  # First significant event's clean_text (truncated)
     event_previews: List[str] = field(default_factory=list)  # First 3 event snippets
     sentiment_arc: List[float] = field(default_factory=list)  # Sentiment over time
+    time_is_estimated: bool = False
+    time_estimate_reason: str = ""
 
     @property
     def duration_formatted(self) -> str:
@@ -303,6 +306,102 @@ class ChronosDataService:
         except Exception as e:
             logger.error(f"Service init error: {e}")
 
+    def _normalize_notion_event_times(self, events: List[Event]) -> List[Event]:
+        """Re-anchor Notion event times to the recording's actual local window.
+
+        Notion imports often only give us a date plus transcript-relative offsets.
+        Gemini preserves order and rough spacing, but absolute wall-clock times can
+        be fabricated. We keep relative spacing while fitting events into the real
+        recording duration derived from SQLite.
+        """
+        if not events:
+            return events
+
+        by_recording: Dict[str, List[Event]] = defaultdict(list)
+        for event in events:
+            by_recording[event.recording_id].append(event)
+
+        db = SessionLocal()
+        try:
+            notion_records = {
+                str(rec.recording_id): rec
+                for rec in db.query(_ChronosRecordingModel)
+                .filter(
+                    _ChronosRecordingModel.recording_id.in_(list(by_recording.keys())),
+                    _ChronosRecordingModel.source == "notion",
+                )
+                .all()
+            }
+        except Exception as exc:
+            logger.warning(f"Could not normalize Notion event times: {exc}")
+            return events
+        finally:
+            db.close()
+
+        for recording_id, rec_events in by_recording.items():
+            db_rec = notion_records.get(recording_id)
+            if (
+                db_rec is None
+                or db_rec.created_at is None
+                or db_rec.duration_seconds is None
+            ):
+                continue
+
+            utc_start = db_rec.created_at.replace(tzinfo=timezone.utc)  # type: ignore[union-attr]
+            local_start = utc_start.astimezone(_LOCAL_TZ).replace(tzinfo=None)
+            recording_duration = max(float(db_rec.duration_seconds), 0.0)  # type: ignore[arg-type]
+            if recording_duration <= 0:
+                continue
+
+            rec_events.sort(key=lambda event: event.start_ts)
+            first_start = rec_events[0].start_ts
+            last_end = max(event.end_ts for event in rec_events)
+            original_span = max((last_end - first_start).total_seconds(), 0.0)
+            recording_end = local_start + timedelta(seconds=recording_duration)
+
+            if original_span <= 0:
+                slot_seconds = max(recording_duration / max(len(rec_events), 1), 60.0)
+                for index, event in enumerate(rec_events):
+                    new_start = local_start + timedelta(seconds=slot_seconds * index)
+                    new_end = min(
+                        recording_end, new_start + timedelta(seconds=slot_seconds)
+                    )
+                    event.start_ts = new_start
+                    event.end_ts = new_end if new_end > new_start else recording_end
+                    event.day_of_week = new_start.strftime("%A").lower()
+                    event.hour_of_day = new_start.hour
+                continue
+
+            scale = recording_duration / original_span
+            for event in rec_events:
+                start_offset = max((event.start_ts - first_start).total_seconds(), 0.0)
+                end_offset = max(
+                    (event.end_ts - first_start).total_seconds(), start_offset
+                )
+
+                new_start = local_start + timedelta(seconds=start_offset * scale)
+                new_end = local_start + timedelta(seconds=end_offset * scale)
+
+                if new_end <= new_start:
+                    scaled_duration = max(
+                        60.0,
+                        max((event.end_ts - event.start_ts).total_seconds(), 60.0)
+                        * scale,
+                    )
+                    new_end = new_start + timedelta(seconds=scaled_duration)
+
+                if new_end > recording_end:
+                    new_end = recording_end
+                if new_end <= new_start:
+                    new_end = min(recording_end, new_start + timedelta(seconds=60))
+
+                event.start_ts = new_start
+                event.end_ts = new_end
+                event.day_of_week = new_start.strftime("%A").lower()
+                event.hour_of_day = new_start.hour
+
+        return events
+
     def _get_all_events(self, force_refresh: bool = False) -> List[Event]:
         """Get all events from Qdrant with caching."""
         from app_v2.services.xray import xray_log
@@ -363,6 +462,8 @@ class ChronosDataService:
 
                     if offset is None:
                         break
+
+                events = self._normalize_notion_event_times(events)
 
                 # Sort by timestamp
                 events.sort(key=lambda e: e.start_ts)
@@ -488,6 +589,16 @@ class ChronosDataService:
                 preview_text=preview_text,
                 event_previews=event_previews,
                 sentiment_arc=sentiment_arc,
+                time_is_estimated=(
+                    bool(getattr(db_rec, "time_is_estimated", False))
+                    if db_rec
+                    else False
+                ),
+                time_estimate_reason=(
+                    str(getattr(db_rec, "time_estimate_reason", "") or "")
+                    if db_rec
+                    else ""
+                ),
             )
 
         return summaries
@@ -1185,12 +1296,18 @@ class ChronosDataService:
                     categories=categories,
                     limit=limit,
                 )
-                search_results = []
-                for hit in results:
-                    event = Event.from_qdrant(hit["event_id"], hit.get("payload", {}))
-                    search_results.append(
-                        SearchResult(event=event, score=hit.get("score", 0.0) or 0.0)
+                hydrated_events = [
+                    Event.from_qdrant(hit["event_id"], hit.get("payload", {}))
+                    for hit in results
+                ]
+                hydrated_events = self._normalize_notion_event_times(hydrated_events)
+                search_results = [
+                    SearchResult(
+                        event=event,
+                        score=results[index].get("score", 0.0) or 0.0,
                     )
+                    for index, event in enumerate(hydrated_events)
+                ]
                 return search_results
             else:
                 # Simple semantic search
@@ -1200,10 +1317,15 @@ class ChronosDataService:
                     limit=limit,
                     with_payload=True,
                 )
-                search_results = []
-                for hit in results.points:
-                    event = Event.from_qdrant(str(hit.id), hit.payload or {})
-                    search_results.append(SearchResult(event=event, score=hit.score))
+                hydrated_events = [
+                    Event.from_qdrant(str(hit.id), hit.payload or {})
+                    for hit in results.points
+                ]
+                hydrated_events = self._normalize_notion_event_times(hydrated_events)
+                search_results = [
+                    SearchResult(event=event, score=results.points[index].score)
+                    for index, event in enumerate(hydrated_events)
+                ]
                 return search_results
 
         except Exception as e:

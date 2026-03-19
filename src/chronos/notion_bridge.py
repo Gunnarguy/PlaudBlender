@@ -12,13 +12,13 @@ Chronos citizens — searchable, graphable, analyzable.
 import logging
 import time as _time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from difflib import SequenceMatcher
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 
-from src.config import get_settings
+from src.config import get_local_timezone, get_settings
 from src.database.chronos_repository import (
     add_chronos_events,
     delete_chronos_events_by_recording,
@@ -81,6 +81,129 @@ def _extract_date_from_title(title: str, year_hint: str = "") -> Optional[str]:
         return f"{year:04d}-{month:02d}-{day:02d}"
     except ValueError:
         return None
+
+
+def _parse_transcript_duration(transcript: str) -> Optional[int]:
+    """Extract recording duration from inline HH:MM:SS timestamps.
+
+    Plaud transcripts embed relative timestamps like 00:02:28, 00:03:28.
+    Returns the duration in seconds (last timestamp + 60s buffer), or None.
+    """
+    import re
+
+    timestamps = re.findall(r"\b(\d{1,2}):(\d{2}):(\d{2})\b", transcript)
+    if not timestamps:
+        return None
+    max_seconds = 0
+    for h, m, s in timestamps:
+        total = int(h) * 3600 + int(m) * 60 + int(s)
+        if total > max_seconds:
+            max_seconds = total
+    return max_seconds + 60 if max_seconds > 0 else None
+
+
+def _estimate_local_start_from_date(recording_date: str) -> datetime:
+    """Estimate local recording start when Notion has only a date.
+
+    This is a fallback only. Weekdays default to 7:30 AM local,
+    weekends default to noon local.
+    """
+    settings = get_settings()
+
+    def _parse_clock(value: str, fallback: str) -> Tuple[int, int]:
+        raw = (value or fallback).strip()
+        try:
+            hour_text, minute_text = raw.split(":", 1)
+            hour = int(hour_text)
+            minute = int(minute_text)
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return hour, minute
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+        fallback_hour, fallback_minute = fallback.split(":", 1)
+        return int(fallback_hour), int(fallback_minute)
+
+    parsed = datetime.strptime(recording_date, "%Y-%m-%d")
+    if parsed.weekday() < 5:
+        hour, minute = _parse_clock(settings.notion_weekday_start_time, "07:30")
+        if (hour, minute) > (8, 0):
+            hour, minute = (8, 0)
+        return parsed.replace(hour=hour, minute=minute)
+
+    hour, minute = _parse_clock(settings.notion_weekend_start_time, "12:00")
+    return parsed.replace(hour=hour, minute=minute)
+
+
+def _local_naive_to_utc_naive(local_dt: datetime) -> datetime:
+    """Convert a local naive datetime to the project's stored naive UTC format."""
+    from datetime import timezone as _tz
+
+    local_tz = get_local_timezone()
+    return local_dt.replace(tzinfo=local_tz).astimezone(_tz.utc).replace(tzinfo=None)
+
+
+def _normalize_relative_event_times(
+    events: List[Any],
+    local_start: datetime,
+    actual_duration_seconds: int,
+) -> List[Any]:
+    """Re-anchor hallucinated absolute event times to the real recording window.
+
+    Plaud Notion pages often contain only a recording date plus inline HH:MM:SS
+    transcript offsets. Gemini preserves event order and rough spacing, but can
+    invent wall-clock times. We keep the relative structure while scaling the
+    event timeline to the actual transcript duration.
+    """
+    if not events:
+        return events
+
+    ordered = sorted(events, key=lambda event: event.start_ts)
+    recording_end = local_start + timedelta(seconds=max(actual_duration_seconds, 0))
+    first_start = ordered[0].start_ts
+    last_end = max(event.end_ts for event in ordered)
+    original_span = max((last_end - first_start).total_seconds(), 0.0)
+
+    if original_span <= 0:
+        slot_seconds = max(actual_duration_seconds / max(len(ordered), 1), 60)
+        for index, event in enumerate(ordered):
+            new_start = local_start + timedelta(seconds=slot_seconds * index)
+            new_end = min(recording_end, new_start + timedelta(seconds=slot_seconds))
+            event.start_ts = new_start
+            event.end_ts = new_end if new_end > new_start else recording_end
+            event.day_of_week = new_start.strftime("%A").lower()
+            event.hour_of_day = new_start.hour
+        return ordered
+
+    scale = (
+        actual_duration_seconds / original_span if actual_duration_seconds > 0 else 1.0
+    )
+
+    for event in ordered:
+        start_offset = max((event.start_ts - first_start).total_seconds(), 0.0)
+        end_offset = max((event.end_ts - first_start).total_seconds(), start_offset)
+
+        new_start = local_start + timedelta(seconds=start_offset * scale)
+        new_end = local_start + timedelta(seconds=end_offset * scale)
+
+        if new_end <= new_start:
+            scaled_duration = max(
+                60.0,
+                max((event.end_ts - event.start_ts).total_seconds(), 60.0) * scale,
+            )
+            new_end = new_start + timedelta(seconds=scaled_duration)
+
+        if new_end > recording_end:
+            new_end = recording_end
+        if new_end <= new_start:
+            new_end = min(recording_end, new_start + timedelta(seconds=60))
+
+        event.start_ts = new_start
+        event.end_ts = new_end
+        event.day_of_week = new_start.strftime("%A").lower()
+        event.hour_of_day = new_start.hour
+
+    return ordered
 
 
 def match_notion_to_chronos(
@@ -272,19 +395,43 @@ def import_notion_recording(
             return False, "No transcript or body text found in Notion page"
 
         # Step 2: Create/update ChronosRecording
-        created_at = _parse_iso(page.created_time)
-        word_count = len(transcript.split())
-        estimated_duration = max(60, int(word_count / 2.5))
+        # Prefer date from title ("03-17" → 2026-03-17) over Notion page creation time
+        notion_created_at = _parse_iso(page.created_time)
+        year_hint = page.created_time[:4] if page.created_time else ""
+        title_date = _extract_date_from_title(page.title or "", year_hint)
+
+        local_start = None
+        time_is_estimated = False
+        time_estimate_reason = None
+        if title_date:
+            local_start = _estimate_local_start_from_date(title_date)
+            created_at = _local_naive_to_utc_naive(local_start)
+            time_is_estimated = True
+            time_estimate_reason = (
+                "Estimated from Notion title date and configured fallback start time"
+            )
+        else:
+            created_at = notion_created_at
+            time_is_estimated = True
+            time_estimate_reason = "Estimated from Notion page created time because no recording date was found"
+
+        # Parse real duration from transcript timestamps; fall back to word-count estimate
+        duration_seconds = _parse_transcript_duration(transcript)
+        if not duration_seconds:
+            word_count = len(transcript.split())
+            duration_seconds = max(60, int(word_count / 2.5))
 
         rec = upsert_chronos_recording(
             session=session,
             recording_id=recording_id,
             title=page.title,
             created_at=created_at,
-            duration_seconds=estimated_duration,
+            duration_seconds=duration_seconds,
             local_audio_path="",
             source="notion",
             device_id="notion",
+            time_is_estimated=time_is_estimated,
+            time_estimate_reason=time_estimate_reason,
         )
         xray_log("data", "notion-import", f"Created Chronos recording for '{page.title}'")
 
@@ -301,7 +448,9 @@ def import_notion_recording(
 
         processor = TranscriptProcessor(db_session=session)
 
-        recording_date = created_at.strftime("%Y-%m-%d") if created_at else ""
+        recording_date = title_date or (
+            created_at.strftime("%Y-%m-%d") if created_at else ""
+        )
         plaud_context = page.summary if page.summary else None
 
         _t0 = _time.perf_counter()
@@ -319,6 +468,13 @@ def import_notion_recording(
                 error_message="No events extracted by Gemini",
             )
             return False, f"Gemini couldn't extract events from '{page.title}'"
+
+        if local_start is not None and duration_seconds > 0:
+            output.events = _normalize_relative_event_times(
+                list(output.events),
+                local_start,
+                int(duration_seconds),
+            )
 
         # Save events to SQLite
         event_models = []

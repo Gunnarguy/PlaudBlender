@@ -2,6 +2,7 @@ from datetime import datetime
 import uuid
 
 from sqlalchemy import (
+    Boolean,
     Column,
     String,
     Integer,
@@ -133,6 +134,8 @@ class ChronosRecording(Base):
     plaud_workflow_template_id = Column(String, nullable=True)
     plaud_workflow_error = Column(Text, nullable=True)
     plaud_extracted_data = Column(JSON, nullable=True)  # AI_ETL structured output
+    time_is_estimated = Column(Boolean, nullable=True)
+    time_estimate_reason = Column(Text, nullable=True)
 
     # Provenance
     ingested_at = Column(DateTime, default=datetime.utcnow, nullable=False)

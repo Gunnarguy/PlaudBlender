@@ -7,7 +7,10 @@ for the rest of the codebase. Call load_env() early in entrypoints
 
 import os
 from dataclasses import dataclass
+from datetime import datetime
+from functools import lru_cache
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dotenv import load_dotenv
 
 
@@ -146,6 +149,8 @@ class Settings:
     notion_client_id: Optional[str] = os.getenv("NOTION_CLIENT_ID")
     notion_client_secret: Optional[str] = os.getenv("NOTION_CLIENT_SECRET")
     notion_redirect_uri: Optional[str] = os.getenv("NOTION_REDIRECT_URI")
+    notion_weekday_start_time: str = os.getenv("NOTION_WEEKDAY_START_TIME", "07:30")
+    notion_weekend_start_time: str = os.getenv("NOTION_WEEKEND_START_TIME", "12:00")
 
     # Logging
     log_level: str = os.getenv("PB_LOG_LEVEL", "INFO")
@@ -155,3 +160,42 @@ class Settings:
 def get_settings() -> Settings:
     """Return a new Settings instance (cheap dataclass construction)."""
     return Settings()
+
+
+@lru_cache(maxsize=1)
+def get_local_timezone():
+    """Return the machine's IANA timezone when available.
+
+    macOS often reports a fixed-offset tzinfo like PDT, which breaks historical
+    DST conversions. Prefer a real zone database entry such as
+    America/Los_Angeles.
+    """
+
+    def _load_zone(name: Optional[str]):
+        if not name:
+            return None
+        try:
+            return ZoneInfo(name)
+        except ZoneInfoNotFoundError:
+            return None
+
+    for candidate in [os.getenv("TZ")]:
+        zone = _load_zone(candidate)
+        if zone is not None:
+            return zone
+
+    localtime_path = os.path.realpath("/etc/localtime")
+    for marker in ["/zoneinfo/", "/zoneinfo.default/"]:
+        if marker in localtime_path:
+            zone_name = localtime_path.split(marker, 1)[1]
+            zone = _load_zone(zone_name)
+            if zone is not None:
+                return zone
+
+    tzinfo = datetime.now().astimezone().tzinfo
+    if hasattr(tzinfo, "key"):
+        zone = _load_zone(getattr(tzinfo, "key", None))
+        if zone is not None:
+            return zone
+
+    return tzinfo

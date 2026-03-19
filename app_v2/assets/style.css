@@ -5389,6 +5389,24 @@ a.plaud-connect-btn:hover {
   opacity: 0.65;
 }
 
+.source-badge.estimated {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 999px;
+  padding: 1px 7px;
+  opacity: 1;
+}
+
+.detail-estimated-badge {
+  margin-left: 8px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 /* ============================================================
    Narrative Tab
    ============================================================ */

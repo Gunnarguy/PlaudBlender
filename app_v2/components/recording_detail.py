@@ -853,6 +853,20 @@ def create_recording_detail(
                             html.Span(
                                 summary.time_range_formatted, className="time-range"
                             ),
+                            *(
+                                [
+                                    html.Span(
+                                        "estimated",
+                                        className="source-badge estimated detail-estimated-badge",
+                                        title=(
+                                            summary.time_estimate_reason
+                                            or "Time estimated from Notion import defaults"
+                                        ),
+                                    )
+                                ]
+                                if summary.time_is_estimated
+                                else []
+                            ),
                             html.Span(
                                 f"({summary.duration_formatted})", className="duration"
                             ),

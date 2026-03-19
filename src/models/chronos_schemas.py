@@ -69,6 +69,13 @@ class ChronosRecording(BaseModel):
     error_message: Optional[str] = Field(
         None, description="Error details if processing failed"
     )
+    time_is_estimated: Optional[bool] = Field(
+        None,
+        description="Whether recording time was inferred rather than sourced exactly",
+    )
+    time_estimate_reason: Optional[str] = Field(
+        None, description="Why the recording time was inferred"
+    )
 
     @field_validator("local_audio_path")
     @classmethod
