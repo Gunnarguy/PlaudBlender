@@ -327,6 +327,14 @@ def _register_xray_routes(server):
             }
         )
 
+    @server.route("/xray/api/throughput")
+    def xray_api_throughput():
+        """Return rolling event-rate buckets for the sparkline."""
+        from app_v2.services.xray import get_throughput
+
+        buckets = request.args.get("buckets", 30, type=int)
+        return jsonify({"buckets": get_throughput(buckets)})
+
 
 def _start_token_keepalive():
     """Daemon thread that refreshes Plaud tokens every 20 minutes."""

@@ -82,6 +82,24 @@ class OpenAIResponseService:
 Question: {question}"""
 
         try:
+            from app_v2.services.xray import xray_log
+        except ImportError:
+            xray_log = None
+
+        try:
+            import time as _time
+
+            _t0 = _time.perf_counter()
+
+            if xray_log:
+                _reasoning_label = reasoning or "default"
+                xray_log(
+                    "search",
+                    "openai",
+                    f"Asking GPT: {question[:80]}…",
+                    detail=f"model={self._model} reasoning={_reasoning_label} events={len(context_events)}",
+                )
+
             client = self._get_client()
 
             kwargs = {
@@ -100,6 +118,7 @@ Question: {question}"""
                 kwargs["reasoning"] = {"effort": reasoning}
 
             response = client.responses.create(**kwargs)
+            _elapsed = (_time.perf_counter() - _t0) * 1000
 
             # Extract text from response
             answer = ""
@@ -118,6 +137,16 @@ Question: {question}"""
                 response.model, "search", input_tokens=_inp_tok, output_tokens=_out_tok
             )
 
+            if xray_log:
+                xray_log(
+                    "search",
+                    "ai-answer",
+                    f"GPT answered in {_elapsed/1000:.1f}s — {_inp_tok}+{_out_tok} tokens",
+                    duration_ms=round(_elapsed, 1),
+                    detail=f"model={response.model} in={_inp_tok} out={_out_tok} total={response.usage.total_tokens}",
+                    level="perf",
+                )
+
             return {
                 "answer": answer,
                 "model": response.model,
@@ -130,6 +159,10 @@ Question: {question}"""
             }
         except Exception as e:
             logger.exception("OpenAI Responses API call failed")
+            if xray_log:
+                xray_log(
+                    "search", "openai", f"OpenAI error: {str(e)[:100]}", level="error"
+                )
             return {"error": str(e)}
 
     def check_connection(self) -> tuple:

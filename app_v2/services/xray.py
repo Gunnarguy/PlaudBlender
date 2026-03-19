@@ -16,7 +16,7 @@ import time
 import threading
 from collections import deque
 from contextlib import contextmanager
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from typing import Optional
 
 
@@ -34,11 +34,58 @@ class XRayEvent:
     level: str = "info"  # info | warn | error | perf
 
 
-# Thread-safe ring buffer (last 200 events)
-_MAX_EVENTS = 200
+# Thread-safe ring buffer — 2000 events to match client-side capacity
+_MAX_EVENTS = 2000
 _events: deque = deque(maxlen=_MAX_EVENTS)
 _lock = threading.Lock()
 _seq_counter = 0  # monotonic sequence number
+
+# ── Throughput tracking — rolling 60-second window of event counts ──
+_THROUGHPUT_BUCKETS = 60  # 1-second buckets for 60 seconds
+_throughput: deque = deque(maxlen=_THROUGHPUT_BUCKETS)
+_throughput_lock = threading.Lock()
+_last_bucket_ts: int = 0
+
+
+def _record_throughput():
+    """Record an event into the current 1-second throughput bucket."""
+    global _last_bucket_ts
+    now = int(time.time())
+    with _throughput_lock:
+        if now != _last_bucket_ts:
+            # Fill gap buckets with 0
+            gap = (
+                min(now - _last_bucket_ts, _THROUGHPUT_BUCKETS)
+                if _last_bucket_ts
+                else 1
+            )
+            for _ in range(gap - 1):
+                _throughput.append(0)
+            _throughput.append(1)
+            _last_bucket_ts = now
+        else:
+            if _throughput:
+                _throughput[-1] += 1
+            else:
+                _throughput.append(1)
+                _last_bucket_ts = now
+
+
+def get_throughput(buckets: int = 30) -> list:
+    """Return last N seconds of event counts for sparkline rendering."""
+    now = int(time.time())
+    with _throughput_lock:
+        # Fill any gap between last recorded and now
+        result = list(_throughput)
+        if _last_bucket_ts and now > _last_bucket_ts:
+            gap = min(now - _last_bucket_ts, _THROUGHPUT_BUCKETS)
+            result.extend([0] * gap)
+    # Return last N buckets
+    return (
+        result[-buckets:]
+        if len(result) >= buckets
+        else ([0] * (buckets - len(result))) + result
+    )
 
 
 def xray_log(
@@ -64,6 +111,7 @@ def xray_log(
             level=level,
         )
         _events.append(evt)
+    _record_throughput()
 
 
 @contextmanager

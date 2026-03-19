@@ -109,12 +109,26 @@ def match_notion_to_chronos(
                 (rec.recording_id, rec.title or "", rec.created_at)
             )
 
+    # Phase 0: Direct match — pages already imported via notion:{page_id}
+    already_imported: Dict[str, str] = {}
+    notion_rec_ids = {
+        rec.recording_id: rec.recording_id
+        for rec in chronos_recs
+        if rec.recording_id.startswith("notion:")
+    }
+    for nrec in notion_recordings:
+        direct_id = f"notion:{nrec.page_id}"
+        if direct_id in notion_rec_ids:
+            already_imported[nrec.page_id] = direct_id
+
     # Score all candidates, then assign greedily (best score first, no duplicates)
     scored_pairs: List[Tuple[float, str, str]] = (
         []
     )  # (score, notion_page_id, chronos_id)
 
     for nrec in notion_recordings:
+        if nrec.page_id in already_imported:
+            continue  # Already matched by direct import
         notion_title = (nrec.title or "").lower().strip()
 
         # Determine the true recording date: prefer title-embedded date over page date
@@ -168,6 +182,9 @@ def match_notion_to_chronos(
         matches[pid] = cid
         used_notion.add(pid)
         used_chronos.add(cid)
+
+    # Merge direct imports into matches
+    matches.update(already_imported)
 
     # Fill in unmatched Notion pages as None
     for nrec in notion_recordings:

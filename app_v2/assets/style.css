@@ -6094,6 +6094,187 @@ a.plaud-connect-btn:hover {
   border-color: rgba(99, 102, 241, 0.6);
 }
 
+/* ── New source badges: Notion, OpenAI ─── */
+
+.xp-src-notion {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.xp-src-openai {
+  background: rgba(16, 163, 127, 0.12);
+  color: #10a37f;
+  border: 1px solid rgba(16, 163, 127, 0.18);
+}
+
+/* ── Cost ticker in titlebar ─────────── */
+
+.xp-cost-ticker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #94a3b8;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(30, 41, 59, 0.4);
+  cursor: default;
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+
+.xp-cost-ticker.cost-low {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+}
+
+.xp-cost-ticker.cost-med {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.xp-cost-ticker.cost-high {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  animation: xp-cost-pulse 2s ease-in-out infinite;
+}
+
+@keyframes xp-cost-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* ── Sparkline — throughput mini bar chart ── */
+
+.xp-sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 18px;
+  min-width: 68px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.xp-spark-bar {
+  flex: 1;
+  min-width: 2px;
+  background: rgba(99, 102, 241, 0.5);
+  border-radius: 1px 1px 0 0;
+  transition: height 0.3s ease-out;
+}
+
+.xp-spark-bar.empty {
+  background: rgba(51, 65, 85, 0.3);
+  min-height: 1px;
+}
+
+.xp-spark-bar.hot {
+  background: rgba(251, 146, 60, 0.7);
+}
+
+/* ── Click-to-expand detail panel ─────── */
+
+.xp-row {
+  cursor: pointer;
+}
+
+.xp-row.expanded {
+  background: rgba(99, 102, 241, 0.06);
+  border-left: 2px solid rgba(99, 102, 241, 0.4);
+}
+
+.xp-expand {
+  padding: 8px 12px 10px;
+  animation: xp-expand-in 0.2s ease-out;
+}
+
+@keyframes xp-expand-in {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 300px;
+  }
+}
+
+.xp-expand-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  font-size: 0.72rem;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+.xp-expand-key {
+  color: #818cf8;
+  font-weight: 600;
+  text-align: right;
+  user-select: none;
+}
+
+.xp-expand-val {
+  color: #e2e8f0;
+  word-break: break-all;
+}
+
+.xp-expand-detail {
+  color: #94a3b8;
+  background: rgba(15, 17, 28, 0.4);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.xp-expand-msg {
+  color: #cbd5e1;
+}
+
+.xp-lvl-info {
+  color: #94a3b8;
+}
+.xp-lvl-warn {
+  color: #fbbf24;
+}
+.xp-lvl-error {
+  color: #f87171;
+  font-weight: 600;
+}
+.xp-lvl-perf {
+  color: #818cf8;
+}
+
+/* ── Keyboard hint in empty state ──────── */
+
+.xp-hint {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.xp-hint kbd {
+  display: inline-block;
+  background: rgba(51, 65, 85, 0.5);
+  border: 1px solid rgba(71, 85, 105, 0.5);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.68rem;
+  font-family: inherit;
+  color: #94a3b8;
+}
+
+/* ── Millisecond timestamps ──────────── */
+
+.xp-ts {
+  min-width: 68px;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    NOTION INTEGRATION VIEW
    ══════════════════════════════════════════════════════════════════════════════ */
