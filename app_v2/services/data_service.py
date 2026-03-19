@@ -24,6 +24,14 @@ _LOCAL_TZ = datetime.now().astimezone().tzinfo
 
 logger = logging.getLogger(__name__)
 
+try:
+    from app_v2.services.xray import xray_log as _xlog
+except ImportError:
+
+    def _xlog(*_a, **_kw):
+        pass
+
+
 _PLAUD_WORKFLOW_ACTIVE_STATUSES = {"PENDING", "PROCESSING"}
 _PLAUD_WORKFLOW_TERMINAL_STATUSES = {"SUCCESS", "FAILED", "CANCELLED"}
 
@@ -603,6 +611,14 @@ class ChronosDataService:
 
         # Sort by date descending
         result.sort(key=lambda d: d.date, reverse=True)
+        if _xlog:
+            _rng = f"{result[-1].date}..{result[0].date}" if result else "empty"
+            _xlog(
+                "data",
+                "days",
+                f"Loaded {len(result)} days ({_rng})",
+                detail=f"events={len(events)} range={_rng}",
+            )
         return result
 
     def get_days_filled(self, last_n_days: Optional[int] = None) -> List[DaySummary]:
@@ -687,6 +703,9 @@ class ChronosDataService:
         Returns:
             RecordingDetail with all events, or None if not found
         """
+        import time as _time
+
+        _t0 = _time.perf_counter()
         events = self._get_all_events()
 
         # Filter events for this recording
@@ -711,6 +730,13 @@ class ChronosDataService:
         if not summary:
             return None
 
+        _elapsed = (_time.perf_counter() - _t0) * 1000
+        _xlog(
+            "detail",
+            "recording",
+            f"Recording detail loaded in {_elapsed:.0f}ms — {len(rec_events)} events",
+            level="perf",
+        )
         return RecordingDetail(
             summary=summary,
             events=rec_events,
@@ -830,7 +856,21 @@ class ChronosDataService:
         Builds graph from actual event data — categories, keywords, temporal
         patterns and co-occurrence relationships.
         """
-        return self._build_graph_from_events()
+        import time as _time
+
+        _t0 = _time.perf_counter()
+        result = self._build_graph_from_events()
+        _elapsed = (_time.perf_counter() - _t0) * 1000
+        if _xlog:
+            _xlog(
+                "graph",
+                "build",
+                f"Built graph: {len(result.nodes)} nodes, {len(result.edges)} edges",
+                duration_ms=round(_elapsed, 1),
+                detail=f"nodes={len(result.nodes)} edges={len(result.edges)}",
+                level="perf",
+            )
+        return result
 
     def _build_graph_from_events(self) -> GraphData:
         """Build a meaningful knowledge graph from event data.
@@ -1194,6 +1234,9 @@ class ChronosDataService:
 
     def get_stats(self) -> Stats:
         """Get overall statistics with enhanced analytics."""
+        import time as _time
+
+        _t0 = _time.perf_counter()
         events = self._get_all_events()
 
         if not events:
@@ -1312,6 +1355,13 @@ class ChronosDataService:
         except Exception as e:
             logger.debug(f"Could not fetch Plaud cloud stats: {e}")
 
+        _elapsed = (_time.perf_counter() - _t0) * 1000
+        _xlog(
+            "data",
+            "stats",
+            f"Stats built in {_elapsed:.0f}ms — {real_total_recordings} recordings, {len(events)} events, {len(days)} days",
+            level="perf",
+        )
         return Stats(
             total_recordings=real_total_recordings,
             total_events=len(events),
@@ -1647,6 +1697,11 @@ class ChronosDataService:
         model: str = "gemini",
     ) -> Dict[str, Any]:
         """Submit Plaud cloud workflows for recent recordings missing AI summaries."""
+        _xlog(
+            "sync",
+            "workflow-submit",
+            f"Submitting Plaud workflows — days_back={days_back}, limit={limit}, model={model}",
+        )
         try:
             from src.plaud_workflow import PlaudWorkflowClient
 
@@ -1759,9 +1814,20 @@ class ChronosDataService:
             finally:
                 db.close()
 
+            _xlog(
+                "sync",
+                "workflow-submit",
+                f"Workflows done — {len(result['submitted'])} submitted, {len(result['skipped'])} skipped, {len(result['errors'])} errors",
+            )
             return result
         except Exception as e:
             logger.error(f"Error submitting Plaud workflows: {e}")
+            _xlog(
+                "sync",
+                "workflow-submit",
+                f"Workflow submission failed: {e}",
+                level="error",
+            )
             return {
                 "submitted": [],
                 "skipped": [],
@@ -1775,6 +1841,11 @@ class ChronosDataService:
         limit: int = 10,
     ) -> Dict[str, Any]:
         """Refresh pending Plaud workflow statuses and persist completed outputs."""
+        _xlog(
+            "sync",
+            "workflow-refresh",
+            f"Refreshing Plaud workflow statuses — days_back={days_back}, limit={limit}",
+        )
         try:
             from src.plaud_workflow import PlaudWorkflowClient
 
@@ -1917,9 +1988,20 @@ class ChronosDataService:
             finally:
                 db.close()
 
+            _xlog(
+                "sync",
+                "workflow-refresh",
+                f"Refresh done — {len(result['completed'])} completed, {len(result['pending'])} pending, {len(result['failed'])} failed",
+            )
             return result
         except Exception as e:
             logger.error(f"Error refreshing Plaud workflow statuses: {e}")
+            _xlog(
+                "sync",
+                "workflow-refresh",
+                f"Workflow refresh failed: {e}",
+                level="error",
+            )
             return {
                 "pending": [],
                 "completed": [],

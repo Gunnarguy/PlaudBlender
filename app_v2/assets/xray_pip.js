@@ -712,7 +712,7 @@
     function updateCostTicker(data) {
       if (!data || !data.session) return;
       var s = data.session;
-      var total = s.total_cost != null ? s.total_cost : 0;
+      var total = s.total_cost_usd != null ? s.total_cost_usd : 0;
       sessionCost = total;
       if (total < 0.01) {
         costEl.textContent = "$0.00";

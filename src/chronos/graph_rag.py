@@ -310,6 +310,11 @@ Return ONLY the JSON object, no other text."""
         Returns:
             Tuple of (entities, relationships)
         """
+        try:
+            from app_v2.services.xray import xray_log as _xlog
+        except ImportError:
+            _xlog = None
+
         if not self.llm:
             logger.warning("No LLM available for entity extraction")
             return [], []
@@ -320,6 +325,14 @@ Return ONLY the JSON object, no other text."""
         # Truncate text if needed
         truncated_text = text[:max_text_chars]
 
+        if _xlog:
+            _xlog(
+                "graph",
+                "extract",
+                f"Extracting entities from {doc_id} ({len(truncated_text)} chars)",
+            )
+
+        _t0 = time.monotonic()
         try:
             # Avoid str.format eating JSON braces; simply replace the placeholder
             prompt = self.EXTRACTION_PROMPT.replace("{text}", truncated_text)
@@ -348,6 +361,16 @@ Return ONLY the JSON object, no other text."""
             entities, relationships = self._parse_entities_from_response(
                 data, doc_id, len(truncated_text)
             )
+            _elapsed = (time.monotonic() - _t0) * 1000
+            if _xlog:
+                _xlog(
+                    "graph",
+                    "extract",
+                    f"Found {len(entities)} entities, {len(relationships)} relationships in {doc_id}",
+                    duration_ms=round(_elapsed, 1),
+                    detail=f"entities={len(entities)} rels={len(relationships)}",
+                    level="perf",
+                )
             return entities, relationships
 
             # Process people
@@ -703,6 +726,11 @@ def extract_and_store(
     Returns:
         Tuple of (entities_added, relationships_added)
     """
+    try:
+        from app_v2.services.xray import xray_log as _xlog
+    except ImportError:
+        _xlog = None
+
     if extractor is None:
         extractor = EntityExtractor()
 
@@ -719,6 +747,14 @@ def extract_and_store(
         graph.add_relationship(rel)
 
     graph.link_document(doc_id, entity_ids)
+
+    if _xlog:
+        _xlog(
+            "graph",
+            "store",
+            f"Stored {len(entities)} entities + {len(relationships)} relationships for {doc_id}",
+            detail=f"graph_size={len(graph.entities)} total_rels={len(graph.relationships)}",
+        )
 
     return len(entities), len(relationships)
 
@@ -739,10 +775,24 @@ def query_graph(
     Returns:
         Dict with matching entities and related entities
     """
+    try:
+        from app_v2.services.xray import xray_log as _xlog
+    except ImportError:
+        _xlog = None
+
+    _t0 = time.monotonic()
     graph = get_knowledge_graph()
 
     # Find matching entities
     matches = graph.search_entities(query, entity_type)
+
+    if _xlog:
+        _type_str = entity_type.value if entity_type else "any"
+        _xlog(
+            "graph",
+            "query",
+            f"Graph query: '{query}' → {len(matches)} matches (type={_type_str}, depth={hop_depth})",
+        )
 
     result = {
         "query": query,
@@ -926,6 +976,17 @@ Respond in JSON:
         logger.info(
             f"🔗 Detected {len(result)} communities from {len(graph.entities)} entities"
         )
+        try:
+            from app_v2.services.xray import xray_log
+
+            xray_log(
+                "graph",
+                "communities",
+                f"Louvain detected {len(result)} communities from {len(graph.entities)} entities ({G.number_of_edges()} edges)",
+                detail=f"algorithm=louvain entities={len(graph.entities)} communities={len(result)}",
+            )
+        except ImportError:
+            pass
         return result
 
     def _detect_simple(self, graph: KnowledgeGraph) -> List[Community]:
@@ -1038,6 +1099,17 @@ Respond in JSON:
             data = json.loads(text)
             community.summary = data.get("summary", "")
             community.keywords = data.get("keywords", [])
+            try:
+                from app_v2.services.xray import xray_log
+
+                xray_log(
+                    "graph",
+                    "summarize",
+                    f"Summarized community {community.id}: {len(community.entities)} entities → {len(community.keywords)} keywords",
+                    detail=f"model={model_name} keywords={','.join(community.keywords[:5])}",
+                )
+            except ImportError:
+                pass
 
         except Exception as e:
             logger.warning(f"Community summarization failed: {e}")
