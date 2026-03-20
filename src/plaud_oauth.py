@@ -174,67 +174,75 @@ class PlaudOAuthClient:
         auth_url = f"{PLAUD_AUTH_URL}?{urlencode(params)}"
         return auth_url, state
 
-    def exchange_code_for_token(self, code: str) -> dict:
+    def exchange_code_for_token(self, code: str, state: str | None = None) -> dict:
         """
         Exchange authorization code for access token.
 
         Args:
             code: Authorization code from OAuth callback
+            state: OAuth state parameter (required by Plaud for server-side validation)
 
         Returns:
             Token response dictionary
         """
         import base64
 
-        # Plaud uses Basic auth header: base64(client_id:client_secret)
         credentials = f"{self.client_id}:{self.client_secret}"
-        basic_auth = base64.b64encode(credentials.encode()).decode()
+        b64_creds = base64.b64encode(credentials.encode()).decode()
 
+        # Plaud uses Basic auth (base64 client_id:client_secret) and requires
+        # the state parameter in the token exchange body for server-side
+        # validation (returns AUTH_STATE_INVALID without it).
         headers = {
-            "Authorization": f"Basic {basic_auth}",
+            "Authorization": f"Basic {b64_creds}",
             "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json",
         }
 
-        # Plaud docs: body is code + redirect_uri (NO grant_type).
-        # Pass as dict so requests URL-encodes the values (colons, slashes).
         data = {"code": code, "redirect_uri": self.redirect_uri}
+        if state:
+            data["state"] = state
 
         logger.info(
-            "Token exchange → %s  redirect_uri=%s  code=%s…",
+            "═══ TOKEN EXCHANGE ═══\n"
+            "  URL: %s\n"
+            "  redirect_uri: %s\n"
+            "  code: %s…\n"
+            "  state: %s\n"
+            "  client_id: %s…%s",
             PLAUD_TOKEN_URL,
             self.redirect_uri,
-            code[:12] if len(code) > 12 else code,
+            code[:16] if len(code) > 16 else code,
+            (state[:16] + "…") if state else "(none)",
+            self.client_id[:8],
+            self.client_id[-4:],
         )
 
         try:
-            response = requests.post(PLAUD_TOKEN_URL, headers=headers, data=data)
-            if not response.ok:
-                logger.error(
-                    "Token exchange failed: %s %s — %s",
-                    response.status_code,
-                    response.reason,
-                    response.text[:500],
-                )
+            response = requests.post(
+                PLAUD_TOKEN_URL,
+                headers=headers,
+                data=data,
+                timeout=15,
+            )
+            logger.info(
+                "  → %s %s  body: %s",
+                response.status_code,
+                response.reason,
+                response.text[:500],
+            )
             response.raise_for_status()
         except requests.HTTPError as exc:
-            logger.error(
-                "Plaud token exchange failed (%s) — clearing tokens, please re-authenticate",
-                exc,
-            )
+            logger.error("Token exchange failed: %s", exc)
             self._clear_tokens()
             raise
 
         token_data = response.json()
 
-        # Store tokens
         self._access_token = token_data.get("access_token")
         self._refresh_token = token_data.get("refresh_token")
-
-        # Calculate expiry
         expires_in = token_data.get("expires_in", 3600)
         self._token_expiry = datetime.now() + timedelta(seconds=expires_in)
-
         self._save_tokens()
 
         logger.info("🔐 Successfully obtained Plaud access token")
@@ -252,8 +260,11 @@ class PlaudOAuthClient:
         if not self._refresh_token:
             raise ValueError("No refresh token available. Please re-authenticate.")
 
-        # Plaud docs: POST /access-token/refresh with just refresh_token
+        credentials = f"{self.client_id}:{self.client_secret}"
+        b64_creds = base64.b64encode(credentials.encode()).decode()
+
         headers = {
+            "Authorization": f"Basic {b64_creds}",
             "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json",
         }
@@ -552,8 +563,8 @@ class PlaudOAuthClient:
         if received_state[0] != state:
             raise ValueError("State mismatch! Possible CSRF attack.")
 
-        # Exchange code for token
-        self.exchange_code_for_token(received_code[0])
+        # Exchange code for token — Plaud requires state in the POST body
+        self.exchange_code_for_token(received_code[0], state=state)
 
         print("\n✅ Successfully authenticated with Plaud!")
         print("=" * 60 + "\n")

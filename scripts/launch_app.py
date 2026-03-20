@@ -2,10 +2,35 @@
 """Launch Chronos app v2."""
 import sys
 import os
+import signal
+import subprocess
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+PORT = 8050
+
+
+def _kill_stale_server():
+    """Kill any existing process on PORT so we get a clean start."""
+    try:
+        result = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{PORT}", "-sTCP:LISTEN", "-t"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        for line in result.stdout.strip().splitlines():
+            pid = int(line.strip())
+            if pid != os.getpid():
+                print(f"Killing stale server on port {PORT} (PID {pid})", flush=True)
+                os.kill(pid, signal.SIGTERM)
+    except (subprocess.TimeoutExpired, ValueError, ProcessLookupError, OSError):
+        pass
+
+
+_kill_stale_server()
 
 from app_v2.main import create_app
 

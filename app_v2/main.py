@@ -143,20 +143,47 @@ def _register_auth_routes(server):
 
         try:
             client = PlaudOAuthClient(redirect_uri=INAPP_REDIRECT_URI)
-            token_data = client.exchange_code_for_token(code)
-            logger.info("CALLBACK: token exchange SUCCESS — keys=%s", list(token_data.keys()))
+            token_data = client.exchange_code_for_token(code, state=state)
+            logger.info(
+                "CALLBACK: token exchange SUCCESS — keys=%s",
+                list(token_data.keys()),
+            )
             if is_xhr:
                 return _cors_response('{"status": "ok"}', 200, "application/json")
             return redirect("/")
         except Exception as e:
             logger.error("CALLBACK: token exchange FAILED — %s", e)
+            # Race-condition guard: Plaud fires XHR + browser redirect with
+            # the same code.  If the XHR already consumed the code, the
+            # browser redirect fails — but tokens are saved.  Re-check.
+            import time as _time
+
+            _time.sleep(0.5)
+            try:
+                check = PlaudOAuthClient(redirect_uri=INAPP_REDIRECT_URI)
+                if check.is_authenticated:
+                    logger.info("CALLBACK: parallel request already exchanged — OK")
+                    if is_xhr:
+                        return _cors_response(
+                            '{"status": "ok", "already": true}',
+                            200,
+                            "application/json",
+                        )
+                    return redirect("/")
+            except Exception:
+                pass
             safe_msg = escape(str(e))
+            detail = (
+                "<br><br><b>Check the server terminal for detailed per-strategy "
+                "logs showing exactly what was sent and what Plaud returned.</b>"
+            )
             if is_xhr:
                 return _cors_response(
                     f'{{"error": "{safe_msg}"}}', 200, "application/json"
                 )
             return _cors_response(
-                _auth_error_page("Token Exchange Failed", str(safe_msg)), 500
+                _auth_error_page("Token Exchange Failed", str(safe_msg) + detail),
+                500,
             )
 
     @server.route("/auth/plaud/status")

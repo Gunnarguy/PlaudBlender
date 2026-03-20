@@ -153,6 +153,154 @@ class TestPlaudOAuth:
 
         assert PlaudOAuthClient is not None
 
+    def test_exchange_includes_state_in_body(self):
+        """Token exchange must include 'state' in POST body — Plaud requires it."""
+        from unittest.mock import patch, MagicMock
+        from src.plaud_oauth import PlaudOAuthClient
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PLAUD_CLIENT_ID": "test_client_id",
+                "PLAUD_CLIENT_SECRET": "test_client_secret",
+            },
+        ):
+            client = PlaudOAuthClient(
+                redirect_uri="https://localhost:8050/auth/plaud/callback"
+            )
+
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+        mock_resp.status_code = 200
+        mock_resp.reason = "OK"
+        mock_resp.text = (
+            '{"access_token":"tok","refresh_token":"ref","expires_in":3600}'
+        )
+        mock_resp.json.return_value = {
+            "access_token": "tok",
+            "refresh_token": "ref",
+            "expires_in": 3600,
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch("src.plaud_oauth.requests.post", return_value=mock_resp) as mock_post,
+            patch.object(client, "_save_tokens"),
+        ):
+            client.exchange_code_for_token("test_code", state="test_state_abc")
+
+        # Verify state was included in the POST body
+        call_kwargs = mock_post.call_args
+        posted_data = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
+        assert posted_data["state"] == "test_state_abc"
+        assert posted_data["code"] == "test_code"
+        assert "redirect_uri" in posted_data
+
+    def test_exchange_without_state_omits_it(self):
+        """When state is None, it should not appear in POST body."""
+        from unittest.mock import patch, MagicMock
+        from src.plaud_oauth import PlaudOAuthClient
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PLAUD_CLIENT_ID": "test_client_id",
+                "PLAUD_CLIENT_SECRET": "test_client_secret",
+            },
+        ):
+            client = PlaudOAuthClient(
+                redirect_uri="https://localhost:8050/auth/plaud/callback"
+            )
+
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+        mock_resp.status_code = 200
+        mock_resp.reason = "OK"
+        mock_resp.text = (
+            '{"access_token":"tok","refresh_token":"ref","expires_in":3600}'
+        )
+        mock_resp.json.return_value = {
+            "access_token": "tok",
+            "refresh_token": "ref",
+            "expires_in": 3600,
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch("src.plaud_oauth.requests.post", return_value=mock_resp) as mock_post,
+            patch.object(client, "_save_tokens"),
+        ):
+            client.exchange_code_for_token("test_code")
+
+        posted_data = mock_post.call_args.kwargs.get("data") or mock_post.call_args[
+            1
+        ].get("data")
+        assert "state" not in posted_data
+
+    def test_exchange_uses_basic_auth(self):
+        """Token exchange must use Basic auth with base64(client_id:client_secret)."""
+        import base64
+        from unittest.mock import patch, MagicMock
+        from src.plaud_oauth import PlaudOAuthClient
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PLAUD_CLIENT_ID": "test_client_id",
+                "PLAUD_CLIENT_SECRET": "test_client_secret",
+            },
+        ):
+            client = PlaudOAuthClient(
+                redirect_uri="https://localhost:8050/auth/plaud/callback"
+            )
+
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+        mock_resp.status_code = 200
+        mock_resp.reason = "OK"
+        mock_resp.text = (
+            '{"access_token":"tok","refresh_token":"ref","expires_in":3600}'
+        )
+        mock_resp.json.return_value = {
+            "access_token": "tok",
+            "refresh_token": "ref",
+            "expires_in": 3600,
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch("src.plaud_oauth.requests.post", return_value=mock_resp) as mock_post,
+            patch.object(client, "_save_tokens"),
+        ):
+            client.exchange_code_for_token("test_code", state="s")
+
+        headers = mock_post.call_args.kwargs.get("headers") or mock_post.call_args[
+            1
+        ].get("headers")
+        expected_b64 = base64.b64encode(b"test_client_id:test_client_secret").decode()
+        assert headers["Authorization"] == f"Basic {expected_b64}"
+
+    def test_get_authorization_url_includes_state(self):
+        """Auth URL must include state parameter for CSRF + server-side validation."""
+        from unittest.mock import patch
+        from src.plaud_oauth import PlaudOAuthClient
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PLAUD_CLIENT_ID": "test_client_id",
+                "PLAUD_CLIENT_SECRET": "test_client_secret",
+            },
+        ):
+            client = PlaudOAuthClient(
+                redirect_uri="https://localhost:8050/auth/plaud/callback"
+            )
+
+        url, state = client.get_authorization_url()
+        assert "state=" in url
+        assert state in url
+        assert len(state) > 16  # secrets.token_urlsafe(32) is ~43 chars
+
 
 class TestPlaudWorkflow:
     """Tests for src/plaud_workflow.py."""

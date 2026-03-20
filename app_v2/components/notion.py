@@ -71,27 +71,29 @@ def _build_notion_hero(
                                 className="sync-action-btn",
                                 n_clicks=0,
                             ),
-                            (
-                                html.Button(
-                                    f"Import Missing ({unmatched_count})",
-                                    id="notion-import-all-btn",
-                                    className="sync-action-btn notion-import-btn",
-                                    n_clicks=0,
-                                    disabled=unmatched_count == 0,
-                                )
-                                if recordings
-                                else None
+                            html.Button(
+                                (
+                                    f"Import Missing ({unmatched_count})"
+                                    if recordings
+                                    else "Import Missing"
+                                ),
+                                id="notion-import-all-btn",
+                                className="sync-action-btn notion-import-btn",
+                                n_clicks=0,
+                                disabled=not recordings or unmatched_count == 0,
+                                style={} if recordings else {"display": "none"},
                             ),
-                            (
-                                html.Button(
-                                    f"📤 Write Back All ({matched_count})",
-                                    id="notion-writeback-all-btn",
-                                    className="sync-action-btn notion-writeback-btn",
-                                    n_clicks=0,
-                                    disabled=matched_count == 0,
-                                )
-                                if recordings and matched_count > 0
-                                else None
+                            html.Button(
+                                (
+                                    f"📤 Write Back All ({matched_count})"
+                                    if recordings
+                                    else "📤 Write Back All"
+                                ),
+                                id="notion-writeback-all-btn",
+                                className="sync-action-btn notion-writeback-btn",
+                                n_clicks=0,
+                                disabled=not recordings or matched_count == 0,
+                                style={} if recordings else {"display": "none"},
                             ),
                         ],
                     ),
@@ -148,7 +150,21 @@ def _build_sync_engine_section(recordings, matched_count: int) -> html.Div:
     """Build the Sync Engine section with Standardize and Push buttons."""
     total = len(recordings or [])
     if total == 0:
-        return html.Div()  # Nothing to show if no recordings loaded
+        # Hidden placeholders so callback inputs always resolve
+        return html.Div(
+            style={"display": "none"},
+            children=[
+                html.Button(id="notion-reformat-preview-btn", n_clicks=0),
+                html.Button(id="notion-push-preview-btn", n_clicks=0),
+                html.Div(
+                    id="notion-sync-confirm-area",
+                    children=[
+                        html.Button(id="notion-reformat-execute-btn", n_clicks=0),
+                        html.Button(id="notion-push-execute-btn", n_clicks=0),
+                    ],
+                ),
+            ],
+        )
 
     return html.Div(
         className="notion-card notion-sync-engine-card",
@@ -457,14 +473,14 @@ def _build_database_picker(databases, has_db_id) -> html.Div:
 def _build_search_toolbar(recordings, active_category=None) -> html.Div:
     """Build search/filter/sort toolbar for the recordings list."""
     if not recordings:
-        # Return hidden placeholder so callback inputs still resolve
+        # Hidden placeholders so all callback inputs resolve
         return html.Div(
-            html.Button(
-                "All (0)",
-                id="notion-filter-all",
-                style={"display": "none"},
-                n_clicks=0,
-            )
+            style={"display": "none"},
+            children=[
+                html.Button("All (0)", id="notion-filter-all", n_clicks=0),
+                dcc.Input(id="notion-search-input", type="text", value=""),
+                dcc.Dropdown(id="notion-sort-dropdown", value="date-desc"),
+            ],
         )
 
     # Count categories for filter buttons
@@ -536,11 +552,11 @@ def _build_search_toolbar(recordings, active_category=None) -> html.Div:
                     ),
                 ],
             ),
-            # Category filters
+            # Category filters (always rendered so notion-filter-all exists for callback)
             html.Div(
                 className="notion-filter-row",
                 children=filter_buttons,
-            ) if len(categories) > 1 else None,
+            ),
         ],
     )
 
