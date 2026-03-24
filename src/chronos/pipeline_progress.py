@@ -93,8 +93,22 @@ class PipelineProgressTracker:
         return run_id
 
     def finish_run(self, error: str = "") -> None:
-        self._run.status = "failed" if error else "completed"
-        self._run.finished_at = time.time()
+        finished_at = time.time()
+        final_status = "failed" if error else "completed"
+
+        for p in self._run.phases:
+            if p.status != "running":
+                continue
+            p.status = final_status
+            if not p.started_at:
+                p.started_at = self._run.started_at or finished_at
+            p.finished_at = finished_at
+            p.elapsed_seconds = finished_at - p.started_at
+            if error and not p.error:
+                p.error = error
+
+        self._run.status = final_status
+        self._run.finished_at = finished_at
         self._run.elapsed_seconds = self._run.finished_at - self._run.started_at
         self._flush()
 
@@ -197,6 +211,27 @@ def read_progress() -> dict[str, Any] | None:
         if not PROGRESS_FILE.exists():
             return None
         data = json.loads(PROGRESS_FILE.read_text())
+        normalized = False
+        final_status = str(data.get("status", "")).lower()
+        if final_status in {"completed", "failed", "idle"}:
+            phase_final_status = "failed" if final_status == "failed" else "completed"
+            for phase in data.get("phases", []):
+                if phase.get("status") != "running":
+                    continue
+                normalized = True
+                phase["status"] = phase_final_status
+                if not phase.get("finished_at"):
+                    phase["finished_at"] = data.get("finished_at") or time.time()
+                if not phase.get("started_at"):
+                    phase["started_at"] = data.get("started_at") or phase["finished_at"]
+                phase["elapsed_seconds"] = max(
+                    0,
+                    float(phase["finished_at"]) - float(phase["started_at"]),
+                )
+        if normalized:
+            tmp = PROGRESS_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, indent=2))
+            tmp.rename(PROGRESS_FILE)
         # Add a computed "age" so the UI can decide whether data is stale
         if data.get("started_at"):
             data["age_seconds"] = round(time.time() - data["started_at"], 1)

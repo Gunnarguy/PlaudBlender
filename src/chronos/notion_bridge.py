@@ -171,7 +171,7 @@ def _normalize_relative_event_times(
             new_end = min(recording_end, new_start + timedelta(seconds=slot_seconds))
             event.start_ts = new_start
             event.end_ts = new_end if new_end > new_start else recording_end
-            event.day_of_week = new_start.strftime("%A").lower()
+            event.day_of_week = new_start.strftime("%A")
             event.hour_of_day = new_start.hour
         return ordered
 
@@ -200,7 +200,7 @@ def _normalize_relative_event_times(
 
         event.start_ts = new_start
         event.end_ts = new_end
-        event.day_of_week = new_start.strftime("%A").lower()
+        event.day_of_week = new_start.strftime("%A")
         event.hour_of_day = new_start.hour
 
     return ordered
@@ -1053,18 +1053,20 @@ def get_coverage_calendar(
         n_count = notion_dates.get(date_str, 0)
         ni_count = notion_imported_dates.get(date_str, 0)
 
-        calendar.append({
-            "date": date_str,
-            "day_of_week": current.strftime("%a"),
-            "has_chronos": c_count > 0,
-            "has_notion": n_count > 0,
-            "has_both": c_count > 0 and n_count > 0,
-            "imported": ni_count > 0,
-            "chronos_count": c_count,
-            "notion_count": n_count,
-            "imported_count": ni_count,
-            "total": c_count + n_count,
-        })
+        calendar.append(
+            {
+                "date": date_str,
+                "day_of_week": current.strftime("%A"),
+                "has_chronos": c_count > 0,
+                "has_notion": n_count > 0,
+                "has_both": c_count > 0 and n_count > 0,
+                "imported": ni_count > 0,
+                "chronos_count": c_count,
+                "notion_count": n_count,
+                "imported_count": ni_count,
+                "total": c_count + n_count,
+            }
+        )
         current += timedelta(days=1)
 
     return calendar
@@ -1800,12 +1802,12 @@ def push_chronos_to_notion(
             result["error"] = "NOTION_DATABASE_ID not configured"
             return result
 
-        # Discover the database schema to build properties correctly
+        # Discover the data source schema to build properties correctly
         svc = get_notion_service()
         client = svc._get_client()
 
-        # Retrieve DB schema
-        db_info = client.databases.retrieve(database_id=db_id)
+        # Retrieve data source schema (notion-client 3.0.0 uses data_sources API)
+        db_info = client.data_sources.retrieve(data_source_id=db_id)
         db_schema = db_info.get("properties", {})
         schema_types = {name: prop.get("type") for name, prop in db_schema.items()}
 
@@ -1878,9 +1880,9 @@ def push_chronos_to_notion(
         if dry_run:
             return result
 
-        # Create the page
+        # Create the page (data_source_id for notion-client 3.0.0)
         new_page = client.pages.create(
-            parent={"database_id": db_id},
+            parent={"data_source_id": db_id},
             properties=properties,
         )
         result["page_id"] = new_page["id"]

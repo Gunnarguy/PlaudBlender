@@ -48,3 +48,7 @@ Thumbs.db
 *.pre-ultra
 GeminiEmbed2*.md
 .qdrant-initialized
+
+# Runtime logs and tokens
+.logs/
+.notion_tokens.json

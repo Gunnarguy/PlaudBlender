@@ -33,6 +33,7 @@ class ChronosGraphExtractor:
     def extract_from_events(
         self,
         events: List[ChronosEvent],
+        progress_callback=None,
     ) -> Tuple[List[Dict[str, Any]], nx.Graph]:
         """Extract entities and relationships from cleaned events.
 
@@ -93,7 +94,9 @@ class ChronosGraphExtractor:
                 xray_log("graph", "extract-error",
                          f"Skipped one — couldn't understand it",
                          detail=str(e)[:60], level="warn")
-                continue
+            finally:
+                if progress_callback:
+                    progress_callback(event.event_id)
 
         _ext_ms = (_time.perf_counter() - _ext_t0) * 1000
         xray_log("graph", "extract",

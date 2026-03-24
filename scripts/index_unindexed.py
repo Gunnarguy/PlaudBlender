@@ -65,7 +65,7 @@ for event, vector in zip(unindexed, vectors):
             recording_id=event.recording_id,
             start_ts=event.start_ts,
             end_ts=event.end_ts,
-            day_of_week=event.day_of_week,
+            day_of_week=str(event.day_of_week).capitalize(),
             hour_of_day=event.hour_of_day,
             clean_text=event.clean_text,
             category=event.category,

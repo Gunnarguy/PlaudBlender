@@ -871,11 +871,11 @@ def create_sync_view(service) -> html.Div:
                         children=[
                             html.Span("🔧", className="btn-icon"),
                             html.Span(
-                                f"Reset Stuck Recordings ({processing} stuck)",
+                                f"Reset Stuck / Failed ({processing + failed} recordings)",
                                 className="btn-text",
                             ),
                         ],
-                        disabled=(processing == 0),
+                        disabled=(processing + failed == 0),
                     ),
                 ],
             ),
@@ -2578,11 +2578,12 @@ def register_navigation_callbacks(app):
             try:
                 service = get_data_service()
                 count = service.reset_stuck_recordings()
+                service.refresh_cache()
                 return html.Div(
                     className="sync-success",
                     children=[
                         html.Span("🔧 Reset Complete!", className="success-icon"),
-                        html.P(f"Reset {count} stuck recordings to pending."),
+                        html.P(f"Reset {count} stuck/failed recordings to pending."),
                         html.P("Run Full Sync to process them.", className="sync-note"),
                     ],
                 )
@@ -2880,16 +2881,30 @@ def register_navigation_callbacks(app):
                                         recording_id=str(event.recording_id),
                                         start_ts=event.start_ts,
                                         end_ts=event.end_ts,
-                                        day_of_week=str(event.day_of_week),
+                                        day_of_week=str(event.day_of_week).capitalize(),
                                         hour_of_day=int(event.hour_of_day),
                                         clean_text=str(event.clean_text),
                                         category=str(event.category),
-                                        category_confidence=float(event.category_confidence) if getattr(event, "category_confidence", None) else None,
+                                        category_confidence=(
+                                            float(event.category_confidence)
+                                            if getattr(
+                                                event, "category_confidence", None
+                                            )
+                                            else None
+                                        ),
                                         sentiment=float(event.sentiment or 0.0),
                                         keywords=list(event.keywords or []),
                                         speaker=str(event.speaker or "unknown"),
-                                        raw_transcript_snippet=str(event.raw_transcript_snippet) if event.raw_transcript_snippet else None,
-                                        gemini_reasoning=str(event.gemini_reasoning) if event.gemini_reasoning else None,
+                                        raw_transcript_snippet=(
+                                            str(event.raw_transcript_snippet)
+                                            if event.raw_transcript_snippet
+                                            else None
+                                        ),
+                                        gemini_reasoning=(
+                                            str(event.gemini_reasoning)
+                                            if event.gemini_reasoning
+                                            else None
+                                        ),
                                     )
                                     point_id = qdrant.upsert_event(schema_event, vector)
                                     event.qdrant_point_id = point_id

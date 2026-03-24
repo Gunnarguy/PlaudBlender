@@ -265,6 +265,11 @@ def run_process(
     processor = TranscriptProcessor(db_session=session)
     pipeline_progress.start_phase("process")
 
+    try:
+        from app_v2.services.xray import xray_log
+    except Exception:
+        xray_log = None
+
     if recording_id:
         print(f"Processing single recording: {recording_id[:20]}...")
         print_progress("Gemini", 0, 1, recording_id[:30])
@@ -313,8 +318,10 @@ def run_process(
 
                 # Heartbeat thread to show we're still alive
                 stop_heartbeat = threading.Event()
+                last_xray_heartbeat = 0.0
 
                 def heartbeat():
+                    nonlocal last_xray_heartbeat
                     dots = 0
                     while not stop_heartbeat.is_set():
                         elapsed = time.time() - proc_start
@@ -323,13 +330,41 @@ def run_process(
                             f"   ⏳ Still processing{'.' * dots} ({elapsed:.0f}s elapsed)",
                             flush=True,
                         )
+
+                        pipeline_progress.update(
+                            total=total,
+                            step=f"Recording {i+1}/{total}: Gemini AI… ({elapsed:.0f}s elapsed)",
+                            item=rec_id[:20],
+                        )
+
+                        if xray_log and elapsed - last_xray_heartbeat >= 10:
+                            xray_log(
+                                "gemini",
+                                "heartbeat",
+                                f"Still processing recording {i+1}/{total}",
+                                detail=f"{rec_id[:20]} · {elapsed:.0f}s elapsed",
+                            )
+                            last_xray_heartbeat = elapsed
+
                         stop_heartbeat.wait(5)  # Print every 5 seconds
 
                 heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
                 heartbeat_thread.start()
 
                 try:
-                    ok = processor.process_recording_id(rec_id)
+
+                    def progress_callback(step: str, detail: str = ""):
+                        detail_suffix = f" — {detail}" if detail else ""
+                        pipeline_progress.update(
+                            total=total,
+                            step=f"Recording {i+1}/{total}: {step}{detail_suffix}",
+                            item=rec_id[:20],
+                        )
+
+                    ok = processor.process_recording_id(
+                        rec_id,
+                        progress_callback=progress_callback,
+                    )
                 finally:
                     stop_heartbeat.set()
                     heartbeat_thread.join(timeout=1)
@@ -611,7 +646,7 @@ def run_graph(
 
     events_to_process = q.limit(limit * 10).all()
 
-    pipeline_progress.start_phase("graph", total_items=0)
+    pipeline_progress.start_phase("graph", total_items=len(events_to_process))
 
     if not events_to_process:
         logger.info("No events to process for graph extraction")
@@ -651,7 +686,13 @@ def run_graph(
     pipeline_progress.update(
         step="Extracting entities", item=f"{len(pydantic_events)} events"
     )
-    entities, graph = graph_extractor.extract_from_events(pydantic_events)
+
+    def _graph_progress(event_id: str) -> None:
+        pipeline_progress.advance(item=event_id, step="Extracting entities")
+
+    entities, graph = graph_extractor.extract_from_events(
+        pydantic_events, progress_callback=_graph_progress
+    )
 
     # Detect communities
     pipeline_progress.update(step="Detecting communities")

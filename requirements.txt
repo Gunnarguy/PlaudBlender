@@ -35,6 +35,10 @@ dash-cytoscape>=0.3.0
 flask>=3.0.0
 flask-compress>=1.14
 
+# REST API (FastAPI backend for iOS app)
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
 # ─────────────────────────────────────────────────────────────
 # Audio Processing (optional - install for local audio features)
 # ─────────────────────────────────────────────────────────────

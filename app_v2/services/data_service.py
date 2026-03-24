@@ -368,7 +368,7 @@ class ChronosDataService:
                     )
                     event.start_ts = new_start
                     event.end_ts = new_end if new_end > new_start else recording_end
-                    event.day_of_week = new_start.strftime("%A").lower()
+                    event.day_of_week = new_start.strftime("%A")
                     event.hour_of_day = new_start.hour
                 continue
 
@@ -397,7 +397,7 @@ class ChronosDataService:
 
                 event.start_ts = new_start
                 event.end_ts = new_end
-                event.day_of_week = new_start.strftime("%A").lower()
+                event.day_of_week = new_start.strftime("%A")
                 event.hour_of_day = new_start.hour
 
         return events
@@ -2151,7 +2151,7 @@ class ChronosDataService:
             return {}
 
     def reset_stuck_recordings(self) -> int:
-        """Reset recordings stuck in 'processing' back to 'pending'."""
+        """Reset recordings stuck in 'processing' or 'failed' back to 'pending'."""
         try:
             from src.database.engine import SessionLocal
             import sqlalchemy as sa
@@ -2161,7 +2161,7 @@ class ChronosDataService:
                 result = db.execute(
                     sa.text(
                         "UPDATE chronos_recordings SET processing_status = 'pending', "
-                        "error_message = NULL WHERE processing_status = 'processing'"
+                        "error_message = NULL WHERE processing_status IN ('processing', 'failed')"
                     )
                 )
                 db.commit()

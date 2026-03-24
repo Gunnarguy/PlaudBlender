@@ -227,9 +227,11 @@ class PlaudAutoSync:
 
             logger.info(f"Running: {' '.join(cmd)}")
 
-            # Run pipeline
+            # Run pipeline — use DEVNULL for stdin to avoid
+            # "Bad file descriptor" when parent runs under nohup
             result = subprocess.run(
                 cmd,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=300,  # 5 minute timeout
