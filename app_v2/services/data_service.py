@@ -1750,22 +1750,34 @@ class ChronosDataService:
             try:
                 recent = (
                     db.query(_ChronosRecordingModel)
-                    .filter(_ChronosRecordingModel.created_at >= cutoff)
+                    .filter(
+                        _ChronosRecordingModel.created_at >= cutoff,
+                        _ChronosRecordingModel.source == "plaud",
+                    )
                     .order_by(_ChronosRecordingModel.created_at.desc())
                     .all()
                 )
                 stats["recent_recordings"] = len(recent)
 
+                legacy_by_id: Dict[str, _RecordingModel] = {}
+                if recent:
+                    legacy_rows = (
+                        db.query(_RecordingModel)
+                        .filter(
+                            _RecordingModel.id.in_(
+                                [str(rec.recording_id) for rec in recent]
+                            )
+                        )
+                        .all()
+                    )
+                    legacy_by_id = {str(rec.id): rec for rec in legacy_rows}
+
                 for rec in recent:
                     has_summary = bool(rec.plaud_ai_summary)
+                    legacy = legacy_by_id.get(str(rec.recording_id))
 
                     # Fallback to legacy extra for summary check
                     if not has_summary:
-                        legacy = (
-                            db.query(_RecordingModel)
-                            .filter_by(id=str(rec.recording_id))
-                            .first()
-                        )
                         extra = self._coerce_recording_extra(legacy)
                         has_summary = bool(
                             isinstance(extra.get("plaud_summary"), str)
@@ -1782,11 +1794,6 @@ class ChronosDataService:
                     if rec.plaud_workflow_status:
                         workflow_status = str(rec.plaud_workflow_status).upper()
                     else:
-                        legacy = (
-                            db.query(_RecordingModel)
-                            .filter_by(id=str(rec.recording_id))
-                            .first()
-                        )
                         workflow = self._get_workflow_metadata(legacy)
                         workflow_status = str(workflow.get("status") or "").upper()
 
@@ -1808,7 +1815,10 @@ class ChronosDataService:
 
                     if (
                         not has_summary
-                    ) and workflow_status not in _PLAUD_WORKFLOW_ACTIVE_STATUSES:
+                        and str(rec.processing_status) == "completed"
+                        and bool(rec.transcript and str(rec.transcript).strip())
+                        and workflow_status not in _PLAUD_WORKFLOW_ACTIVE_STATUSES
+                    ):
                         stats["ready_for_enrichment"] += 1
 
                     submitted_at = (
@@ -2146,11 +2156,50 @@ class ChronosDataService:
                 "failed": [{"recording_id": None, "error": str(e)}],
             }
 
+    def _reconcile_stale_processing_recordings(
+        self, stale_after_minutes: int = 90
+    ) -> int:
+        """Reset obviously stale processing rows back to pending.
+
+        These rows happen when a pipeline process is interrupted after marking a
+        recording as processing but before writing a terminal state.
+        """
+        try:
+            db = SessionLocal()
+            try:
+                cutoff = datetime.utcnow() - timedelta(minutes=stale_after_minutes)
+                stale_rows = (
+                    db.query(_ChronosRecordingModel)
+                    .filter(
+                        _ChronosRecordingModel.processing_status == "processing",
+                        _ChronosRecordingModel.created_at < cutoff,
+                        _ChronosRecordingModel.processed_at.is_(None),
+                    )
+                    .all()
+                )
+                for rec in stale_rows:
+                    rec.processing_status = "pending"
+                    rec.error_message = None
+                if stale_rows:
+                    db.commit()
+                    logger.warning(
+                        "Auto-reset %s stale processing recording(s) to pending",
+                        len(stale_rows),
+                    )
+                return len(stale_rows)
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error reconciling stale processing recordings: {e}")
+            return 0
+
     def get_recording_db_stats(self) -> Dict[str, int]:
         """Get recording status counts from SQLite."""
         try:
             from src.database.engine import SessionLocal
             import sqlalchemy as sa
+
+            self._reconcile_stale_processing_recordings()
 
             db = SessionLocal()
             try:
