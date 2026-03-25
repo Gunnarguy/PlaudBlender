@@ -860,11 +860,21 @@ def register_notion_callbacks(app):
                 or any(q in t.lower() for t in r.get("tags", []))
             ]
 
+        def _recording_sort_key(rec):
+            raw_date = rec.get("date", "") or ""
+            created_time = rec.get("created_time", "") or ""
+            primary = raw_date or created_time
+            if raw_date and "T" not in raw_date:
+                return raw_date[:10]
+            return primary
+
         # Apply sort
         if sort_value == "date-desc":
-            filtered.sort(key=lambda r: r.get("date", "") or r.get("created_time", ""), reverse=True)
+            filtered.sort(key=lambda r: r.get("title", "").lower())
+            filtered.sort(key=_recording_sort_key, reverse=True)
         elif sort_value == "date-asc":
-            filtered.sort(key=lambda r: r.get("date", "") or r.get("created_time", ""))
+            filtered.sort(key=lambda r: r.get("title", "").lower())
+            filtered.sort(key=_recording_sort_key)
         elif sort_value == "title-asc":
             filtered.sort(key=lambda r: r.get("title", "").lower())
         elif sort_value == "title-desc":

@@ -5,6 +5,8 @@ page content preview, the interplay between Notion and Chronos/Plaud data,
 a coverage calendar heatmap, import-to-Chronos controls, and write-back features.
 """
 
+from datetime import datetime
+
 from dash import html, dcc
 from typing import List, Optional, Dict
 
@@ -1080,6 +1082,33 @@ def _build_recordings_list(
     )
 
 
+def _extract_recording_date_fields(rec) -> tuple[str, str]:
+    """Return (recording_date, created_time) for a Notion recording row."""
+    if isinstance(rec, dict):
+        return rec.get("date", "") or "", rec.get("created_time", "") or ""
+    return getattr(rec, "date", "") or "", getattr(rec, "created_time", "") or ""
+
+
+def _format_recording_time_label(recording_date: str, created_time: str) -> str:
+    """Show real recording time when available, else fall back to page created time.
+
+    If we only have a day-level recording date like YYYY-MM-DD, do not show the
+    Notion page creation time because it looks like a recording timestamp.
+    """
+    raw_value = recording_date or created_time
+    if not raw_value:
+        return ""
+
+    if recording_date and "T" not in recording_date:
+        return ""
+
+    try:
+        dt = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+        return dt.strftime("%I:%M %p")
+    except Exception:
+        return raw_value[11:16] if len(raw_value) > 16 else ""
+
+
 def _build_recording_row(rec, chronos_ids, match_map=None, stale_map=None) -> html.Div:
     """Build a single recording row with action buttons."""
     match_map = match_map or {}
@@ -1152,15 +1181,8 @@ def _build_recording_row(rec, chronos_ids, match_map=None, stale_map=None) -> ht
     elif summary:
         preview = summary[:200] + ("…" if len(summary) > 200 else "")
 
-    # Time from created_time
-    time_str = ""
-    if created:
-        try:
-            from datetime import datetime
-            dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
-            time_str = dt.strftime("%I:%M %p")
-        except Exception:
-            time_str = created[11:16] if len(created) > 16 else ""
+    recording_date, created_time = _extract_recording_date_fields(rec)
+    time_str = _format_recording_time_label(recording_date, created_time)
 
     children = [
         # Row header
