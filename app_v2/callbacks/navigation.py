@@ -277,7 +277,30 @@ def create_sync_view(service) -> html.Div:
         cs = stats.plaud_cloud_stats
         cloud_total = cs.get("total_count", 0)
         cloud_hours = cs.get("total_duration_hours", 0)
-        synced_pct = (completed / cloud_total * 100) if cloud_total else 0
+        local_plaud_completed = 0
+        try:
+            from src.database.engine import SessionLocal as _SL
+            import sqlalchemy as sa
+
+            _db = _SL()
+            try:
+                row = _db.execute(
+                    sa.text(
+                        "SELECT COUNT(*) FROM chronos_recordings "
+                        "WHERE source = 'plaud' AND processing_status = 'completed'"
+                    )
+                ).fetchone()
+                local_plaud_completed = int(row[0] or 0) if row else 0
+            finally:
+                _db.close()
+        except Exception:
+            local_plaud_completed = completed
+
+        synced_pct = (
+            min(100.0, (local_plaud_completed / cloud_total * 100))
+            if cloud_total
+            else 0
+        )
 
         plaud_cloud_children = [
             html.Div(
