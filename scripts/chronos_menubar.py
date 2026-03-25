@@ -291,6 +291,9 @@ class ChronosApp(rumps.App):
 
         # ── Bulk actions ─────────────────────────────────────────────
         self.start_all_item = rumps.MenuItem("▶  Start All", callback=self.start_all)
+        self.restart_all_item = rumps.MenuItem(
+            "↻  Restart Services", callback=self.restart_all
+        )
         self.stop_all_item = rumps.MenuItem("■  Stop All", callback=self.stop_all)
 
         # ── Open links ───────────────────────────────────────────────
@@ -358,6 +361,7 @@ class ChronosApp(rumps.App):
             self.webui_toggle,
             rumps.separator,
             self.start_all_item,
+            self.restart_all_item,
             self.stop_all_item,
             rumps.separator,
             self.open_webui,
@@ -571,6 +575,10 @@ class ChronosApp(rumps.App):
     def start_all(self, _):
         threading.Thread(target=self._start_all_bg, daemon=True).start()
 
+    @rumps.clicked("↻  Restart Services")
+    def restart_all(self, _):
+        threading.Thread(target=self._restart_all_bg, daemon=True).start()
+
     def _start_all_bg(self):
         results = []
         if not _port_in_use(6333):
@@ -604,6 +612,21 @@ class ChronosApp(rumps.App):
 
         rumps.notification("Chronos", "Start All", msg, sound=bool(fail))
         self._poll_status(None)
+
+    def _restart_all_bg(self):
+        rumps.notification(
+            "Chronos",
+            "Restart Services",
+            "Stopping and restarting all services",
+            sound=False,
+        )
+        stop_webui()
+        stop_api()
+        stop_ngrok()
+        stop_qdrant()
+        time.sleep(1)
+        self._poll_status(None)
+        self._start_all_bg()
 
     @rumps.clicked("■  Stop All")
     def stop_all(self, _):
