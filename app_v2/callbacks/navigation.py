@@ -2443,7 +2443,10 @@ def register_navigation_callbacks(app):
             elif view == "sync":
                 content = create_sync_view(get_service())
             elif view == "notion":
-                from app_v2.callbacks.notion import _do_full_fetch_data
+                from app_v2.callbacks.notion import (
+                    _do_full_fetch_data,
+                    _get_cached_notion_data,
+                )
                 from app_v2.components.notion import create_notion_view
                 from src.config import get_settings
 
@@ -2470,33 +2473,39 @@ def register_navigation_callbacks(app):
                     except Exception as e:
                         xray_log("nav", "data", f"Notion: could not list data sources: {e}")
 
-                # Pre-fetch all Notion data so the view renders populated
                 if has_db:
-                    xray_log("nav", "data", "Loading Notion data for dashboard")
-                    try:
-                        import concurrent.futures
+                    # Serve from cache if available (instant tab switch)
+                    cached = _get_cached_notion_data()
+                    if cached is not None:
+                        xray_log("nav", "data", "Notion tab loaded from cache")
+                        content = create_notion_view(**cached)
+                    else:
+                        # Cold load — show skeleton, auto-fetch populates data
+                        xray_log("nav", "data", "Loading Notion data for dashboard")
+                        try:
+                            import concurrent.futures
 
-                        with concurrent.futures.ThreadPoolExecutor(
-                            max_workers=1
-                        ) as pool:
-                            future = pool.submit(_do_full_fetch_data)
-                            notion_data = future.result(timeout=45)
-                        content = create_notion_view(**notion_data)
-                    except concurrent.futures.TimeoutError:
-                        logger.warning("Notion pre-fetch timed out after 45s")
-                        xray_log(
-                            "nav",
-                            "data",
-                            "Notion API is slow — showing empty view, hit Refresh to retry",
-                            level="warn",
-                        )
-                        content = create_notion_view(databases=databases)
-                    except Exception as e:
-                        logger.warning(f"Notion pre-fetch failed: {e}")
-                        xray_log(
-                            "nav", "data", f"Notion fetch error: {e}", level="warn"
-                        )
-                        content = create_notion_view(databases=databases)
+                            with concurrent.futures.ThreadPoolExecutor(
+                                max_workers=1
+                            ) as pool:
+                                future = pool.submit(_do_full_fetch_data)
+                                notion_data = future.result(timeout=45)
+                            content = create_notion_view(**notion_data)
+                        except concurrent.futures.TimeoutError:
+                            logger.warning("Notion pre-fetch timed out after 45s")
+                            xray_log(
+                                "nav",
+                                "data",
+                                "Notion API is slow — showing empty view, hit Refresh to retry",
+                                level="warn",
+                            )
+                            content = create_notion_view(databases=databases)
+                        except Exception as e:
+                            logger.warning(f"Notion pre-fetch failed: {e}")
+                            xray_log(
+                                "nav", "data", f"Notion fetch error: {e}", level="warn"
+                            )
+                            content = create_notion_view(databases=databases)
                 else:
                     content = create_notion_view(databases=databases)
             elif view == "settings":

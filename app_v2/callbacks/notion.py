@@ -13,10 +13,42 @@ Handles:
 """
 
 import logging
+import time
+import threading
 from dash import Input, Output, State, callback_context as ctx, html, dcc, no_update, ALL, MATCH
 from dash.exceptions import PreventUpdate
 
 logger = logging.getLogger(__name__)
+
+# ── Notion data cache (avoids re-fetching on every tab switch) ────
+_notion_cache_lock = threading.Lock()
+_notion_cache: dict | None = None
+_notion_cache_ts: float = 0.0
+_NOTION_CACHE_TTL = 60  # seconds
+
+
+def _get_cached_notion_data() -> dict | None:
+    """Return cached Notion data if still fresh, else None."""
+    with _notion_cache_lock:
+        if _notion_cache and (time.monotonic() - _notion_cache_ts) < _NOTION_CACHE_TTL:
+            return _notion_cache
+    return None
+
+
+def _set_notion_cache(data: dict):
+    """Store Notion data in cache."""
+    global _notion_cache, _notion_cache_ts
+    with _notion_cache_lock:
+        _notion_cache = data
+        _notion_cache_ts = time.monotonic()
+
+
+def invalidate_notion_cache():
+    """Clear the Notion data cache (called on Refresh, import, etc.)."""
+    global _notion_cache, _notion_cache_ts
+    with _notion_cache_lock:
+        _notion_cache = None
+        _notion_cache_ts = 0.0
 
 
 def _build_progress_display(progress: dict):
@@ -149,7 +181,8 @@ def register_notion_callbacks(app):
         import concurrent.futures
         from app_v2.services.xray import xray_log
 
-        xray_log("data", "notion", "Connecting to Notion...")
+        invalidate_notion_cache()
+        xray_log("data", "notion", "Refreshing Notion data...")
 
         def _do_fetch():
             from app_v2.services.xray import xray_timer
@@ -393,6 +426,7 @@ def register_notion_callbacks(app):
             finally:
                 db.close()
 
+            invalidate_notion_cache()
             if ok:
                 return html.Div(
                     className="notion-import-result notion-import-success",
@@ -569,6 +603,7 @@ def register_notion_callbacks(app):
             return _build_progress_display(progress), False  # keep polling
 
         elif status == "done":
+            invalidate_notion_cache()
             completed = progress.get("completed", 0)
             failed = progress.get("failed", 0)
             total = progress.get("total", 0)
@@ -1171,11 +1206,19 @@ def register_notion_callbacks(app):
         )
 
 
-def _do_full_fetch_data():
+def _do_full_fetch_data(force=False):
     """Fetch all Notion data and return kwargs dict for create_notion_view.
 
-    Used by navigation to pre-fetch data during tab switch.
+    Uses a 60s TTL cache so tab switching is instant.
+    Pass force=True to bypass cache (Refresh button).
     """
+    if not force:
+        cached = _get_cached_notion_data()
+        if cached is not None:
+            logger.debug("Notion tab: serving from cache")
+            return cached
+
+    import concurrent.futures
     from app_v2.services.xray import xray_log, xray_timer
     from app_v2.services.data_service import get_data_service
     from src.notion_service import get_notion_service
@@ -1243,60 +1286,84 @@ def _do_full_fetch_data():
                 }
             )
 
-        try:
-            from src.chronos.notion_bridge import (
-                match_notion_to_chronos,
-                get_coverage_calendar,
-                detect_stale_imports,
-            )
-            from src.database.engine import SessionLocal
-
-            db = SessionLocal()
+        # Run matching + coverage + chronos IDs in parallel
+        def _do_matching():
+            _match_map, _coverage, _stale_map = {}, [], {}
             try:
-                with xray_timer(
-                    "data",
-                    "notion-match",
-                    "Matching Notion pages to Chronos recordings",
-                ):
-                    match_map = match_notion_to_chronos(recordings, db)
-                    matched = sum(1 for v in match_map.values() if v)
-                    xray_log(
-                        "data",
-                        "notion-match",
-                        f"Smart match: {matched} linked, {len(match_map) - matched} unique to Notion",
-                    )
-                coverage = get_coverage_calendar(
-                    db, days=90, notion_recordings=recordings
+                from src.chronos.notion_bridge import (
+                    match_notion_to_chronos,
+                    get_coverage_calendar,
+                    detect_stale_imports,
                 )
-                stale_map = detect_stale_imports(recordings, match_map, db)
-                if stale_map:
-                    xray_log(
+                from src.database.engine import SessionLocal
+
+                db = SessionLocal()
+                try:
+                    with xray_timer(
                         "data",
                         "notion-match",
-                        f"{len(stale_map)} recordings edited in Notion since import",
+                        "Matching Notion pages to Chronos recordings",
+                    ):
+                        _match_map = match_notion_to_chronos(recordings, db)
+                        matched = sum(1 for v in _match_map.values() if v)
+                        xray_log(
+                            "data",
+                            "notion-match",
+                            f"Smart match: {matched} linked, {len(_match_map) - matched} unique to Notion",
+                        )
+                    _coverage = get_coverage_calendar(
+                        db, days=90, notion_recordings=recordings
                     )
-            finally:
-                db.close()
-        except Exception as e:
-            logger.warning(f"Smart matching failed (non-fatal): {e}")
+                    _stale_map = detect_stale_imports(recordings, _match_map, db)
+                    if _stale_map:
+                        xray_log(
+                            "data",
+                            "notion-match",
+                            f"{len(_stale_map)} recordings edited in Notion since import",
+                        )
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.warning(f"Smart matching failed (non-fatal): {e}")
+            return _match_map, _coverage, _stale_map
+
+        def _do_chronos_ids():
+            _ids = set()
+            try:
+                service = get_data_service()
+                days = service.get_days()
+                for day in days:
+                    for rec in day.recordings:
+                        if rec.recording_id:
+                            _ids.add(rec.recording_id)
+            except Exception:
+                pass
+            return _ids
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            match_future = pool.submit(_do_matching)
+            ids_future = pool.submit(_do_chronos_ids)
+            match_map, coverage, stale_map = match_future.result(timeout=30)
+            chronos_ids = ids_future.result(timeout=10)
 
         xray_log(
             "data",
             "notion-match",
             f"Matched {sum(1 for v in match_map.values() if v)} of {len(match_map)} Notion pages to Chronos recordings",
         )
+    else:
+        # Not connected — still get chronos IDs for the view
+        try:
+            service = get_data_service()
+            days = service.get_days()
+            for day in days:
+                for rec in day.recordings:
+                    if rec.recording_id:
+                        chronos_ids.add(rec.recording_id)
+        except Exception:
+            pass
 
-    try:
-        service = get_data_service()
-        days = service.get_days()
-        for day in days:
-            for rec in day.recordings:
-                if rec.recording_id:
-                    chronos_ids.add(rec.recording_id)
-    except Exception:
-        pass
-
-    return {
+    result = {
         "status": status_dict,
         "recordings": recordings_data,
         "chronos_recording_ids": chronos_ids,
@@ -1305,6 +1372,8 @@ def _do_full_fetch_data():
         "databases": databases_data,
         "stale_map": stale_map,
     }
+    _set_notion_cache(result)
+    return result
 
 
 def _do_full_fetch():
