@@ -321,13 +321,18 @@ class ChronosDataService:
         for event in events:
             by_recording[event.recording_id].append(event)
 
+        # Quick check: skip DB query entirely if no Notion-sourced recordings
+        notion_ids = [rid for rid in by_recording if rid.startswith("notion_")]
+        if not notion_ids:
+            return events
+
         db = SessionLocal()
         try:
             notion_records = {
                 str(rec.recording_id): rec
                 for rec in db.query(_ChronosRecordingModel)
                 .filter(
-                    _ChronosRecordingModel.recording_id.in_(list(by_recording.keys())),
+                    _ChronosRecordingModel.recording_id.in_(notion_ids),
                     _ChronosRecordingModel.source == "notion",
                 )
                 .all()
@@ -634,6 +639,27 @@ class ChronosDataService:
             days[day_key].append(rec_summary)
 
         # Build day summaries
+        # Pre-load all AI summaries in a single query (avoids N+1)
+        _summaries_by_id: Dict[str, str] = {}
+        try:
+            from src.database.models import ChronosRecording
+            _all_rec_ids = [rec.recording_id for recs in days.values() for rec in recs]
+            db = SessionLocal()
+            try:
+                rows = (
+                    db.query(ChronosRecording.recording_id, ChronosRecording.plaud_ai_summary)
+                    .filter(
+                        ChronosRecording.recording_id.in_(_all_rec_ids),
+                        ChronosRecording.plaud_ai_summary.isnot(None),
+                    )
+                    .all()
+                )
+                _summaries_by_id = {str(r[0]): str(r[1]).strip() for r in rows if r[1]}
+            finally:
+                db.close()
+        except Exception:
+            pass
+
         result = []
         for day_key, day_recordings in days.items():
             # Apply date filters
@@ -676,33 +702,20 @@ class ChronosDataService:
             except:
                 date_display = day_key
 
-            # Build one-line AI summary from recording-level summaries
+            # Build one-line AI summary from pre-loaded summaries
             day_ai_summary = None
             try:
-                from src.database.models import ChronosRecording
-
-                db = SessionLocal()
-                try:
-                    snippets = []
-                    for rec in day_recordings:
-                        db_rec = (
-                            db.query(ChronosRecording)
-                            .filter(
-                                ChronosRecording.recording_id == rec.recording_id,
-                            )
-                            .first()
-                        )
-                        if db_rec and getattr(db_rec, "plaud_ai_summary", None):
-                            text = str(db_rec.plaud_ai_summary).strip()
-                            first_sentence = text.split(".")[0].strip()
-                            if first_sentence:
-                                snippets.append(first_sentence[:120])
-                    if snippets:
-                        day_ai_summary = ". ".join(snippets[:3])
-                        if not day_ai_summary.endswith("."):
-                            day_ai_summary += "."
-                finally:
-                    db.close()
+                snippets = []
+                for rec in day_recordings:
+                    text = _summaries_by_id.get(rec.recording_id)
+                    if text:
+                        first_sentence = text.split(".")[0].strip()
+                        if first_sentence:
+                            snippets.append(first_sentence[:120])
+                if snippets:
+                    day_ai_summary = ". ".join(snippets[:3])
+                    if not day_ai_summary.endswith("."):
+                        day_ai_summary += "."
             except Exception as e:
                 logger.debug("AI summary aggregation failed for %s: %s", day_key, e)
 
@@ -1415,25 +1428,28 @@ class ChronosDataService:
         avg_events_per_rec = len(events) / num_recordings if num_recordings else 0.0
 
         # Use RECORDING durations from SQLite (not event durations which overlap
-        # and double-count time).  Fall back to event-based sums only if the DB
-        # query fails.
+        # and double-count time).  Uses lightweight aggregate query instead of
+        # loading all rows.
         real_total_duration_sec = 0.0
         real_avg_duration_min = 0.0
         real_longest_rec_min = 0.0
         real_total_recordings = num_recordings
         try:
+            from sqlalchemy import func as _func
             from src.database.engine import SessionLocal as _SL
             from src.database.models import ChronosRecording as _CR
             _db = _SL()
             try:
-                db_recs = _db.query(_CR).all()
-                real_total_recordings = len(db_recs)
-                rec_durations = [float(r.duration_seconds or 0) for r in db_recs]  # type: ignore[arg-type]
-                real_total_duration_sec = sum(rec_durations)
-                real_avg_duration_min = (
-                    (real_total_duration_sec / len(db_recs) / 60) if db_recs else 0.0
-                )
-                real_longest_rec_min = max(rec_durations, default=0) / 60
+                row = _db.query(
+                    _func.count(_CR.recording_id),
+                    _func.sum(_CR.duration_seconds),
+                    _func.avg(_CR.duration_seconds),
+                    _func.max(_CR.duration_seconds),
+                ).one()
+                real_total_recordings = row[0] or num_recordings
+                real_total_duration_sec = float(row[1] or 0)
+                real_avg_duration_min = float(row[2] or 0) / 60
+                real_longest_rec_min = float(row[3] or 0) / 60
             finally:
                 _db.close()
         except Exception as e:
@@ -2331,6 +2347,7 @@ class ChronosDataService:
                         ChronosEvent.user_category_override,
                     )
                     .filter(
+                        ChronosEvent.recording_id == recording_id,
                         ChronosEvent.user_category_override.isnot(None),
                     )
                     .all()

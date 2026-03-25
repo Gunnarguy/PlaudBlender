@@ -162,7 +162,7 @@ class ChronosEvent(Base):
 
     event_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     recording_id = Column(
-        String, ForeignKey("chronos_recordings.recording_id"), nullable=False
+        String, ForeignKey("chronos_recordings.recording_id"), nullable=False, index=True
     )
 
     # Temporal indexing (mandatory)

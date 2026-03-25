@@ -109,6 +109,14 @@ def _ensure_sqlite_additive_schema(eng: Engine) -> None:
             _add_column("chronos_events", "user_category_override VARCHAR")
         if event_cols and "category_confidence" not in event_cols:
             _add_column("chronos_events", "category_confidence REAL")
+
+        # Ensure indexes exist for frequently-queried columns
+        with eng.connect() as conn:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_chronos_events_recording_id "
+                "ON chronos_events (recording_id)"
+            ))
+            conn.commit()
     except Exception:
         # Never block app startup due to a best-effort migration.
         return
