@@ -6,6 +6,7 @@ Notion often has recordings that couldn't be pulled from the Plaud API.
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -403,6 +404,8 @@ class NotionService:
             date = ""
             if mapping.get("date") and mapping["date"] in props:
                 date = self._extract_date(props[mapping["date"]])
+            if not date and title:
+                date = self._infer_date_from_title(title, created)
             if not date and created:
                 # Fall back to page created_time
                 date = created[:10]
@@ -442,6 +445,60 @@ class NotionService:
         except Exception as e:
             logger.warning(f"Error parsing Notion page: {e}")
             return None
+
+    def _infer_date_from_title(self, title: str, created_time: str = "") -> str:
+        """Infer a YYYY-MM-DD date from common Plaud title prefixes.
+
+        Examples:
+        - 03-24 Field Log: ...
+        - 03-24-2026 Field Log: ...
+        - 2026-03-24 Field Log: ...
+        """
+        title = (title or "").strip()
+        if not title:
+            return ""
+
+        created_dt = None
+        if created_time:
+            try:
+                created_dt = datetime.fromisoformat(created_time.replace("Z", "+00:00"))
+            except Exception:
+                created_dt = None
+
+        match = re.match(r"^(\d{4})-(\d{2})-(\d{2})(?:\b|\s|:)", title)
+        if match:
+            try:
+                return datetime(
+                    int(match.group(1)), int(match.group(2)), int(match.group(3))
+                ).strftime("%Y-%m-%d")
+            except ValueError:
+                return ""
+
+        match = re.match(r"^(\d{2})-(\d{2})-(\d{2,4})(?:\b|\s|:)", title)
+        if match:
+            month = int(match.group(1))
+            day = int(match.group(2))
+            year = int(match.group(3))
+            if year < 100:
+                year += 2000
+            try:
+                return datetime(year, month, day).strftime("%Y-%m-%d")
+            except ValueError:
+                return ""
+
+        match = re.match(r"^(\d{2})-(\d{2})(?:\b|\s|:)", title)
+        if match:
+            month = int(match.group(1))
+            day = int(match.group(2))
+            year = created_dt.year if created_dt else datetime.utcnow().year
+            if created_dt and created_dt.month == 1 and month == 12:
+                year -= 1
+            try:
+                return datetime(year, month, day).strftime("%Y-%m-%d")
+            except ValueError:
+                return ""
+
+        return ""
 
     def _extract_property_text(self, prop: dict) -> str:
         """Extract plain text from any Notion property type."""
