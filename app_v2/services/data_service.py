@@ -2215,22 +2215,105 @@ class ChronosDataService:
             logger.error(f"Error fetching DB stats: {e}")
             return {}
 
-    def reset_stuck_recordings(self) -> int:
-        """Reset recordings stuck in 'processing' or 'failed' back to 'pending'."""
-        try:
-            from src.database.engine import SessionLocal
-            import sqlalchemy as sa
+    def _classify_sync_failure(self, rec: _ChronosRecordingModel) -> Tuple[str, str]:
+        """Classify a failed recording as actionable or archived.
 
+        Archived failures are known dead-ends that only create noise in the Sync UI.
+        """
+        source = str(rec.source or "")
+        recording_id = str(rec.recording_id or "")
+        error = str(rec.error_message or "")
+        transcript = str(rec.transcript or "")
+
+        if source in {"notion", "usb_import"}:
+            return "archived", f"{source} recordings are not retryable through Plaud sync"
+
+        if recording_id.startswith("notion:"):
+            return "archived", "synthetic Notion IDs cannot be fetched from Plaud"
+
+        if "No transcript available in Plaud source_list" in error:
+            return "archived", "Plaud has no transcript available for this recording"
+
+        if "Gemini returned no events" in error and len(transcript.strip()) < 200:
+            return "archived", "transcript is too short to produce structured events"
+
+        return "actionable", "retryable processing or Plaud fetch failure"
+
+    def get_sync_failure_summary(self, limit: int = 5) -> Dict[str, Any]:
+        """Return actionable vs archived failed recordings for the Sync UI."""
+        summary: Dict[str, Any] = {
+            "actionable_count": 0,
+            "archived_count": 0,
+            "actionable": [],
+            "archived": [],
+        }
+
+        try:
             db = SessionLocal()
             try:
-                result = db.execute(
-                    sa.text(
-                        "UPDATE chronos_recordings SET processing_status = 'pending', "
-                        "error_message = NULL WHERE processing_status IN ('processing', 'failed')"
-                    )
+                failed_rows = (
+                    db.query(_ChronosRecordingModel)
+                    .filter(_ChronosRecordingModel.processing_status == "failed")
+                    .order_by(_ChronosRecordingModel.created_at.desc())
+                    .all()
                 )
+
+                for rec in failed_rows:
+                    bucket, reason = self._classify_sync_failure(rec)
+                    item = {
+                        "recording_id": str(rec.recording_id),
+                        "source": str(rec.source or ""),
+                        "title": str(rec.title or rec.recording_id),
+                        "error": str(rec.error_message or "Unknown error"),
+                        "reason": reason,
+                    }
+                    if bucket == "actionable":
+                        summary["actionable_count"] += 1
+                        if len(summary["actionable"]) < limit:
+                            summary["actionable"].append(item)
+                    else:
+                        summary["archived_count"] += 1
+                        if len(summary["archived"]) < limit:
+                            summary["archived"].append(item)
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error building sync failure summary: {e}")
+
+        return summary
+
+    def reset_stuck_recordings(self) -> int:
+        """Reset recordings stuck in processing plus actionable failed rows to pending."""
+        try:
+            db = SessionLocal()
+            try:
+                reset_count = 0
+
+                processing_rows = (
+                    db.query(_ChronosRecordingModel)
+                    .filter(_ChronosRecordingModel.processing_status == "processing")
+                    .all()
+                )
+                for rec in processing_rows:
+                    rec.processing_status = "pending"
+                    rec.error_message = None
+                    reset_count += 1
+
+                failed_rows = (
+                    db.query(_ChronosRecordingModel)
+                    .filter(_ChronosRecordingModel.processing_status == "failed")
+                    .all()
+                )
+                for rec in failed_rows:
+                    bucket, _reason = self._classify_sync_failure(rec)
+                    if bucket != "actionable":
+                        continue
+                    rec.processing_status = "pending"
+                    rec.error_message = None
+                    reset_count += 1
+
                 db.commit()
-                return int(getattr(result, "rowcount", 0) or 0)
+                return reset_count
             finally:
                 db.close()
         except Exception as e:

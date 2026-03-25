@@ -51,12 +51,15 @@ def create_sync_view(service) -> html.Div:
     stats = service.get_stats()
     db_stats = service.get_recording_db_stats()
     workflow_stats = service.get_plaud_workflow_stats(days_back=30)
+    failure_summary = service.get_sync_failure_summary(limit=5)
 
     pending = db_stats.get("pending", 0)
     processing = db_stats.get("processing", 0)
     failed = db_stats.get("failed", 0)
     completed = db_stats.get("completed", 0)
     total = pending + processing + failed + completed
+    actionable_failed = int(failure_summary.get("actionable_count", 0) or 0)
+    archived_failed = int(failure_summary.get("archived_count", 0) or 0)
 
     # Auto-sync status
     auto_sync_children = []
@@ -219,60 +222,88 @@ def create_sync_view(service) -> html.Div:
     # Plaud cloud stats row
     plaud_cloud_children = []
 
-    # Failed recording details
+    # Failed recording details (actionable vs archived)
     failed_details_children = []
-    if failed > 0:
-        try:
-            from src.database.engine import SessionLocal as _SL
-            import sqlalchemy as sa
-
-            _db = _SL()
-            try:
-                failed_rows = _db.execute(
-                    sa.text(
-                        "SELECT recording_id, error_message FROM chronos_recordings "
-                        "WHERE processing_status = 'failed' LIMIT 5"
-                    )
-                ).fetchall()
-                if failed_rows:
-                    failed_details_children = [
-                        html.Div(
-                            className="failed-recordings-detail",
-                            style={
-                                "marginTop": "10px",
-                                "borderTop": "1px solid var(--border-color, #e2e8f0)",
-                                "paddingTop": "10px",
-                            },
-                            children=[
-                                html.Span(
-                                    "🔍 Failed Recordings:",
-                                    style={
-                                        "fontWeight": "600",
-                                        "fontSize": "0.85rem",
-                                        "color": "#ef4444",
-                                    },
-                                ),
-                                html.Ul(
-                                    style={
-                                        "margin": "4px 0 0 0",
-                                        "paddingLeft": "18px",
-                                        "fontSize": "0.8rem",
-                                        "color": "#94a3b8",
-                                    },
-                                    children=[
-                                        html.Li(
-                                            f"{row[0][:16]}… — {(row[1] or 'Unknown error')[:80]}"
-                                        )
-                                        for row in failed_rows
-                                    ],
-                                ),
-                            ],
-                        ),
-                    ]
-            finally:
-                _db.close()
-        except Exception:
-            pass
+    actionable_rows = failure_summary.get("actionable", [])
+    archived_rows = failure_summary.get("archived", [])
+    if actionable_rows:
+        failed_details_children.append(
+            html.Div(
+                className="failed-recordings-detail",
+                style={
+                    "marginTop": "10px",
+                    "borderTop": "1px solid var(--border-color, #e2e8f0)",
+                    "paddingTop": "10px",
+                },
+                children=[
+                    html.Span(
+                        "🔍 Actionable Failures:",
+                        style={
+                            "fontWeight": "600",
+                            "fontSize": "0.85rem",
+                            "color": "#ef4444",
+                        },
+                    ),
+                    html.Ul(
+                        style={
+                            "margin": "4px 0 0 0",
+                            "paddingLeft": "18px",
+                            "fontSize": "0.8rem",
+                            "color": "#94a3b8",
+                        },
+                        children=[
+                            html.Li(
+                                f"{row['recording_id'][:16]}… — {row['error'][:80]}"
+                            )
+                            for row in actionable_rows
+                        ],
+                    ),
+                ],
+            )
+        )
+    if archived_rows:
+        failed_details_children.append(
+            html.Div(
+                className="failed-recordings-detail",
+                style={
+                    "marginTop": "10px",
+                    "borderTop": "1px solid var(--border-color, #e2e8f0)",
+                    "paddingTop": "10px",
+                },
+                children=[
+                    html.Span(
+                        "🗃 Archived Issues:",
+                        style={
+                            "fontWeight": "600",
+                            "fontSize": "0.85rem",
+                            "color": "#94a3b8",
+                        },
+                    ),
+                    html.P(
+                        "These stay out of the red failure count because retry/reset will not fix them through Sync.",
+                        style={
+                            "margin": "4px 0 0 0",
+                            "fontSize": "0.78rem",
+                            "color": "#94a3b8",
+                        },
+                    ),
+                    html.Ul(
+                        style={
+                            "margin": "4px 0 0 0",
+                            "paddingLeft": "18px",
+                            "fontSize": "0.8rem",
+                            "color": "#94a3b8",
+                        },
+                        children=[
+                            html.Li(
+                                f"{row['recording_id'][:16]}… — {row['reason']}"
+                            )
+                            for row in archived_rows
+                        ],
+                    ),
+                ],
+            )
+        )
     if stats.plaud_cloud_stats:
         cs = stats.plaud_cloud_stats
         cloud_total = cs.get("total_count", 0)
@@ -645,9 +676,9 @@ def create_sync_view(service) -> html.Div:
                     html.Div(
                         [
                             html.Span(
-                                str(failed),
+                                str(actionable_failed),
                                 className="big-number",
-                                style={"color": "#ef4444"},
+                                style={"color": "#ef4444" if actionable_failed else "#94a3b8"},
                             ),
                             html.Span("Failed", className="stat-label"),
                         ],
@@ -676,6 +707,13 @@ def create_sync_view(service) -> html.Div:
                         [
                             html.Span(f"{stats.total_duration_hours:.1f}", className="big-number"),
                             html.Span("Hours Recorded", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(str(archived_failed), className="big-number"),
+                            html.Span("Archived", className="stat-label"),
                         ],
                         className="status-stat",
                     ),
@@ -894,11 +932,11 @@ def create_sync_view(service) -> html.Div:
                         children=[
                             html.Span("🔧", className="btn-icon"),
                             html.Span(
-                                f"Reset Stuck / Failed ({processing + failed} recordings)",
+                                f"Reset Stuck / Retry ({processing + actionable_failed} recordings)",
                                 className="btn-text",
                             ),
                         ],
-                        disabled=(processing + failed == 0),
+                        disabled=(processing + actionable_failed == 0),
                     ),
                 ],
             ),
@@ -2615,7 +2653,9 @@ def register_navigation_callbacks(app):
                     className="sync-success",
                     children=[
                         html.Span("🔧 Reset Complete!", className="success-icon"),
-                        html.P(f"Reset {count} stuck/failed recordings to pending."),
+                        html.P(
+                            f"Reset {count} stuck/actionable recordings to pending."
+                        ),
                         html.P("Run Full Sync to process them.", className="sync-note"),
                     ],
                 )
