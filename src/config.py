@@ -18,6 +18,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+_OPENAI_MODEL_ALIASES = {
+    "gpt-5-mini": "gpt-5.4-mini",
+    "gpt-5-nano": "gpt-5.4-nano",
+}
+
+
+def normalize_openai_model_name(model: Optional[str]) -> str:
+    """Map legacy OpenAI model aliases onto the current GPT-5.4 family."""
+    raw = (model or "gpt-5.4").strip()
+    return _OPENAI_MODEL_ALIASES.get(raw, raw)
+
+
 @dataclass
 class Settings:
     # Plaud / OAuth
@@ -47,18 +59,23 @@ class Settings:
     # Chronos: Gemini Model Selection (March 2026 — Latest Available Models)
     # ─────────────────────────────────────────────────────────────────────────
     # Model Hierarchy (best to fastest):
-    #   gemini-3.1-pro-preview  → Best reasoning, replaces shut-down 3-pro-preview
-    #   gemini-3-flash-preview  → Best FREE model, great for processing ✅
-    #   gemini-2.5-pro          → Stable thinking model, FREE standard tier
-    #   gemini-2.5-flash        → Stable fast model, FREE standard tier
-    #   gemini-2.0-flash        → ⚠️ DEPRECATED (shutdown March 31, 2026)
+    #   gemini-3.1-pro-preview  → Highest-quality paid reasoning model
+    #   gemini-3-flash-preview  → Strong fast model; billed on paid projects
+    #   gemini-2.5-pro          → Stable paid reasoning model
+    #   gemini-2.5-flash        → Stable fast model; billed on paid projects
+    #   gemini-2.0-flash        → ⚠️ DEPRECATED (shutdown June 1, 2026)
     #
     # Embeddings:
     #   gemini-embedding-2-preview → Multimodal (text+audio+image+video+PDF)
     #   gemini-embedding-001       → Text-only stable model (legacy)
+    #
+    # Billing note:
+    #   Gemini free-vs-paid pricing depends on whether the API key's project has
+    #   billing enabled in AI Studio / Cloud Billing. Chronos assumes paid-tier
+    #   pricing by default to avoid under-reporting spend.
     # ─────────────────────────────────────────────────────────────────────────
     chronos_cleaning_model: str = os.getenv(
-        # Gemini 3 Flash Preview — FREE on standard tier, excellent for processing
+        # Gemini 3 Flash Preview — fast default for extraction / cleanup
         "CHRONOS_CLEANING_MODEL",
         "gemini-3-flash-preview",
     )
@@ -70,9 +87,13 @@ class Settings:
     )
     chronos_embedding_dim: int = int(os.getenv("CHRONOS_EMBEDDING_DIM", "768"))
     chronos_analyst_model: str = os.getenv(
-        # Gemini 3.1 Pro Preview — replaces gemini-3-pro-preview (shut down 2026-03-09)
+        # Gemini 3.1 Pro Preview — optional paid fallback for harder cleanup tasks
         "CHRONOS_ANALYST_MODEL",
         "gemini-3.1-pro-preview",
+    )
+    gemini_billing_tier: str = os.getenv("GEMINI_BILLING_TIER", "paid").strip().lower()
+    chronos_allow_paid_gemini_fallback: bool = (
+        os.getenv("CHRONOS_ALLOW_PAID_GEMINI_FALLBACK", "0") == "1"
     )
 
     # Gemini 3 thinking level (applies when supported by the selected model)
@@ -128,17 +149,19 @@ class Settings:
     # ─────────────────────────────────────────────────────────────────────────
     # OpenAI: Responses API (for RAG / conversational queries)
     # ─────────────────────────────────────────────────────────────────────────
-    # Model Hierarchy (July 2026 — Latest Available):
+    # Model Hierarchy (March 2026 — Latest Available):
     #   gpt-5.4       → Frontier flagship ($2.50/$15 MTok), 1.05M context, 128K output
     #   gpt-5.4-pro   → Smart/precise version of 5.4
-    #   gpt-5-mini    → Near-frontier, cost-effective ($0.25/$2 MTok), 400K context
-    #   gpt-5-nano    → Fastest, cheapest GPT-5 variant
+    #   gpt-5.4-mini  → Strong mini model ($0.75/$4.50 MTok), 400K context
+    #   gpt-5.4-nano  → Cheapest GPT-5.4 model ($0.20/$1.25 MTok), 400K context
     #   gpt-5         → Previous reasoning model
     #   gpt-4.1       → Smartest non-reasoning model (legacy)
     # Reasoning effort (gpt-5.4): none (default), low, medium, high, xhigh
     # ─────────────────────────────────────────────────────────────────────────
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
-    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-5.4")
+    openai_model: str = normalize_openai_model_name(
+        os.getenv("OPENAI_MODEL", "gpt-5.4")
+    )
     openai_temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
 
     # ─────────────────────────────────────────────────────────────────────────

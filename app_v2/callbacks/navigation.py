@@ -1437,15 +1437,15 @@ def create_settings_view(preferences=None) -> html.Div:
                                     },
                                     {
                                         "label": _model_label(
-                                            "gpt-5-mini", "cost-effective"
+                                            "gpt-5.4-mini", "strong mini, 400K ctx"
                                         ),
-                                        "value": "gpt-5-mini",
+                                        "value": "gpt-5.4-mini",
                                     },
                                     {
                                         "label": _model_label(
-                                            "gpt-5-nano", "fastest/cheapest"
+                                            "gpt-5.4-nano", "fastest/cheapest"
                                         ),
-                                        "value": "gpt-5-nano",
+                                        "value": "gpt-5.4-nano",
                                     },
                                     {
                                         "label": _model_label(

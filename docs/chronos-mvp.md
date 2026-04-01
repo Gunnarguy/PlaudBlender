@@ -314,17 +314,17 @@ Sync recordings to Notion pages:
 
 ### Pricing Reference (March 2026)
 
-| Model                        | Input ($/MTok) | Output ($/MTok) | Notes           |
-| ---------------------------- | -------------- | --------------- | --------------- |
-| `gemini-3-flash-preview`     | Free           | Free            | Standard tier   |
-| `gemini-3.1-pro-preview`     | $1.25          | $10.00          | Paid tier       |
-| `gemini-embedding-2-preview` | Free           | —               | Embeddings only |
-| `gpt-5.4`                    | $2.50          | $15.00          | Flagship        |
-| `gpt-5.4-pro`                | $5.00          | $30.00          | Deep reasoning  |
-| `gpt-5-mini`                 | $0.25          | $2.00           | Fast + cheap    |
-| `gpt-5-nano`                 | $0.10          | $0.40           | Lightest        |
-| `gpt-5`                      | $2.00          | $10.00          | Balanced        |
-| `gpt-4.1`                    | $2.00          | $8.00           | Legacy          |
+| Model                        | Input ($/MTok) | Output ($/MTok) | Notes          |
+| ---------------------------- | -------------- | --------------- | -------------- |
+| `gemini-3-flash-preview`     | $0.50          | $3.00           | Paid tier      |
+| `gemini-3.1-pro-preview`     | $2.00          | $12.00          | Paid tier      |
+| `gemini-embedding-2-preview` | $0.20          | —               | Paid tier      |
+| `gpt-5.4`                    | $2.50          | $15.00          | Flagship       |
+| `gpt-5.4-pro`                | $5.00          | $30.00          | Deep reasoning |
+| `gpt-5.4-mini`               | $0.75          | $4.50           | Fast + cheap   |
+| `gpt-5.4-nano`               | $0.20          | $1.25           | Lightest       |
+| `gpt-5`                      | $2.00          | $10.00          | Balanced       |
+| `gpt-4.1`                    | $2.00          | $8.00           | Legacy         |
 
 ### Embedding Details
 

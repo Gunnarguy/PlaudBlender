@@ -19,59 +19,56 @@ from typing import Optional
 
 import logging
 
+from src.config import get_settings, normalize_openai_model_name
+
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════════════
-# Pricing Table — USD per 1M tokens (as of March 2026)
+# Pricing Table — USD per 1M tokens (as of March 31, 2026)
 # Source: https://ai.google.dev/pricing / https://platform.openai.com/docs/pricing
 # ═══════════════════════════════════════════════════════════════════
 
-PRICING: dict[str, dict] = {
-    # ── Gemini Generation ──────────────────────────────────────────
+_GEMINI_PRICING: dict[str, dict] = {
     "gemini-3-flash-preview": {
         "provider": "google",
-        "input_per_mtok": 0.00,  # Free tier
-        "output_per_mtok": 0.00,  # Free tier
-        "tier": "free",
-        "label": "Gemini 3 Flash (free)",
+        "label": "Gemini 3 Flash Preview",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 0.50, "output_per_mtok": 3.00},
     },
     "gemini-3.1-pro-preview": {
         "provider": "google",
-        "input_per_mtok": 1.25,
-        "output_per_mtok": 10.00,
-        "tier": "paid",
         "label": "Gemini 3.1 Pro",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        # Standard rates for prompts <= 200K tokens.
+        "paid": {"input_per_mtok": 2.00, "output_per_mtok": 12.00},
     },
     "gemini-2.5-pro": {
         "provider": "google",
-        "input_per_mtok": 1.25,
-        "output_per_mtok": 10.00,
-        "tier": "paid",
         "label": "Gemini 2.5 Pro",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 1.25, "output_per_mtok": 10.00},
     },
     "gemini-2.5-flash": {
         "provider": "google",
-        "input_per_mtok": 0.00,
-        "output_per_mtok": 0.00,
-        "tier": "free",
-        "label": "Gemini 2.5 Flash (free)",
+        "label": "Gemini 2.5 Flash",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 0.30, "output_per_mtok": 2.50},
     },
-    # ── Gemini Embedding ───────────────────────────────────────────
     "gemini-embedding-2-preview": {
         "provider": "google",
-        "input_per_mtok": 0.00,
-        "output_per_mtok": 0.00,
-        "tier": "free",
-        "label": "Embedding 2 (free)",
+        "label": "Gemini Embedding 2 Preview",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 0.20, "output_per_mtok": 0.00},
     },
     "gemini-embedding-001": {
         "provider": "google",
-        "input_per_mtok": 0.00,
-        "output_per_mtok": 0.00,
-        "tier": "free",
-        "label": "Embedding 001 (free)",
+        "label": "Gemini Embedding 001",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 0.15, "output_per_mtok": 0.00},
     },
-    # ── OpenAI ─────────────────────────────────────────────────────
+}
+
+_OPENAI_PRICING: dict[str, dict] = {
     "gpt-5.4": {
         "provider": "openai",
         "input_per_mtok": 2.50,
@@ -86,19 +83,19 @@ PRICING: dict[str, dict] = {
         "tier": "paid",
         "label": "GPT-5.4 Pro",
     },
-    "gpt-5-mini": {
+    "gpt-5.4-mini": {
         "provider": "openai",
-        "input_per_mtok": 0.25,
-        "output_per_mtok": 2.00,
+        "input_per_mtok": 0.75,
+        "output_per_mtok": 4.50,
         "tier": "paid",
-        "label": "GPT-5 Mini",
+        "label": "GPT-5.4 Mini",
     },
-    "gpt-5-nano": {
+    "gpt-5.4-nano": {
         "provider": "openai",
-        "input_per_mtok": 0.10,
-        "output_per_mtok": 0.40,
+        "input_per_mtok": 0.20,
+        "output_per_mtok": 1.25,
         "tier": "paid",
-        "label": "GPT-5 Nano",
+        "label": "GPT-5.4 Nano",
     },
     "gpt-5": {
         "provider": "openai",
@@ -117,21 +114,59 @@ PRICING: dict[str, dict] = {
 }
 
 
+def normalize_model_name(model: str) -> str:
+    """Normalize provider-specific model IDs for pricing and ledger storage."""
+    raw = (model or "").strip()
+    if raw.startswith("models/"):
+        raw = raw.split("/", 1)[1]
+    return normalize_openai_model_name(raw)
+
+
+def _gemini_pricing_tier() -> str:
+    """Return the configured Gemini billing tier for cost estimation."""
+    tier = (getattr(get_settings(), "gemini_billing_tier", "paid") or "paid").lower()
+    return "free" if tier == "free" else "paid"
+
+
 def get_pricing(model: str) -> dict:
     """Return pricing dict for a model, with sensible fallback."""
-    if model in PRICING:
-        return PRICING[model]
+    normalized = normalize_model_name(model)
+    if normalized in _OPENAI_PRICING:
+        return _OPENAI_PRICING[normalized]
+    if normalized in _GEMINI_PRICING:
+        base = _GEMINI_PRICING[normalized]
+        tier = _gemini_pricing_tier()
+        price = base[tier]
+        return {
+            "provider": base["provider"],
+            "input_per_mtok": price["input_per_mtok"],
+            "output_per_mtok": price["output_per_mtok"],
+            "tier": tier,
+            "label": base["label"],
+        }
     # Fuzzy match — strip trailing version suffixes
-    for key in PRICING:
-        if model.startswith(key) or key.startswith(model):
-            return PRICING[key]
+    for key, info in _OPENAI_PRICING.items():
+        if normalized.startswith(key) or key.startswith(normalized):
+            return info
+    for key in _GEMINI_PRICING:
+        if normalized.startswith(key) or key.startswith(normalized):
+            base = _GEMINI_PRICING[key]
+            tier = _gemini_pricing_tier()
+            price = base[tier]
+            return {
+                "provider": base["provider"],
+                "input_per_mtok": price["input_per_mtok"],
+                "output_per_mtok": price["output_per_mtok"],
+                "tier": tier,
+                "label": base["label"],
+            }
     # Unknown model — assume paid at mid-range
     return {
         "provider": "unknown",
         "input_per_mtok": 1.00,
         "output_per_mtok": 5.00,
         "tier": "unknown",
-        "label": model,
+        "label": normalized or model,
     }
 
 
@@ -351,9 +386,10 @@ def track_usage(
     Returns:
         Estimated cost in USD for this call.
     """
-    cost = estimate_cost(model, input_tokens, output_tokens)
+    normalized_model = normalize_model_name(model)
+    cost = estimate_cost(normalized_model, input_tokens, output_tokens)
     rec = UsageRecord(
-        model=model,
+        model=normalized_model,
         call_type=call_type,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
@@ -372,7 +408,11 @@ def track_usage(
 
         cost_str = f"${cost:.4f}" if cost > 0 else "free"
         tok_str = f"{input_tokens:,}→{output_tokens:,} tokens"
-        xray_log("data", "cost", f"{model} {call_type}: {tok_str} ({cost_str})")
+        xray_log(
+            "data",
+            "cost",
+            f"{normalized_model} {call_type}: {tok_str} ({cost_str})",
+        )
     except Exception:
         pass
 
@@ -426,12 +466,11 @@ def get_cost_summary(days: int = 30) -> dict:
                 SELECT model,
                        COUNT(*) as calls,
                        SUM(input_tokens) as inp,
-                       SUM(output_tokens) as out,
-                       SUM(cost_usd) as cost
+                       SUM(output_tokens) as out
                 FROM api_usage_log
                 WHERE timestamp >= date('now', :offset)
                 GROUP BY model
-                ORDER BY cost DESC
+                ORDER BY SUM(input_tokens + output_tokens) DESC
             """
                 ),
                 {"offset": f"-{days} days"},
@@ -443,44 +482,77 @@ def get_cost_summary(days: int = 30) -> dict:
             total_inp = 0
             total_out = 0
             for r in rows:
-                by_model[r[0]] = {
-                    "calls": r[1],
-                    "input_tokens": r[2] or 0,
-                    "output_tokens": r[3] or 0,
-                    "cost_usd": round(r[4] or 0, 4),
-                }
-                total_cost += r[4] or 0
+                model_id = normalize_model_name(r[0])
+                if model_id not in by_model:
+                    by_model[model_id] = {
+                        "calls": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cost_usd": 0.0,
+                    }
+                cost = estimate_cost(model_id, r[2] or 0, r[3] or 0)
+                by_model[model_id]["calls"] += r[1]
+                by_model[model_id]["input_tokens"] += r[2] or 0
+                by_model[model_id]["output_tokens"] += r[3] or 0
+                by_model[model_id]["cost_usd"] += cost
+                total_cost += cost
                 total_calls += r[1]
                 total_inp += r[2] or 0
                 total_out += r[3] or 0
+
+            for info in by_model.values():
+                info["cost_usd"] = round(info["cost_usd"], 4)
 
             # By day
             day_rows = conn.execute(
                 text(
                     """
                 SELECT date(timestamp) as day,
-                       SUM(cost_usd) as cost,
+                       model,
                        COUNT(*) as calls,
                        SUM(input_tokens) as inp,
                        SUM(output_tokens) as out
                 FROM api_usage_log
                 WHERE timestamp >= date('now', :offset)
-                GROUP BY date(timestamp)
+                GROUP BY date(timestamp), model
                 ORDER BY day DESC
             """
                 ),
                 {"offset": f"-{days} days"},
             ).fetchall()
 
+            day_agg: dict[str, dict] = {}
+            for r in day_rows:
+                day = r[0]
+                model_id = normalize_model_name(r[1])
+                calls = r[2] or 0
+                inp = r[3] or 0
+                out = r[4] or 0
+                cost = estimate_cost(model_id, inp, out)
+                if day not in day_agg:
+                    day_agg[day] = {
+                        "date": day,
+                        "cost_usd": 0.0,
+                        "calls": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                    }
+                day_agg[day]["cost_usd"] += cost
+                day_agg[day]["calls"] += calls
+                day_agg[day]["input_tokens"] += inp
+                day_agg[day]["output_tokens"] += out
+
             by_day = [
                 {
-                    "date": r[0],
-                    "cost_usd": round(r[1] or 0, 4),
-                    "calls": r[2],
-                    "input_tokens": r[3] or 0,
-                    "output_tokens": r[4] or 0,
+                    "date": day["date"],
+                    "cost_usd": round(day["cost_usd"], 4),
+                    "calls": day["calls"],
+                    "input_tokens": day["input_tokens"],
+                    "output_tokens": day["output_tokens"],
                 }
-                for r in day_rows
+                for day in sorted(
+                    day_agg.values(), key=lambda item: item["date"], reverse=True
+                )
             ]
 
         return {
@@ -509,8 +581,22 @@ def get_cost_summary(days: int = 30) -> dict:
 def get_model_pricing_table() -> list[dict]:
     """Return pricing info for all known models, sorted by provider then cost."""
     rows = []
+    pricing_rows: dict[str, dict] = {}
+    for model_id, info in _OPENAI_PRICING.items():
+        pricing_rows[model_id] = info
+    for model_id, info in _GEMINI_PRICING.items():
+        tier = _gemini_pricing_tier()
+        price = info[tier]
+        pricing_rows[model_id] = {
+            "provider": info["provider"],
+            "label": info["label"],
+            "input_per_mtok": price["input_per_mtok"],
+            "output_per_mtok": price["output_per_mtok"],
+            "tier": tier,
+        }
+
     for model_id, info in sorted(
-        PRICING.items(), key=lambda x: (x[1]["provider"], x[1]["input_per_mtok"])
+        pricing_rows.items(), key=lambda x: (x[1]["provider"], x[1]["input_per_mtok"])
     ):
         rows.append(
             {

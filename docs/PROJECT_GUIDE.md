@@ -325,7 +325,7 @@ QDRANT_COLLECTION_NAME=chronos_events
 NOTION_TOKEN=               # Notion sync
 NOTION_DATABASE_ID=
 OPENAI_API_KEY=             # RAG responses via Responses API (preferred over Gemini)
-OPENAI_MODEL=gpt-5.4        # gpt-5.4, gpt-5.4-pro, gpt-5-mini, gpt-5-nano, etc.
+OPENAI_MODEL=gpt-5.4        # gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano, etc.
 OPENAI_TEMPERATURE=0.7      # 0.0 = deterministic, 2.0 = creative
 NOTION_CLIENT_ID=           # Notion OAuth (for Notion uplink)
 NOTION_CLIENT_SECRET=

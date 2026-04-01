@@ -6,9 +6,9 @@ context-aware answers backed by Chronos event data.
 
 import json
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from src.config import get_settings
+from src.config import get_settings, normalize_openai_model_name
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class OpenAIResponseService:
     def __init__(self):
         settings = get_settings()
         self._api_key = settings.openai_api_key
-        self._model = settings.openai_model
+        self._model = normalize_openai_model_name(settings.openai_model)
         self._temperature = settings.openai_temperature
         self._client = None
 
@@ -102,11 +102,10 @@ Question: {question}"""
 
             client = self._get_client()
 
-            kwargs = {
+            kwargs: dict[str, Any] = {
                 "model": self._model,
                 "instructions": instructions,
                 "input": user_message,
-                "temperature": self._temperature,
             }
 
             if previous_response_id:
@@ -116,6 +115,11 @@ Question: {question}"""
             valid_reasoning = {"low", "medium", "high", "xhigh"}
             if reasoning and reasoning in valid_reasoning:
                 kwargs["reasoning"] = {"effort": reasoning}
+
+            # GPT-5.4 family only accepts temperature when reasoning effort is none.
+            reasoning_effort = reasoning if reasoning in valid_reasoning else "none"
+            if not self._model.startswith("gpt-5.4") or reasoning_effort == "none":
+                kwargs["temperature"] = self._temperature
 
             response = client.responses.create(**kwargs)
             _elapsed = (_time.perf_counter() - _t0) * 1000

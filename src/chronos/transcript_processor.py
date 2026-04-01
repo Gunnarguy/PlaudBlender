@@ -50,6 +50,18 @@ class TranscriptProcessor:
         self.engine = engine or ChronosEngine()
         self.settings = get_settings()
 
+    def _get_json_repair_model_name(self) -> str:
+        """Choose the cheapest model that can safely retry malformed JSON."""
+        analyst_model = (
+            getattr(self.settings, "chronos_analyst_model", "") or ""
+        ).strip()
+        if (
+            getattr(self.settings, "chronos_allow_paid_gemini_fallback", False)
+            and analyst_model
+        ):
+            return analyst_model
+        return self.engine.model_name
+
     def _emit_progress(
         self,
         progress_callback: Optional[ProgressCallback],
@@ -122,10 +134,7 @@ BROKEN_JSON:
 {snippet}
 """
 
-        model_name = (
-            getattr(self.settings, "chronos_analyst_model", None)
-            or self.engine.model_name
-        )
+        model_name = self._get_json_repair_model_name()
         thinking_level = normalize_thinking_level(
             getattr(self.settings, "chronos_thinking_level", "")
         )
