@@ -327,7 +327,7 @@ Extract events from this transcript following the schema exactly."""
                     )
 
                 # Use streaming to show real-time progress
-                STREAM_TIMEOUT = 600  # 10 min max for any single Gemini call
+                STREAM_TIMEOUT = 900  # 15 min max for any single Gemini call
                 if verbose:
                     response_text = ""
                     token_count = 0
@@ -547,14 +547,18 @@ Extract events from this transcript following the schema exactly."""
 
             except ValidationError as e:
                 if verbose:
-                    print(f"      ❌ Validation error: {str(e)[:100]}", flush=True)
+                    print(f"      ⚠️ Validation error: {str(e)[:100]}", flush=True)
                 xray_log(
                     "gemini",
-                    "error",
-                    f"Gemini's answer didn't make sense — couldn't use it",
-                    level="error",
+                    "retry",
+                    f"Gemini's answer didn't make sense, trying again ({attempt + 1}/{max_retries})",
+                    level="warn",
                 )
                 logger.error(f"Pydantic validation failed: {e}")
+                if attempt < max_retries - 1:
+                    import time as _time
+                    _time.sleep(5)
+                    continue
                 return None
 
             except json.JSONDecodeError as e:
@@ -568,6 +572,8 @@ Extract events from this transcript following the schema exactly."""
                 )
                 logger.error(f"JSON parse error: {e}")
                 if attempt < max_retries - 1:
+                    import time as _time
+                    _time.sleep(5)
                     continue
                 return None
 
@@ -582,6 +588,12 @@ Extract events from this transcript following the schema exactly."""
                 )
                 logger.error(f"Failed to process transcript: {e}")
                 if attempt < max_retries - 1:
+                    # Backoff delay: 15s for 503/overload, 5s otherwise
+                    import time as _time
+                    delay = 15 if "503" in str(e) or "UNAVAILABLE" in str(e) else 5
+                    if verbose:
+                        print(f"      ⏳ Waiting {delay}s before retry...", flush=True)
+                    _time.sleep(delay)
                     continue
                 return None
 
