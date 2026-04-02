@@ -256,6 +256,57 @@ def _sentiment_dots(arc: list, max_dots: int = 12):
 
 def create_recording_card(recording: RecordingSummary, day_date: str) -> html.Div:
     """Create a rich card for a single recording — shows what happened, not just metadata."""
+
+    # ── Pending/processing placeholder card ─────────────────────────
+    proc_status = getattr(recording, "processing_status", "completed")
+    if proc_status in ("pending", "processing") and recording.event_count == 0:
+        hour = recording.start_time.hour
+        ambient = _time_of_day_label(hour)
+        status_label = "⏳ Waiting to process" if proc_status == "pending" else "🔄 Processing…"
+        status_color = "#f59e0b" if proc_status == "pending" else "#3b82f6"
+        mins = int(recording.duration_seconds // 60)
+        secs = int(recording.duration_seconds % 60)
+        dur_text = f"{mins}:{secs:02d}" if mins else f"{secs}s"
+        return html.Div(
+            id={"type": "recording-card", "id": recording.recording_id, "date": day_date},
+            className="recording-card recording-cat-unknown recording-pending",
+            style={"borderLeft": "3px solid #f59e0b", "opacity": "0.8"},
+            children=[
+                html.Div(
+                    className="recording-header",
+                    children=[
+                        html.Div(
+                            className="recording-header-left",
+                            children=[
+                                html.Span(
+                                    recording.time_range_formatted,
+                                    className="recording-time",
+                                ),
+                                html.Span(ambient, className="ambient-inline"),
+                            ],
+                        ),
+                        html.Div(
+                            className="recording-header-right",
+                            children=[
+                                html.Span(dur_text, className="recording-duration"),
+                            ],
+                        ),
+                    ],
+                ),
+                html.Div(
+                    className="recording-pending-notice",
+                    children=[
+                        html.Span(status_label, style={"color": status_color, "fontWeight": "600"}),
+                        html.Span(
+                            " — Run Full Sync to extract events from this recording.",
+                            className="stat muted",
+                        ),
+                    ],
+                    style={"padding": "8px 0", "fontSize": "0.85rem"},
+                ),
+            ],
+        )
+
     top_cat = recording.top_category
     cat_color = CATEGORY_COLORS.get(top_cat, "#374151")
     keywords = recording.keywords[:5]

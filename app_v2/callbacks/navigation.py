@@ -626,6 +626,71 @@ def create_sync_view(service) -> html.Div:
             ),
         ]
 
+    pipeline_pending_details_children = []
+    if pending + processing > 0:
+        try:
+            pending_recs = service.get_pending_recording_details()
+            if pending_recs:
+                pipeline_pending_details_children.append(
+                    html.Div(
+                        className="failed-recordings-detail",
+                        style={
+                            "marginTop": "10px",
+                            "borderTop": "1px solid var(--border-color, #e2e8f0)",
+                            "paddingTop": "10px",
+                        },
+                        children=[
+                            html.Span(
+                                "⏳ Waiting to Process:",
+                                style={
+                                    "fontWeight": "600",
+                                    "fontSize": "0.85rem",
+                                    "color": "#f59e0b",
+                                },
+                            ),
+                            html.P(
+                                "These recordings have been fetched from Plaud but not yet analyzed by Gemini. "
+                                "Run Full Sync to process them.",
+                                style={
+                                    "margin": "4px 0 4px 0",
+                                    "fontSize": "0.78rem",
+                                    "color": "#94a3b8",
+                                },
+                            ),
+                            html.Ul(
+                                style={
+                                    "margin": "4px 0 0 0",
+                                    "paddingLeft": "18px",
+                                    "fontSize": "0.8rem",
+                                    "color": "#94a3b8",
+                                },
+                                children=[
+                                    html.Li(
+                                        [
+                                            html.Span(
+                                                (rec["title"][:40] + "…" if len(rec["title"]) > 40 else rec["title"])
+                                                if rec["title"] != "Untitled"
+                                                else rec["recording_id"][:16] + "…",
+                                                style={"color": "#cbd5e1"},
+                                            ),
+                                            html.Span(
+                                                f" — {rec['date']}" if rec["date"] else "",
+                                            ),
+                                            html.Span(
+                                                f" ({int(rec['duration_seconds']) // 60}m {int(rec['duration_seconds']) % 60}s)",
+                                                style={"color": "#64748b"},
+                                            ),
+                                        ]
+                                    )
+                                    for rec in pending_recs[:8]
+                                ],
+                            ),
+                        ],
+                    )
+                )
+        except Exception:
+            pass
+
     pipeline_status_card = html.Div(
         className="sync-status-card sync-pipeline-card",
         children=[
@@ -721,6 +786,7 @@ def create_sync_view(service) -> html.Div:
             ),
             *plaud_cloud_children,
             *failed_details_children,
+            *pipeline_pending_details_children,
         ],
     )
 
@@ -2490,8 +2556,63 @@ def register_navigation_callbacks(app):
                 )
                 detail_class = "detail-panel open"
             else:
-                logger.warning("No detail returned!")
-                xray_log("nav", "detail", "Hmm, couldn't find that recording", level="warn")
+                # No Qdrant events found — check if this is a pending recording in SQLite
+                try:
+                    from src.database.engine import SessionLocal as _SL
+                    from src.database.models import ChronosRecording as _CR
+
+                    _db = _SL()
+                    try:
+                        _pending_rec = _db.query(_CR).filter_by(recording_id=rec_id).first()
+                    finally:
+                        _db.close()
+                    if _pending_rec and str(_pending_rec.processing_status) in ("pending", "processing"):
+                        _status = str(_pending_rec.processing_status)
+                        _dur_s = int(_pending_rec.duration_seconds or 0)
+                        _dur_text = f"{_dur_s // 60}:{_dur_s % 60:02d}"
+                        _status_label = "⏳ Waiting to process" if _status == "pending" else "🔄 Processing…"
+                        detail_content = html.Div(
+                            className="recording-detail pending-detail",
+                            children=[
+                                html.Div(
+                                    className="detail-header",
+                                    children=[
+                                        html.H3(
+                                            str(_pending_rec.title or "Untitled Recording"),
+                                            className="detail-title",
+                                        ),
+                                        html.Span(
+                                            _status_label,
+                                            className="detail-status-badge",
+                                            style={"color": "#f59e0b", "fontWeight": "600", "fontSize": "0.9rem"},
+                                        ),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="detail-meta",
+                                    style={"padding": "16px", "color": "#94a3b8"},
+                                    children=[
+                                        html.P(f"Duration: {_dur_text}"),
+                                        html.P(
+                                            "This recording hasn't been analyzed yet. "
+                                            "Run Full Sync (Sync view) to extract events and make it searchable.",
+                                        ),
+                                        html.P(
+                                            "If you've already run Full Sync and this recording is still pending, "
+                                            "Plaud may not have a transcript available for it yet.",
+                                            style={"fontSize": "0.85rem", "marginTop": "8px"},
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        )
+                        detail_class = "detail-panel open"
+                    else:
+                        logger.warning("No detail returned!")
+                        xray_log("nav", "detail", "Hmm, couldn't find that recording", level="warn")
+                except Exception as _de:
+                    logger.warning(f"Could not look up pending recording: {_de}")
+                    xray_log("nav", "detail", "Hmm, couldn't find that recording", level="warn")
 
         # Render main content based on view
         with xray_timer("nav", "render", f"Drawing the {view} screen"):

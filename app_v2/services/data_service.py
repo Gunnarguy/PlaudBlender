@@ -127,6 +127,7 @@ class RecordingSummary:
     sentiment_arc: List[float] = field(default_factory=list)  # Sentiment over time
     time_is_estimated: bool = False
     time_estimate_reason: str = ""
+    processing_status: str = "completed"  # pending | processing | completed | failed
 
     @property
     def duration_formatted(self) -> str:
@@ -612,10 +613,60 @@ class ChronosDataService:
     # PUBLIC API - Day Views
     # ═══════════════════════════════════════════════════════════════════════════
 
+    def get_pending_recording_details(self) -> List[Dict[str, Any]]:
+        """Return details of recordings still waiting to be processed.
+
+        These are recordings that have been ingested from Plaud but have not yet
+        been processed through Gemini (no events extracted).  They are returned
+        sorted by created_at descending.
+        """
+        try:
+            db = SessionLocal()
+            try:
+                rows = (
+                    db.query(_ChronosRecordingModel)
+                    .filter(
+                        _ChronosRecordingModel.processing_status.in_(["pending", "processing"])
+                    )
+                    .order_by(_ChronosRecordingModel.created_at.desc())
+                    .all()
+                )
+                result = []
+                for rec in rows:
+                    utc_dt = getattr(rec, "created_at", None)
+                    local_str = ""
+                    if utc_dt:
+                        try:
+                            utc_aware = utc_dt.replace(tzinfo=timezone.utc)
+                            local_dt = utc_aware.astimezone(_LOCAL_TZ)
+                            local_str = local_dt.strftime("%b %d, %Y %I:%M %p")
+                        except Exception:
+                            local_str = str(utc_dt)[:16]
+                    result.append(
+                        {
+                            "recording_id": str(rec.recording_id),
+                            "title": str(rec.title or "Untitled"),
+                            "date": local_str,
+                            "duration_seconds": int(rec.duration_seconds or 0),
+                            "status": str(rec.processing_status),
+                            "source": str(rec.source or "plaud"),
+                        }
+                    )
+                return result
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error fetching pending recording details: {e}")
+            return []
+
     def get_days(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
     ) -> List[DaySummary]:
         """Get all days with recording summaries.
+
+        Includes both completed recordings (from Qdrant events) and pending
+        recordings (from SQLite) so the Timeline always shows every known
+        recording regardless of its processing state.
 
         Args:
             start_date: Optional start date filter (YYYY-MM-DD)
@@ -625,11 +676,66 @@ class ChronosDataService:
             List of DaySummary sorted by date descending (newest first)
         """
         events = self._get_all_events()
-        if not events:
-            return []
 
-        # First aggregate by recording
-        recording_summaries = self._aggregate_by_recording(events)
+        # Aggregate completed recordings from Qdrant events
+        recording_summaries: Dict[str, RecordingSummary] = {}
+        if events:
+            recording_summaries = self._aggregate_by_recording(events)
+
+        # Also load pending/processing recordings directly from SQLite so they
+        # appear in the timeline even before events have been extracted.
+        try:
+            db = SessionLocal()
+            try:
+                pending_rows = (
+                    db.query(_ChronosRecordingModel)
+                    .filter(
+                        _ChronosRecordingModel.processing_status.in_(["pending", "processing"])
+                    )
+                    .all()
+                )
+                for rec in pending_rows:
+                    rid = str(rec.recording_id)
+                    if rid in recording_summaries:
+                        # Already represented via Qdrant events — just tag status
+                        recording_summaries[rid].processing_status = str(rec.processing_status)
+                        continue
+                    utc_dt = getattr(rec, "created_at", None)
+                    if not utc_dt:
+                        continue
+                    try:
+                        utc_aware = utc_dt.replace(tzinfo=timezone.utc)
+                        local_dt = utc_aware.astimezone(_LOCAL_TZ)
+                        start_time = local_dt.replace(tzinfo=None)
+                    except Exception:
+                        start_time = utc_dt if isinstance(utc_dt, datetime) else datetime.now(timezone.utc).replace(tzinfo=None)
+                    duration = float(rec.duration_seconds or 0)
+                    end_time = start_time + timedelta(seconds=duration)
+                    recording_summaries[rid] = RecordingSummary(
+                        recording_id=rid,
+                        start_time=start_time,
+                        end_time=end_time,
+                        duration_seconds=duration,
+                        event_count=0,
+                        categories={},
+                        keywords=[],
+                        avg_sentiment=0.0,
+                        source=str(rec.source or "plaud"),
+                        has_plaud_ai=bool(getattr(rec, "plaud_ai_summary", None)),
+                        preview_text="",
+                        event_previews=[],
+                        sentiment_arc=[],
+                        time_is_estimated=bool(getattr(rec, "time_is_estimated", False)),
+                        time_estimate_reason=str(getattr(rec, "time_estimate_reason", "") or ""),
+                        processing_status=str(rec.processing_status),
+                    )
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"Could not load pending recordings for timeline: {e}")
+
+        if not recording_summaries:
+            return []
 
         # Then group recordings by day
         days: Dict[str, List[RecordingSummary]] = defaultdict(list)
