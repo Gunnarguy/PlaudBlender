@@ -2857,15 +2857,34 @@ def register_navigation_callbacks(app):
             )
 
             # Don't start a second run if one is already going
+            # (but auto-clear stale runs older than 30 minutes)
             cur = read_progress()
             if cur and cur.get("status") == "running":
-                return html.Div(
-                    className="sync-info",
-                    children=[
-                        html.Span("⏳ Pipeline Already Running", className="success-icon"),
-                        html.P("Watch the progress panel below."),
-                    ],
-                )
+                import time as _t
+
+                started = cur.get("started_at", 0)
+                age_minutes = (_t.time() - started) / 60 if started else 999
+                if age_minutes < 30:
+                    return html.Div(
+                        className="sync-info",
+                        children=[
+                            html.Span(
+                                "⏳ Pipeline Already Running", className="success-icon"
+                            ),
+                            html.P("Watch the progress panel below."),
+                        ],
+                    )
+                else:
+                    # Stale run — auto-clear it
+                    progress.finish_run(
+                        error=f"Stale run auto-cleared after {age_minutes:.0f} min"
+                    )
+                    xray_log(
+                        "sync",
+                        "reset",
+                        f"Previous sync was stuck for {age_minutes:.0f} min — clearing it",
+                        level="warn",
+                    )
 
             _days = days_back or 7
 

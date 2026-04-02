@@ -795,6 +795,32 @@ Extract events from this transcript following the schema exactly."""
                 progress_callback=progress_callback,
             )
 
+            # Auto-retry once if Gemini returned no events but transcript is substantial
+            if (not output or not output.events) and len(
+                transcript_text.strip()
+            ) >= 500:
+                logger.info(
+                    f"Retrying {rec.recording_id} — Gemini returned no events on first attempt"
+                )
+                xray_log(
+                    "gemini",
+                    "retry",
+                    "Gemini blanked on a real transcript — giving it one more shot",
+                    level="warn",
+                )
+                self._emit_progress(
+                    progress_callback,
+                    "Retrying Gemini",
+                    "first attempt returned no events",
+                )
+                output = self.process_transcript_text(
+                    transcript_text,
+                    rec.recording_id,
+                    recording_date=recording_date,
+                    plaud_context=plaud_context,
+                    progress_callback=progress_callback,
+                )
+
             if not output or not output.events:
                 logger.warning(f"No events extracted for {rec.recording_id}")
                 xray_log(

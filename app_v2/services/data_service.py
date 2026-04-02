@@ -2234,6 +2234,18 @@ class ChronosDataService:
         if "No transcript available in Plaud source_list" in error:
             return "archived", "Plaud has no transcript available for this recording"
 
+        if "500 Server Error" in error:
+            return (
+                "archived",
+                "Plaud API returned a server error — recording may no longer exist",
+            )
+
+        if "500 Server Error" in error:
+            return (
+                "archived",
+                "Plaud API returned a server error — recording may no longer exist",
+            )
+
         if "Gemini returned no events" in error and len(transcript.strip()) < 200:
             return "archived", "transcript is too short to produce structured events"
 
