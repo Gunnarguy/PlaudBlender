@@ -1058,15 +1058,47 @@ def _check_services(settings):
         checks["plaud"] = (False, str(e)[:80])
 
     # Gemini
-    gemini_ok = bool(settings.gemini_api_key)
-    checks["gemini"] = (
-        gemini_ok,
-        (
-            f"API key set — {settings.chronos_cleaning_model}"
-            if gemini_ok
-            else "GEMINI_API_KEY not set"
-        ),
-    )
+    try:
+        from src.chronos.genai_helpers import get_genai_client
+
+        if not settings.gemini_api_key:
+            checks["gemini"] = (False, "GEMINI_API_KEY not set")
+        else:
+            client = get_genai_client()
+            available_models = set()
+            for model in client.models.list():
+                name = getattr(model, "name", None)
+                if not name:
+                    continue
+                if name.startswith("models/"):
+                    available_models.add(name.split("/", 1)[1])
+                else:
+                    available_models.add(name)
+
+            required_models = [
+                settings.chronos_cleaning_model,
+                settings.chronos_analyst_model,
+                settings.chronos_embedding_model,
+            ]
+            missing_models = [
+                model_name
+                for model_name in required_models
+                if model_name and model_name not in available_models
+            ]
+
+            if missing_models:
+                checks["gemini"] = (
+                    False,
+                    "API key valid, but configured models are unavailable: "
+                    + ", ".join(missing_models),
+                )
+            else:
+                checks["gemini"] = (
+                    True,
+                    f"API key valid — {len(available_models)} models visible; configured models available",
+                )
+    except Exception as e:
+        checks["gemini"] = (False, str(e)[:80])
 
     # OpenAI
     openai_ok = bool(settings.openai_api_key)
@@ -2898,18 +2930,33 @@ def register_navigation_callbacks(app):
                         processed = proc_failed = 0
                         for i, rec in enumerate(pending):
                             rec_id = str(rec.recording_id)
+                            rec_label = rec_id[:20]
+
+                            def _recording_progress(step: str, detail: str = ""):
+                                progress.update(
+                                    step=f"Recording {i+1}/{len(pending)}: {step}",
+                                    item=(detail or rec_label)[:120],
+                                )
+
                             progress.update(
                                 step=f"Recording {i+1}/{len(pending)}: Gemini AI…",
-                                item=rec_id[:20],
+                                item=rec_label,
                             )
                             try:
-                                if processor.process_recording_id(rec_id):
+                                if processor.process_recording_id(
+                                    rec_id,
+                                    progress_callback=_recording_progress,
+                                ):
                                     processed += 1
                                 else:
                                     proc_failed += 1
-                            except Exception:
+                            except Exception as e:
                                 proc_failed += 1
-                            progress.advance(item=rec_id[:20])
+                                progress.update(
+                                    step=f"Recording {i+1}/{len(pending)}: failed",
+                                    item=str(e)[:120],
+                                )
+                            progress.advance(item=rec_label)
                         progress.finish_phase(summary=f"{processed} processed, {proc_failed} failed")
                         xray_log(
                             "pipeline",

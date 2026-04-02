@@ -28,6 +28,9 @@ PID_DIR = LOG_DIR
 ENV_FILE = os.path.join(ROOT, ".env")
 QDRANT_BIN = os.path.expanduser("~/bin/qdrant")
 QDRANT_CFG = os.path.expanduser("~/.config/qdrant/config.yaml")
+CERT_DIR = os.path.join(ROOT, ".certs")
+HTTPS_CERT = os.path.join(CERT_DIR, "localhost.crt")
+HTTPS_KEY = os.path.join(CERT_DIR, "localhost.key")
 
 os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -122,6 +125,12 @@ def _open_url(url: str):
     subprocess.Popen(
         ["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
+
+
+def _webui_url() -> str:
+    if os.path.exists(HTTPS_CERT) and os.path.exists(HTTPS_KEY):
+        return "https://localhost:8050"
+    return "http://localhost:8050"
 
 
 # ── Service Management ───────────────────────────────────────────────────────
@@ -643,7 +652,7 @@ class ChronosApp(rumps.App):
     @rumps.clicked("🌐  Open Web UI")
     def do_open_webui(self, _):
         if _port_in_use(8050):
-            _open_url("http://localhost:8050")
+            _open_url(_webui_url())
         else:
             rumps.notification(
                 "Chronos", "Web UI", "Not running — start it first", sound=True
