@@ -24,8 +24,10 @@ from src.models.chronos_schemas import (
 from src.chronos.genai_helpers import (
     get_genai_client,
     is_model_not_found,
+    is_model_temporarily_unavailable,
     normalize_thinking_level,
     pick_first_available,
+    pick_first_available_or_known,
 )
 
 logger = logging.getLogger(__name__)
@@ -178,6 +180,57 @@ class ChronosEngine:
 
         logger.info(f"Initialized ChronosEngine with model: {self.model_name}")
 
+    def _failover_candidates(
+        self,
+        current_model: str,
+        *,
+        transient_unavailable: bool,
+    ) -> List[str]:
+        """Return a small ordered list of fallback models for the current mode."""
+        current = (current_model or "").strip()
+        configured = (self.settings.chronos_cleaning_model or "").strip()
+
+        if transient_unavailable:
+            if "pro" in current:
+                return ["gemini-2.5-pro", "gemini-2.5-flash"]
+            if "flash" in current:
+                return ["gemini-2.5-flash"]
+            return ["gemini-2.5-flash"]
+
+        return [
+            configured,
+            "gemini-3-flash-preview",
+            "gemini-2.5-flash",
+            "gemini-3.1-pro-preview",
+            "gemini-2.5-pro",
+        ]
+
+    def pick_failover_model(
+        self,
+        err: Exception,
+        current_model: Optional[str] = None,
+    ) -> Optional[str]:
+        """Pick the next model to try for not-found or transient availability errors."""
+        current = (current_model or self.model_name or "").strip()
+        if not current:
+            return None
+
+        if is_model_not_found(err):
+            candidates = self._failover_candidates(current, transient_unavailable=False)
+        elif is_model_temporarily_unavailable(err):
+            candidates = self._failover_candidates(current, transient_unavailable=True)
+        else:
+            return None
+
+        deduped: List[str] = []
+        for candidate in candidates:
+            candidate = (candidate or "").strip()
+            if not candidate or candidate == current or candidate in deduped:
+                continue
+            deduped.append(candidate)
+
+        return pick_first_available_or_known(*deduped)
+
     def _upload_audio_file(self, audio_path: str):
         """Upload audio file to Gemini Files API.
 
@@ -329,22 +382,32 @@ class ChronosEngine:
                     return None
 
             except Exception as e:
-                # If the selected model doesn't exist for this API key, try a
-                # sane fallback once so transcript-first pipelines don't hard fail.
-                if (
-                    is_model_not_found(e)
-                    and self.model_name != "gemini-3-flash-preview"
-                ):
-                    logger.warning(
-                        f"Model '{self.model_name}' not found/available; switching to gemini-3-flash-preview"
+                failover_model = self.pick_failover_model(e)
+                if failover_model:
+                    previous_model = self.model_name
+                    reason = (
+                        "not available to this API key"
+                        if is_model_not_found(e)
+                        else "temporarily unavailable"
                     )
-                    self.model_name = "gemini-3-flash-preview"
+                    logger.warning(
+                        "Model '%s' is %s; switching to %s",
+                        previous_model,
+                        reason,
+                        failover_model,
+                    )
+                    self.model_name = failover_model
                     continue
 
                 logger.error(f"Processing error: {e}")
                 if attempt < max_retries - 1:
-                    logger.info("Retrying...")
-                    time.sleep(2**attempt)
+                    delay = (
+                        max(15, 2**attempt)
+                        if is_model_temporarily_unavailable(e)
+                        else 2**attempt
+                    )
+                    logger.info(f"Retrying in {delay}s...")
+                    time.sleep(delay)
                 else:
                     return None
 

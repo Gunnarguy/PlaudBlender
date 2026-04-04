@@ -78,6 +78,17 @@ def pick_first_available(*candidates: str) -> Optional[str]:
     return None
 
 
+def pick_first_available_or_known(*candidates: str) -> Optional[str]:
+    """Return the first available candidate, or the first non-empty one if listing fails."""
+    available = list_model_names()
+    for c in candidates:
+        if not c:
+            continue
+        if not available or c in available:
+            return c
+    return None
+
+
 def normalize_thinking_level(level: str) -> Optional[types.ThinkingLevel]:
     """Map a string to the SDK ThinkingLevel enum.
 
@@ -105,3 +116,22 @@ def is_model_not_found(err: Exception) -> bool:
         return err.code == 404
     msg = str(err).lower()
     return "model" in msg and ("not found" in msg or "does not exist" in msg)
+
+
+def is_model_temporarily_unavailable(err: Exception) -> bool:
+    """Best-effort check for a transient Gemini availability error."""
+    if isinstance(err, errors.APIError) and err.code == 503:
+        return True
+
+    msg = str(err).lower()
+    return any(
+        marker in msg
+        for marker in (
+            "503 unavailable",
+            "status': 'unavailable'",
+            '"status": "unavailable"',
+            "currently experiencing high demand",
+            "temporarily unavailable",
+            "overloaded",
+        )
+    )

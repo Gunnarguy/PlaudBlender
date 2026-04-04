@@ -29,7 +29,11 @@ from src.database.chronos_repository import (
 from src.database.models import ChronosEvent as ChronosEventModel
 from src.models.chronos_schemas import ChronosEvent
 from src.chronos.engine import ChronosEngine, GeminiEventOutput
-from src.chronos.genai_helpers import normalize_thinking_level
+from src.chronos.genai_helpers import (
+    is_model_not_found,
+    is_model_temporarily_unavailable,
+    normalize_thinking_level,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -578,19 +582,61 @@ Extract events from this transcript following the schema exactly."""
                 return None
 
             except Exception as e:
+                failover_model = self.engine.pick_failover_model(e)
+                if failover_model:
+                    previous_model = self.engine.model_name
+                    self.engine.model_name = failover_model
+                    if verbose:
+                        print(
+                            f"      ↪ Switching model: {previous_model} -> {failover_model}",
+                            flush=True,
+                        )
+                    self._emit_progress(
+                        progress_callback,
+                        "Switching Gemini model",
+                        f"{previous_model} -> {failover_model}",
+                    )
+                    reason = (
+                        "isn't available to this API key"
+                        if is_model_not_found(e)
+                        else "is under heavy load right now"
+                    )
+                    xray_log(
+                        "gemini",
+                        "fallback",
+                        f"{previous_model} {reason} — switching to {failover_model}",
+                        level="warn",
+                    )
+                    logger.warning(
+                        "Gemini model '%s' %s; switching to '%s'",
+                        previous_model,
+                        reason,
+                        failover_model,
+                    )
+                    continue
+
+                transient_unavailable = is_model_temporarily_unavailable(e)
                 if verbose:
                     print(f"      ❌ Error: {str(e)[:80]}", flush=True)
-                xray_log(
-                    "gemini",
-                    "error",
-                    f"Something went wrong with Gemini: {str(e)[:60]}",
-                    level="error",
-                )
+                if transient_unavailable and attempt < max_retries - 1:
+                    xray_log(
+                        "gemini",
+                        "retry",
+                        "Gemini is under heavy load — waiting and trying again",
+                        level="warn",
+                    )
+                else:
+                    xray_log(
+                        "gemini",
+                        "error",
+                        f"Something went wrong with Gemini: {str(e)[:60]}",
+                        level="error",
+                    )
                 logger.error(f"Failed to process transcript: {e}")
                 if attempt < max_retries - 1:
                     # Backoff delay: 15s for 503/overload, 5s otherwise
                     import time as _time
-                    delay = 15 if "503" in str(e) or "UNAVAILABLE" in str(e) else 5
+                    delay = 15 if transient_unavailable else 5
                     if verbose:
                         print(f"      ⏳ Waiting {delay}s before retry...", flush=True)
                     _time.sleep(delay)
