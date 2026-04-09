@@ -127,18 +127,26 @@ def service_running(service: ServiceDef) -> bool:
 
 def pids_on_port(port: int) -> list[int]:
     try:
-        result = run_command(["lsof", "-ti", f"tcp:{port}"])
+        if sys.platform == "darwin":
+            result = run_command(["lsof", "-ti", f"tcp:{port}"])
+        else:
+            result = run_command(["ss", "-tlnp", f"sport = :{port}"])
         if result.returncode != 0:
             return []
         pids: list[int] = []
-        for raw in result.stdout.splitlines():
-            raw = raw.strip()
-            if not raw:
-                continue
-            try:
-                pids.append(int(raw))
-            except ValueError:
-                continue
+        if sys.platform == "darwin":
+            for raw in result.stdout.splitlines():
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    pids.append(int(raw))
+                except ValueError:
+                    continue
+        else:
+            import re
+            for m in re.finditer(r'pid=(\d+)', result.stdout):
+                pids.append(int(m.group(1)))
         return sorted(set(pids))
     except Exception:
         return []

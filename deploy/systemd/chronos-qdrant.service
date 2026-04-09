@@ -1,0 +1,17 @@
+[Unit]
+Description=Chronos Qdrant Vector Database
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=gunnarhostetler
+WorkingDirectory=/home/gunnarhostetler/PlaudBlender
+ExecStart=/usr/bin/docker compose up qdrant
+ExecStop=/usr/bin/docker compose stop qdrant
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

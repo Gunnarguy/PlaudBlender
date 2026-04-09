@@ -1,0 +1,19 @@
+[Unit]
+Description=Chronos Web UI (Dash)
+After=network-online.target chronos-qdrant.service
+Wants=chronos-qdrant.service
+
+[Service]
+Type=simple
+User=gunnarhostetler
+WorkingDirectory=/home/gunnarhostetler/PlaudBlender
+Environment=PATH=/home/gunnarhostetler/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/gunnarhostetler/PlaudBlender/.env
+ExecStart=/home/gunnarhostetler/PlaudBlender/venv/bin/python scripts/launch_app.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/gunnarhostetler/PlaudBlender/logs/ui.log
+StandardError=append:/home/gunnarhostetler/PlaudBlender/logs/ui.log
+
+[Install]
+WantedBy=multi-user.target

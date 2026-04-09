@@ -32,7 +32,13 @@ mkdir -p "$LOG_DIR"
 
 _pid_of() { cat "$PID_DIR/$1.pid" 2>/dev/null || true; }
 _is_running() { [[ -n "$1" ]] && kill -0 "$1" 2>/dev/null; }
-_port_up() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+_port_up() {
+  if command -v lsof &>/dev/null; then
+    lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  else
+    ss -tlnp 2>/dev/null | grep -q ":$1 "
+  fi
+}
 
 _ngrok_url() {
     python3 -c "
@@ -49,7 +55,11 @@ except: sys.exit(1)
 
 _kill_port() {
     local stale
-    stale=$(lsof -ti:"$1" 2>/dev/null || true)
+    if command -v lsof &>/dev/null; then
+        stale=$(lsof -ti:"$1" 2>/dev/null || true)
+    else
+        stale=$(ss -tlnp "sport = :$1" 2>/dev/null | grep -oP 'pid=\K\d+' || true)
+    fi
     if [[ -n "$stale" ]]; then
         kill "$stale" 2>/dev/null || true
     fi

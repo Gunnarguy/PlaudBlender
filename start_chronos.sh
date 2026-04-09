@@ -51,7 +51,8 @@ if [[ "$run_pipeline" -eq 1 ]]; then
 fi
 
 if [[ "$run_ui" -eq 1 ]]; then
-  if lsof -nP -iTCP:8050 -sTCP:LISTEN >/dev/null 2>&1; then
+  if (command -v lsof &>/dev/null && lsof -nP -iTCP:8050 -sTCP:LISTEN >/dev/null 2>&1) || \
+     (command -v ss &>/dev/null && ss -tlnp 2>/dev/null | grep -q ":8050 "); then
     echo "Chronos UI is already running at http://localhost:8050"
     exit 0
   fi

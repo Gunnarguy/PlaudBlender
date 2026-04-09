@@ -46,14 +46,20 @@ def _disable_dash_jupyter_integration():
 def _kill_stale_server():
     """Kill any existing process on PORT so we get a clean start."""
     try:
-        result = subprocess.run(
-            ["lsof", "-nP", f"-iTCP:{PORT}", "-sTCP:LISTEN", "-t"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        for line in result.stdout.strip().splitlines():
-            pid = int(line.strip())
+        if sys.platform == "darwin":
+            cmd = ["lsof", "-nP", f"-iTCP:{PORT}", "-sTCP:LISTEN", "-t"]
+        else:
+            cmd = ["ss", "-tlnp", f"sport = :{PORT}"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        pids = set()
+        if sys.platform == "darwin":
+            for line in result.stdout.strip().splitlines():
+                pids.add(int(line.strip()))
+        else:
+            import re
+            for m in re.finditer(r'pid=(\d+)', result.stdout):
+                pids.add(int(m.group(1)))
+        for pid in pids:
             if pid != os.getpid():
                 print(f"Killing stale server on port {PORT} (PID {pid})", flush=True)
                 os.kill(pid, signal.SIGTERM)

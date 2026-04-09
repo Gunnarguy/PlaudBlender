@@ -150,16 +150,23 @@ class PlaudUSBWatcher:
 
     def __init__(
         self,
-        volumes_path: str = "/Volumes",
+        volumes_path: str = "",
         poll_interval: float = 2.0,
     ):
         """
         Initialize the USB watcher.
 
         Args:
-            volumes_path: Path to monitor for mounted volumes
+            volumes_path: Path to monitor for mounted volumes (auto-detected if empty)
             poll_interval: How often to check for new devices (seconds)
         """
+        if not volumes_path:
+            import sys as _sys
+            if _sys.platform == "darwin":
+                volumes_path = "/Volumes"
+            else:
+                import getpass
+                volumes_path = f"/media/{getpass.getuser()}"
         self.volumes_path = Path(volumes_path)
         self.poll_interval = poll_interval
 

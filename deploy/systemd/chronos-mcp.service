@@ -1,0 +1,19 @@
+[Unit]
+Description=Chronos MCP Server (FastMCP)
+After=network-online.target chronos-qdrant.service
+Wants=chronos-qdrant.service
+
+[Service]
+Type=simple
+User=gunnarhostetler
+WorkingDirectory=/home/gunnarhostetler/PlaudBlender
+Environment=PATH=/home/gunnarhostetler/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/gunnarhostetler/PlaudBlender/.env
+ExecStart=/home/gunnarhostetler/PlaudBlender/venv/bin/python scripts/mcp_server.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/gunnarhostetler/PlaudBlender/logs/mcp.log
+StandardError=append:/home/gunnarhostetler/PlaudBlender/logs/mcp.log
+
+[Install]
+WantedBy=multi-user.target
