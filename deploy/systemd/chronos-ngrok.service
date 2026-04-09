@@ -1,0 +1,15 @@
+[Unit]
+Description=Chronos ngrok tunnels (HTTP + SSH)
+After=network-online.target chronos-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gunnarhostetler
+ExecStart=/usr/local/bin/ngrok start --all --config /home/gunnarhostetler/.config/ngrok/ngrok.yml
+Restart=always
+RestartSec=10
+Environment=HOME=/home/gunnarhostetler
+
+[Install]
+WantedBy=multi-user.target
