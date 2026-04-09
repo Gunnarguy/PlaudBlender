@@ -495,7 +495,8 @@ class PlaudOAuthClient:
 
             def do_GET(self):
                 parsed = urlparse(self.path)
-                if parsed.path == "/callback":
+                # Accept both /callback and /auth/plaud/callback (redirect URI path)
+                if parsed.path in ("/callback", "/auth/plaud/callback"):
                     params = parse_qs(parsed.query)
                     received_code[0] = params.get("code", [None])[0]
                     received_state[0] = params.get("state", [None])[0]
