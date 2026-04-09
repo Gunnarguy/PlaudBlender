@@ -1,0 +1,14 @@
+[Unit]
+Description=Chronos Full Pipeline Sync
+After=chronos-qdrant.service
+
+[Service]
+Type=oneshot
+User=gunnarhostetler
+WorkingDirectory=/home/gunnarhostetler/PlaudBlender
+Environment=PATH=/home/gunnarhostetler/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/gunnarhostetler/PlaudBlender/.env
+ExecStart=/home/gunnarhostetler/PlaudBlender/venv/bin/python scripts/chronos_pipeline.py --full
+TimeoutStartSec=900
+StandardOutput=append:/home/gunnarhostetler/PlaudBlender/logs/pipeline.log
+StandardError=append:/home/gunnarhostetler/PlaudBlender/logs/pipeline.log

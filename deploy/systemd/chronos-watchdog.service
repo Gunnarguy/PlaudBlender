@@ -1,0 +1,13 @@
+[Unit]
+Description=Chronos Health Watchdog
+After=chronos-qdrant.service
+
+[Service]
+Type=oneshot
+User=gunnarhostetler
+WorkingDirectory=/home/gunnarhostetler/PlaudBlender
+Environment=PATH=/home/gunnarhostetler/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/gunnarhostetler/PlaudBlender/.env
+ExecStart=/home/gunnarhostetler/PlaudBlender/deploy/watchdog.sh
+StandardOutput=append:/home/gunnarhostetler/PlaudBlender/logs/watchdog.log
+StandardError=append:/home/gunnarhostetler/PlaudBlender/logs/watchdog.log

@@ -51,7 +51,11 @@ class ChronosAutoSync:
     - PlaudWebhookServer (HTTP listener for Plaud push events)
     - PlaudUSBWatcher (macOS /Volumes/ polling for USB devices)
     - Chronos Pipeline (ingest → process → index)
+    - Periodic Plaud API polling (scheduled sync every N minutes)
     """
+
+    # How often to poll the Plaud API for new recordings (seconds)
+    POLL_INTERVAL = int(os.environ.get("CHRONOS_POLL_INTERVAL", 1800))  # 30 min default
 
     def __init__(
         self,
@@ -59,17 +63,22 @@ class ChronosAutoSync:
         enable_webhook: bool = True,
         enable_usb: bool = True,
         auto_process: bool = True,
+        enable_polling: bool = True,
     ):
         self.webhook_port = webhook_port
         self.enable_webhook = enable_webhook
         self.enable_usb = enable_usb
         self.auto_process = auto_process
+        self.enable_polling = enable_polling
 
         # State
         self._running = False
         self._process_thread: Optional[threading.Thread] = None
+        self._poll_thread: Optional[threading.Thread] = None
         self._pending_recordings: List[str] = []
         self._lock = threading.Lock()
+        self._last_poll: Optional[datetime] = None
+        self._poll_count: int = 0
 
         # Activity log for UI
         self.activity_log: List[dict] = []
@@ -318,6 +327,103 @@ class ChronosAutoSync:
             self._log_activity("pipeline", "error", f"{recording_id}: {e}")
 
     # ------------------------------------------------------------------
+    # Scheduled Plaud API polling
+    # ------------------------------------------------------------------
+
+    def _poll_loop(self):
+        """Periodically poll the Plaud API for new recordings and run the full pipeline."""
+        # Wait 60s on startup before first poll (let services stabilize)
+        for _ in range(60):
+            if not self._running:
+                return
+            time.sleep(1)
+
+        while self._running:
+            try:
+                self._poll_plaud_api()
+            except Exception as e:
+                self._log_activity("poll", "error", str(e))
+                logger.exception("Poll cycle failed")
+
+            # Sleep in 10s increments so we can stop quickly
+            for _ in range(self.POLL_INTERVAL // 10):
+                if not self._running:
+                    return
+                time.sleep(10)
+
+    def _poll_plaud_api(self):
+        """Run a full sync cycle: ingest → process unprocessed → index unindexed."""
+        self._poll_count += 1
+        self._last_poll = datetime.now()
+        self._log_activity(
+            "poll",
+            "started",
+            f"cycle #{self._poll_count} (every {self.POLL_INTERVAL}s)",
+        )
+
+        import subprocess
+
+        project_root = str(Path(__file__).parent.parent)
+        python = sys.executable
+
+        # Phase 1: Ingest — fetch new recordings from Plaud API
+        try:
+            result = subprocess.run(
+                [python, "scripts/chronos_pipeline.py", "--ingest"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=project_root,
+            )
+            if result.returncode == 0:
+                self._log_activity(
+                    "poll", "ingest_done", "checked Plaud API for new recordings"
+                )
+            else:
+                self._log_activity("poll", "ingest_warn", f"exit={result.returncode}")
+                logger.warning(
+                    f"Ingest returned {result.returncode}: {result.stderr[-500:]}"
+                )
+        except Exception as e:
+            self._log_activity("poll", "ingest_error", str(e))
+
+        # Phase 2: Process — run Gemini on unprocessed recordings
+        try:
+            result = subprocess.run(
+                [python, "scripts/chronos_pipeline.py", "--process"],
+                capture_output=True,
+                text=True,
+                timeout=600,
+                cwd=project_root,
+            )
+            if result.returncode == 0:
+                self._log_activity(
+                    "poll", "process_done", "processed pending recordings"
+                )
+            else:
+                self._log_activity("poll", "process_warn", f"exit={result.returncode}")
+        except Exception as e:
+            self._log_activity("poll", "process_error", str(e))
+
+        # Phase 3: Index — embed and store any unindexed events
+        try:
+            result = subprocess.run(
+                [python, "scripts/chronos_pipeline.py", "--index"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=project_root,
+            )
+            if result.returncode == 0:
+                self._log_activity("poll", "index_done", "indexed pending events")
+            else:
+                self._log_activity("poll", "index_warn", f"exit={result.returncode}")
+        except Exception as e:
+            self._log_activity("poll", "index_error", str(e))
+
+        self._log_activity("poll", "complete", f"cycle #{self._poll_count} finished")
+
+    # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
@@ -349,6 +455,15 @@ class ChronosAutoSync:
             self._process_thread.start()
             self._log_activity(
                 "system", "processor_started", "background processing enabled"
+            )
+
+        if self.enable_polling:
+            self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
+            self._poll_thread.start()
+            self._log_activity(
+                "system",
+                "polling_started",
+                f"Plaud API poll every {self.POLL_INTERVAL}s ({self.POLL_INTERVAL // 60} min)",
             )
 
         self._log_activity("system", "ready", "all listeners active")
@@ -393,6 +508,12 @@ class ChronosAutoSync:
                     len(self._usb_watcher.connected_devices) if self._usb_watcher else 0
                 ),
             },
+            "polling": {
+                "enabled": self.enable_polling,
+                "interval_sec": self.POLL_INTERVAL,
+                "poll_count": self._poll_count,
+                "last_poll": self._last_poll.isoformat() if self._last_poll else None,
+            },
             "queue": {
                 "pending": len(self._pending_recordings),
             },
@@ -423,14 +544,30 @@ if __name__ == "__main__":
     parser.add_argument(
         "--no-auto-process", action="store_true", help="Disable auto-processing"
     )
+    parser.add_argument(
+        "--no-polling", action="store_true", help="Disable periodic Plaud API polling"
+    )
+    parser.add_argument(
+        "--poll-interval",
+        type=int,
+        default=None,
+        help="Plaud API poll interval in seconds (default: 1800 = 30min)",
+    )
     args = parser.parse_args()
+
+    # Allow CLI override of poll interval
+    if args.poll_interval is not None:
+        os.environ["CHRONOS_POLL_INTERVAL"] = str(args.poll_interval)
 
     syncer = ChronosAutoSync(
         webhook_port=args.webhook_port,
         enable_webhook=not args.no_webhook,
         enable_usb=not args.no_usb,
         auto_process=not args.no_auto_process,
+        enable_polling=not args.no_polling,
     )
+
+    poll_min = syncer.POLL_INTERVAL // 60
 
     print("=" * 60)
     print("  Chronos Auto-Sync Service")
@@ -442,10 +579,15 @@ if __name__ == "__main__":
         f"  USB:     {'ENABLED (polling /Volumes/)' if not args.no_usb else 'disabled'}"
     )
     print(f"  Auto:    {'ENABLED' if not args.no_auto_process else 'disabled'}")
+    print(
+        f"  Polling: {'ENABLED (every {} min)'.format(poll_min) if not args.no_polling else 'disabled'}"
+    )
     print()
     if not args.no_webhook:
         print(f"  Webhook URL: http://localhost:{args.webhook_port}/webhook/plaud")
         print(f"  For external access: ngrok http {args.webhook_port}")
+    if not args.no_polling:
+        print(f"  API Poll:    every {poll_min} min → ingest → process → index")
     print()
     print("  Press Ctrl+C to stop")
     print("=" * 60)

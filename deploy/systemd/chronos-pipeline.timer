@@ -1,0 +1,10 @@
+[Unit]
+Description=Chronos Full Pipeline Timer (every 6 hours)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+AccuracySec=5min
+
+[Install]
+WantedBy=timers.target
