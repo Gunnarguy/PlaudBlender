@@ -120,18 +120,20 @@ def is_model_not_found(err: Exception) -> bool:
 
 def is_model_temporarily_unavailable(err: Exception) -> bool:
     """Best-effort check for a transient Gemini availability error."""
-    if isinstance(err, errors.APIError) and err.code == 503:
+    if isinstance(err, errors.APIError) and err.code in (429, 503):
         return True
 
     msg = str(err).lower()
     return any(
         marker in msg
         for marker in (
+            "429 resource_exhausted",
             "503 unavailable",
             "status': 'unavailable'",
             '"status": "unavailable"',
             "currently experiencing high demand",
             "temporarily unavailable",
             "overloaded",
+            "rate limit",
         )
     )

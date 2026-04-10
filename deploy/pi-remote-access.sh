@@ -5,7 +5,7 @@
 #   ssh gunnarhostetler@10.0.0.170 'bash -s' < deploy/pi-remote-access.sh
 #
 # Sets up:
-#   1. ngrok (HTTP API tunnel + TCP SSH tunnel)
+#   1. ngrok (HTTP API tunnel + HTTP UI tunnel + HTTP webhook tunnel)
 #   2. RealVNC Server (for RaspController iOS)
 #   3. Tailscale (mesh VPN — access from anywhere)
 #   4. Restarts all Chronos services
@@ -29,19 +29,27 @@ for svc in chronos-qdrant chronos-api chronos-ui chronos-auto-sync; do
         fail "$svc failed to restart"
     fi
 done
-sleep 3
-# Verify API is up
-if curl -sf http://localhost:8000/api/v1/health > /dev/null 2>&1; then
+
+# Verify API is up with a short warmup window after restart.
+API_READY=false
+for _ in $(seq 1 20); do
+    if curl -sf http://localhost:8000/api/v1/health > /dev/null 2>&1; then
+        API_READY=true
+        break
+    fi
+    sleep 1
+done
+if $API_READY; then
     ok "FastAPI is healthy"
 else
     fail "FastAPI not responding — check: sudo journalctl -u chronos-api -n 20"
 fi
 
-section "2. NGROK SETUP (HTTP + SSH TUNNELS)"
+section "2. NGROK SETUP (API + UI + WEBHOOK TUNNELS)"
 # Install ngrok if missing
 if ! command -v ngrok &>/dev/null; then
     echo "  Installing ngrok..."
-    curl -fsSL https://ngrok-agent.s3.amazonaws.com/ngrok-v3-stable-linux-arm64.tgz | \
+    curl -fsSL https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz | \
         sudo tar -xz -C /usr/local/bin
     ok "ngrok installed"
 else
@@ -53,7 +61,7 @@ NGROK_AUTH="2vq4gBA0afqqxUW4SHRR9hqJkMe_5zu8s9acEi4dD1bUbtE8x"
 ngrok config add-authtoken "$NGROK_AUTH" 2>/dev/null
 ok "ngrok auth token configured"
 
-# Write ngrok config with both tunnels
+# Write ngrok config with API, UI, and webhook tunnels.
 NGROK_CONFIG="$HOME/.config/ngrok/ngrok.yml"
 mkdir -p "$(dirname "$NGROK_CONFIG")"
 cat > "$NGROK_CONFIG" << 'NGROK_CFG'
@@ -65,16 +73,19 @@ tunnels:
         proto: http
         addr: 8000
         domain: glairy-ona-irreplaceable.ngrok-free.dev
-    chronos-ssh:
-        proto: tcp
-        addr: 22
+    chronos-ui:
+        proto: http
+        addr: 8050
+    chronos-webhook:
+        proto: http
+        addr: 8090
 NGROK_CFG
-ok "ngrok config written (API + SSH tunnels)"
+ok "ngrok config written (API + UI + webhook tunnels)"
 
 # Create systemd service for ngrok
 sudo tee /etc/systemd/system/chronos-ngrok.service > /dev/null << 'SYSTEMD'
 [Unit]
-Description=Chronos ngrok tunnels (HTTP + SSH)
+Description=Chronos ngrok tunnels (API + UI + webhook)
 After=network-online.target chronos-api.service
 Wants=network-online.target
 
@@ -90,7 +101,8 @@ Environment=HOME=/home/gunnarhostetler
 WantedBy=multi-user.target
 SYSTEMD
 sudo systemctl daemon-reload
-sudo systemctl enable --now chronos-ngrok
+sudo systemctl enable chronos-ngrok
+sudo systemctl restart chronos-ngrok
 ok "chronos-ngrok systemd service enabled"
 
 # Wait for tunnels to come up
@@ -101,18 +113,50 @@ HTTP_URL=$(echo "$TUNNEL_INFO" | python3 -c "
 import json,sys
 data=json.load(sys.stdin)
 for t in data.get('tunnels',[]):
-    if t.get('proto')=='https' or 'ngrok-free.dev' in t.get('public_url',''):
+    if t.get('name')=='chronos-api':
         print(t['public_url']); break
 " 2>/dev/null || echo "pending...")
-SSH_URL=$(echo "$TUNNEL_INFO" | python3 -c "
+UI_URL=$(echo "$TUNNEL_INFO" | python3 -c "
 import json,sys
 data=json.load(sys.stdin)
 for t in data.get('tunnels',[]):
-    if t.get('proto')=='tcp':
+    if t.get('name')=='chronos-ui':
         print(t['public_url']); break
 " 2>/dev/null || echo "pending...")
-ok "HTTP tunnel: $HTTP_URL"
-ok "SSH tunnel:  $SSH_URL"
+WEBHOOK_BASE_URL=$(echo "$TUNNEL_INFO" | python3 -c "
+import json,sys
+data=json.load(sys.stdin)
+for t in data.get('tunnels',[]):
+    if t.get('name')=='chronos-webhook':
+        print(t['public_url']); break
+" 2>/dev/null || echo "pending...")
+ok "API tunnel:  $HTTP_URL"
+ok "UI tunnel:   $UI_URL"
+ok "Webhook tunnel: $WEBHOOK_BASE_URL"
+
+# Update Pi environment with current public webhook/callback URLs.
+ENV_FILE="$HOME/PlaudBlender/.env"
+WEBHOOK_URL="$WEBHOOK_BASE_URL/webhook/plaud"
+REDIRECT_URL="$UI_URL/auth/plaud/callback"
+
+if [ -f "$ENV_FILE" ]; then
+    if grep -q '^PLAUD_WEBHOOK_URL=' "$ENV_FILE"; then
+        sed -i "s|^PLAUD_WEBHOOK_URL=.*|PLAUD_WEBHOOK_URL=$WEBHOOK_URL|" "$ENV_FILE"
+    else
+        printf '\nPLAUD_WEBHOOK_URL=%s\n' "$WEBHOOK_URL" >> "$ENV_FILE"
+    fi
+
+    if grep -q '^PLAUD_REDIRECT_URI=' "$ENV_FILE"; then
+        sed -i "s|^PLAUD_REDIRECT_URI=.*|PLAUD_REDIRECT_URI=$REDIRECT_URL|" "$ENV_FILE"
+    else
+        printf 'PLAUD_REDIRECT_URI=%s\n' "$REDIRECT_URL" >> "$ENV_FILE"
+    fi
+    ok "Updated .env with current Plaud webhook and redirect URLs"
+fi
+
+# Reload services that read these values.
+sudo systemctl restart chronos-ui chronos-auto-sync >/dev/null 2>&1 || true
+ok "Reloaded Chronos services after URL updates"
 
 section "3. REALVNC SERVER SETUP"
 # Install RealVNC Server if not present
@@ -192,14 +236,17 @@ for svc in chronos-qdrant chronos-api chronos-ui chronos-auto-sync chronos-ngrok
 done
 echo ""
 echo -e "  ${GREEN}Remote Access:${RESET}"
-echo "    ngrok HTTP:  $HTTP_URL"
-echo "    ngrok SSH:   $SSH_URL"
+echo "    ngrok API:   $HTTP_URL"
+echo "    ngrok UI:    $UI_URL"
+echo "    ngrok Webhook: $WEBHOOK_URL"
+echo "    SSH (LAN):   ssh gunnarhostetler@10.0.0.170"
 echo "    VNC:         port 5900 (local) / via Tailscale"
 TS_IP=$(tailscale ip -4 2>/dev/null || echo "not yet configured")
 echo "    Tailscale:   $TS_IP"
 echo ""
-echo -e "  ${CYAN}From your Mac (SSH via ngrok):${RESET}"
-echo "    ssh gunnarhostetler@<ngrok-tcp-host> -p <ngrok-tcp-port>"
+echo -e "  ${CYAN}From your Mac (SSH):${RESET}"
+echo "    LAN:       ssh gunnarhostetler@10.0.0.170"
+echo "    Tailscale: ssh gunnarhostetler@<tailscale-ip>   (after 'sudo tailscale up --ssh')"
 echo ""
 echo -e "  ${CYAN}From RaspController (VNC via Tailscale):${RESET}"
 echo "    Connect to $TS_IP:5900"
@@ -208,6 +255,16 @@ echo -e "  ${CYAN}iOS app server URL:${RESET}"
 echo "    Primary: $HTTP_URL"
 echo "    LAN:     http://10.0.0.170:8000"
 echo "    Tailscale: http://$TS_IP:8000"
+echo ""
+echo -e "  ${CYAN}Dash UI URL:${RESET}"
+echo "    Primary: $UI_URL"
+echo "    LAN:     http://10.0.0.170:8050"
+echo "    Tailscale: http://$TS_IP:8050"
+echo ""
+echo -e "  ${CYAN}Plaud Webhook URL:${RESET}"
+echo "    Primary: $WEBHOOK_URL"
+echo "    LAN:     http://10.0.0.170:8090/webhook/plaud"
+echo "    Tailscale: http://$TS_IP:8090/webhook/plaud"
 echo ""
 echo "══════════════════════════════════════════════════"
 echo "  DONE — Pi is now accessible from anywhere!"

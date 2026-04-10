@@ -1,9 +1,11 @@
 import json
+import time
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import Mock
 
 from src.chronos.engine import ChronosEngine
+from src.chronos.genai_helpers import is_model_temporarily_unavailable
 from src.chronos.transcript_processor import TranscriptProcessor
 
 
@@ -104,3 +106,57 @@ def test_transcript_processor_switches_models_after_unavailable(monkeypatch):
     assert result.total_events == 1
     assert engine.calls == ["gemini-3-flash-preview", "gemini-2.5-flash"]
     assert engine.model_name == "gemini-2.5-flash"
+
+
+def test_transient_unavailable_detects_rate_limit_message():
+    assert is_model_temporarily_unavailable(
+        Exception("429 RESOURCE_EXHAUSTED: rate limit exceeded")
+    )
+
+
+def test_transcript_processor_waits_longer_on_rate_limit(monkeypatch):
+    monkeypatch.setattr("app_v2.services.xray.xray_log", lambda *args, **kwargs: None)
+
+    delays = []
+
+    class DummyEngine:
+        def __init__(self):
+            self.model_name = "gemini-3-flash-preview"
+            self._thinking_level = None
+            self.client = SimpleNamespace(
+                models=SimpleNamespace(generate_content=self.generate_content)
+            )
+
+        def _build_prompt(self, recording_id: str, recording_date: str = "") -> str:
+            return "Prompt"
+
+        def pick_failover_model(self, err: Exception, current_model=None):
+            return None
+
+        def generate_content(self, *, model, contents, config):
+            raise Exception("429 RESOURCE_EXHAUSTED: rate limit exceeded")
+
+    engine = DummyEngine()
+    processor = TranscriptProcessor(
+        db_session=Mock(),
+        plaud_client=Mock(),
+        engine=cast(Any, engine),
+    )
+    processor.__dict__["settings"] = SimpleNamespace(
+        chronos_processing_provider="gemini"
+    )
+
+    monkeypatch.setattr(time, "sleep", lambda delay: delays.append(delay))
+
+    result = processor.process_transcript_text(
+        transcript_text=(
+            "This is a sufficiently long transcript about Gemini rate limiting. " * 8
+        ),
+        recording_id="rec-1",
+        max_retries=2,
+        verbose=False,
+        recording_date="2026-04-02",
+    )
+
+    assert result is None
+    assert delays == [35]

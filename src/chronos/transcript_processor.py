@@ -9,7 +9,7 @@ import json
 import logging
 import time as _time
 import uuid
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
@@ -28,7 +28,8 @@ from src.database.chronos_repository import (
 )
 from src.database.models import ChronosEvent as ChronosEventModel
 from src.models.chronos_schemas import ChronosEvent
-from src.chronos.engine import ChronosEngine, GeminiEventOutput
+from src.chronos.engine import CHRONOS_CLEAN_PROMPT, ChronosEngine, GeminiEventOutput
+from src.chronos.openai_service import OpenAIResponseService
 from src.chronos.genai_helpers import (
     is_model_not_found,
     is_model_temporarily_unavailable,
@@ -51,8 +52,28 @@ class TranscriptProcessor:
     ):
         self.db = db_session
         self.plaud = plaud_client or PlaudClient()
-        self.engine = engine or ChronosEngine()
+        self.engine = engine
         self.settings = get_settings()
+        self._last_processing_error: Optional[str] = None
+
+    def _get_engine(self) -> ChronosEngine:
+        if self.engine is None:
+            self.engine = ChronosEngine()
+        return self.engine
+
+    def _build_prompt(self, recording_id: str, recording_date: str = "") -> str:
+        if recording_date:
+            prompt_date = recording_date
+        else:
+            from datetime import datetime
+
+            prompt_date = datetime.now().strftime("%Y-%m-%d")
+
+        if self.engine is not None:
+            return self.engine._build_prompt(recording_id, prompt_date)
+
+        prompt = CHRONOS_CLEAN_PROMPT.replace("{{RECORDING_ID}}", recording_id)
+        return prompt.replace("{{RECORDING_DATE}}", prompt_date)
 
     def _get_json_repair_model_name(self) -> str:
         """Choose the cheapest model that can safely retry malformed JSON."""
@@ -64,7 +85,7 @@ class TranscriptProcessor:
             and analyst_model
         ):
             return analyst_model
-        return self.engine.model_name
+        return self._get_engine().model_name
 
     def _emit_progress(
         self,
@@ -156,7 +177,8 @@ BROKEN_JSON:
         )
         _t0 = _time.perf_counter()
         try:
-            config: dict = {
+            engine = self._get_engine()
+            config: Any = {
                 "response_mime_type": "application/json",
                 "temperature": 0.0,
             }
@@ -165,7 +187,7 @@ BROKEN_JSON:
                     thinking_level=thinking_level
                 )
 
-            resp = self.engine.client.models.generate_content(
+            resp = engine.client.models.generate_content(
                 model=model_name,
                 contents=repair_prompt,
                 config=config,
@@ -212,7 +234,199 @@ BROKEN_JSON:
             logger.error(f"JSON repair call failed (model={model_name}): {e}")
             return broken_json
 
+    def _get_processing_provider(self) -> str:
+        provider = (
+            (getattr(self.settings, "chronos_processing_provider", "auto") or "auto")
+            .strip()
+            .lower()
+        )
+        if provider not in {"auto", "gemini", "openai"}:
+            return "auto"
+        return provider
+
+    def _provider_label(self, provider: Optional[str] = None) -> str:
+        resolved = (provider or self._get_processing_provider()).strip().lower()
+        if resolved == "gemini":
+            return "Gemini"
+        if resolved == "openai":
+            return "OpenAI"
+        return "Gemini/OpenAI"
+
+    def _openai_processing_available(self) -> bool:
+        api_key = getattr(self.settings, "openai_api_key", None)
+        return bool(str(api_key).strip()) if api_key is not None else False
+
     def process_transcript_text(
+        self,
+        transcript_text: str,
+        recording_id: str,
+        max_retries: int = 3,
+        verbose: bool = True,
+        recording_date: str = "",
+        plaud_context: Optional[str] = None,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> Optional[GeminiEventOutput]:
+        """Process transcript text via the configured provider or provider chain."""
+        self._last_processing_error = None
+
+        # Skip transcripts that are too short to extract meaningful events.
+        if len(transcript_text.strip()) < 100:
+            return None
+
+        provider = self._get_processing_provider()
+        if provider == "gemini":
+            return self._process_transcript_text_gemini(
+                transcript_text,
+                recording_id,
+                max_retries=max_retries,
+                verbose=verbose,
+                recording_date=recording_date,
+                plaud_context=plaud_context,
+                progress_callback=progress_callback,
+            )
+
+        if provider == "openai":
+            return self._process_transcript_text_openai(
+                transcript_text,
+                recording_id,
+                verbose=verbose,
+                recording_date=recording_date,
+                plaud_context=plaud_context,
+                progress_callback=progress_callback,
+            )
+
+        gemini_output = self._process_transcript_text_gemini(
+            transcript_text,
+            recording_id,
+            max_retries=max_retries,
+            verbose=verbose,
+            recording_date=recording_date,
+            plaud_context=plaud_context,
+            progress_callback=progress_callback,
+        )
+        if gemini_output and gemini_output.events:
+            return gemini_output
+
+        gemini_error = self._last_processing_error
+        from app_v2.services.xray import xray_log
+
+        xray_log(
+            "pipeline",
+            "fallback",
+            "Gemini stalled or failed — trying OpenAI instead",
+            level="warn",
+        )
+
+        if not self._openai_processing_available():
+            self._last_processing_error = gemini_error or (
+                "Gemini failed and OpenAI fallback is unavailable because OPENAI_API_KEY is not configured"
+            )
+            return None
+
+        self._last_processing_error = None
+        openai_output = self._process_transcript_text_openai(
+            transcript_text,
+            recording_id,
+            verbose=verbose,
+            recording_date=recording_date,
+            plaud_context=plaud_context,
+            progress_callback=progress_callback,
+        )
+        if openai_output and openai_output.events:
+            return openai_output
+
+        openai_error = self._last_processing_error
+        if gemini_error and openai_error:
+            self._last_processing_error = (
+                f"Gemini failed: {gemini_error}; OpenAI failed: {openai_error}"
+            )
+        else:
+            self._last_processing_error = openai_error or gemini_error
+        return None
+
+    def _process_transcript_text_openai(
+        self,
+        transcript_text: str,
+        recording_id: str,
+        *,
+        verbose: bool = True,
+        recording_date: str = "",
+        plaud_context: Optional[str] = None,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> Optional[GeminiEventOutput]:
+        """Process transcript text through OpenAI structured outputs."""
+        prompt = self._build_prompt(recording_id, recording_date)
+        self._emit_progress(
+            progress_callback,
+            "Prompt built",
+            f"{len(transcript_text.split()):,} words ready for OpenAI",
+        )
+
+        plaud_section = ""
+        if plaud_context:
+            plaud_section = (
+                "\n\n**PLAUD AI CONTEXT** (use this to guide categorization, "
+                "sentiment, and structure — but always extract events from the "
+                "raw transcript below):\n\n"
+                f"{plaud_context}\n"
+            )
+
+        full_prompt = f"""{prompt}{plaud_section}
+
+**RAW TRANSCRIPT:**
+
+{transcript_text}
+
+Extract events from this transcript following the schema exactly."""
+
+        if verbose:
+            print(
+                f"      📊 Transcript: {len(transcript_text.split()):,} words, {len(transcript_text):,} chars",
+                flush=True,
+            )
+            print(
+                f"      🤖 Model: {self.settings.openai_model} (OpenAI)",
+                flush=True,
+            )
+            print("      📤 Sending to OpenAI API...", flush=True)
+
+        self._emit_progress(
+            progress_callback,
+            "OpenAI request sent",
+            f"{len(transcript_text.split()):,} words · {len(transcript_text):,} chars",
+        )
+
+        svc = OpenAIResponseService()
+        result = svc.extract_events(full_prompt, recording_id=recording_id)
+        if "error" in result:
+            self._last_processing_error = result["error"]
+            self._emit_progress(
+                progress_callback,
+                "OpenAI failed",
+                result["error"][:80],
+            )
+            if verbose:
+                print(f"      ❌ Error: {result['error'][:80]}", flush=True)
+            return None
+
+        output = result.get("output")
+        if not output or not output.events:
+            self._last_processing_error = "OpenAI returned no events"
+            return None
+
+        self._emit_progress(
+            progress_callback,
+            "Events extracted",
+            f"{output.total_events} events",
+        )
+        if verbose:
+            print(f"      ✅ Extracted {output.total_events} events", flush=True)
+            self._print_event_summary(output.events)
+
+        self._last_processing_error = None
+        return output
+
+    def _process_transcript_text_gemini(
         self,
         transcript_text: str,
         recording_id: str,
@@ -235,9 +449,18 @@ BROKEN_JSON:
         Returns:
             GeminiEventOutput with extracted events
         """
+        self._last_processing_error = None
+
+        try:
+            engine = self._get_engine()
+        except Exception as e:
+            self._last_processing_error = str(e)
+            return None
+
         # Skip transcripts that are too short to extract meaningful events
         MIN_TRANSCRIPT_CHARS = 100
         if len(transcript_text.strip()) < MIN_TRANSCRIPT_CHARS:
+            self._last_processing_error = "Transcript too short"
             if verbose:
                 print(
                     f"      ⚠️ Transcript too short ({len(transcript_text.strip())} chars < {MIN_TRANSCRIPT_CHARS}), skipping",
@@ -256,7 +479,7 @@ BROKEN_JSON:
             return None
 
         # Build prompt (same as audio version)
-        prompt = self.engine._build_prompt(recording_id, recording_date)
+        prompt = self._build_prompt(recording_id, recording_date)
         self._emit_progress(
             progress_callback,
             "Prompt built",
@@ -290,7 +513,7 @@ Extract events from this transcript following the schema exactly."""
                 f"      📊 Transcript: {transcript_words:,} words, {transcript_chars:,} chars",
                 flush=True,
             )
-            print(f"      🤖 Model: {self.engine.model_name}", flush=True)
+            print(f"      🤖 Model: {engine.model_name}", flush=True)
             print(f"      📤 Sending to Gemini API...", flush=True)
 
         from app_v2.services.xray import xray_log
@@ -320,14 +543,14 @@ Extract events from this transcript following the schema exactly."""
                     f"Processing transcript for {recording_id} (attempt {attempt + 1}/{max_retries})..."
                 )
 
-                config: dict = {
+                config: Any = {
                     "response_mime_type": "application/json",
                     "response_json_schema": GeminiEventOutput.model_json_schema(),
                     "temperature": 0.2,
                 }
-                if self.engine._thinking_level is not None:
+                if engine._thinking_level is not None:
                     config["thinking_config"] = types.ThinkingConfig(
-                        thinking_level=self.engine._thinking_level
+                        thinking_level=engine._thinking_level
                     )
 
                 # Use streaming to show real-time progress
@@ -341,8 +564,8 @@ Extract events from this transcript following the schema exactly."""
                     last_chunk_time = start_time
                     last_progress_update = start_time
 
-                    stream = self.engine.client.models.generate_content_stream(
-                        model=self.engine.model_name,
+                    stream = engine.client.models.generate_content_stream(
+                        model=engine.model_name,
                         contents=full_prompt,
                         config=config,
                     )
@@ -419,7 +642,7 @@ Extract events from this transcript following the schema exactly."""
                         from src.chronos.cost_tracker import track_usage
 
                         track_usage(
-                            self.engine.model_name,
+                            engine.model_name,
                             "generate",
                             input_tokens=_in_tok,
                             output_tokens=_out_tok,
@@ -430,8 +653,8 @@ Extract events from this transcript following the schema exactly."""
                     raw_text = response_text.strip()
                 else:
                     # Non-verbose: use regular call
-                    response = self.engine.client.models.generate_content(
-                        model=self.engine.model_name,
+                    response = engine.client.models.generate_content(
+                        model=engine.model_name,
                         contents=full_prompt,
                         config=config,
                     )
@@ -443,7 +666,7 @@ Extract events from this transcript following the schema exactly."""
                         from src.chronos.cost_tracker import track_usage
 
                         track_usage(
-                            self.engine.model_name,
+                            engine.model_name,
                             "generate",
                             input_tokens=getattr(_nv_usage, "prompt_token_count", 0),
                             output_tokens=getattr(
@@ -536,7 +759,7 @@ Extract events from this transcript following the schema exactly."""
                 _cats = _Counter()
                 for _ev in validated.events:
                     _c = getattr(_ev, "category", "unknown")
-                    _cats[_c.value if hasattr(_c, "value") else str(_c)] += 1
+                    _cats[str(getattr(_c, "value", _c))] += 1
                 _cat_str = ", ".join(f"{c}:{n}" for c, n in _cats.most_common(5))
                 xray_log(
                     "gemini",
@@ -547,6 +770,7 @@ Extract events from this transcript following the schema exactly."""
                 logger.info(
                     f"Extracted {validated.total_events} events from transcript"
                 )
+                self._last_processing_error = None
                 return validated
 
             except ValidationError as e:
@@ -563,6 +787,9 @@ Extract events from this transcript following the schema exactly."""
                     import time as _time
                     _time.sleep(5)
                     continue
+                self._last_processing_error = (
+                    f"Gemini validation failed: {str(e)[:120]}"
+                )
                 return None
 
             except json.JSONDecodeError as e:
@@ -579,13 +806,16 @@ Extract events from this transcript following the schema exactly."""
                     import time as _time
                     _time.sleep(5)
                     continue
+                self._last_processing_error = (
+                    f"Gemini returned invalid JSON: {str(e)[:120]}"
+                )
                 return None
 
             except Exception as e:
-                failover_model = self.engine.pick_failover_model(e)
+                failover_model = engine.pick_failover_model(e)
                 if failover_model:
-                    previous_model = self.engine.model_name
-                    self.engine.model_name = failover_model
+                    previous_model = engine.model_name
+                    engine.model_name = failover_model
                     if verbose:
                         print(
                             f"      ↪ Switching model: {previous_model} -> {failover_model}",
@@ -634,13 +864,14 @@ Extract events from this transcript following the schema exactly."""
                     )
                 logger.error(f"Failed to process transcript: {e}")
                 if attempt < max_retries - 1:
-                    # Backoff delay: 15s for 503/overload, 5s otherwise
+                    # Backoff delay: 35s for 429/503 (rate limit/overload), 5s otherwise
                     import time as _time
-                    delay = 15 if transient_unavailable else 5
+                    delay = 35 if transient_unavailable else 5
                     if verbose:
                         print(f"      ⏳ Waiting {delay}s before retry...", flush=True)
                     _time.sleep(delay)
                     continue
+                self._last_processing_error = str(e)
                 return None
 
         return None
@@ -654,8 +885,7 @@ Extract events from this transcript following the schema exactly."""
         print(f"      📋 Event preview:", flush=True)
         for i, e in enumerate(events[:3]):
             category = getattr(e, "category", "unknown")
-            if hasattr(category, "value"):
-                category = category.value
+            category = getattr(category, "value", category)
             clean_text = getattr(e, "clean_text", "")[:60]
             sentiment = getattr(e, "sentiment", 0)
             print(
@@ -672,8 +902,7 @@ Extract events from this transcript following the schema exactly."""
         categories = Counter()
         for e in events:
             cat = getattr(e, "category", "unknown")
-            if hasattr(cat, "value"):
-                cat = cat.value
+            cat = getattr(cat, "value", cat)
             categories[cat] += 1
 
         cat_summary = ", ".join(
@@ -700,7 +929,7 @@ Extract events from this transcript following the schema exactly."""
         failure_count = 0
 
         for rec in pending:
-            ok = self.process_recording_id(rec.recording_id)
+            ok = self.process_recording_id(str(rec.recording_id))
             if ok:
                 success_count += 1
             else:
@@ -732,15 +961,29 @@ Extract events from this transcript following the schema exactly."""
             from app_v2.services.xray import xray_log
 
             _proc_t0 = _time.perf_counter()
+            provider = self._get_processing_provider()
+            provider_label = self._provider_label(provider)
+            record_id = str(rec.recording_id)
+            record_title = getattr(rec, "title", None)
+            created_at = getattr(rec, "created_at", None)
+            duration_seconds = getattr(rec, "duration_seconds", 0)
+            local_audio_path = getattr(rec, "local_audio_path", "")
+            source = getattr(rec, "source", "plaud")
+            device_id = getattr(rec, "device_id", None)
+            checksum = getattr(rec, "checksum", None)
 
             # Mark as in-progress early so we can spot crashes mid-batch.
             mark_chronos_recording_status(
-                self.db, rec.recording_id, "processing", error_message=None
+                self.db, record_id, "processing", error_message=None
             )
             self._emit_progress(
-                progress_callback, "Starting Gemini", rec.recording_id[:20]
+                progress_callback, "Starting extraction", record_id[:20]
             )
-            xray_log("gemini", "start", f"Handing this recording to Gemini AI")
+            xray_log(
+                "pipeline",
+                "start",
+                f"Handing this recording to {provider_label} extraction",
+            )
 
             if delete_existing_events:
                 deleted = delete_chronos_events_by_recording(self.db, recording_id)
@@ -748,10 +991,10 @@ Extract events from this transcript following the schema exactly."""
 
             # Fetch file details from Plaud API
             self._emit_progress(
-                progress_callback, "Fetching transcript", rec.recording_id[:20]
+                progress_callback, "Fetching transcript", record_id[:20]
             )
             _api_t0 = _time.perf_counter()
-            file_details = self.plaud.get_recording(rec.recording_id)
+            file_details = self.plaud.get_recording(record_id)
             _api_ms = (_time.perf_counter() - _api_t0) * 1000
             xray_log(
                 "ingest",
@@ -763,17 +1006,17 @@ Extract events from this transcript following the schema exactly."""
             # Best-effort: refresh the recording title from Plaud if present.
             try:
                 plaud_title = file_details.get("title")
-                if plaud_title and (not getattr(rec, "title", None)):
+                if plaud_title and (not record_title) and created_at is not None:
                     upsert_chronos_recording(
                         session=self.db,
-                        recording_id=rec.recording_id,
+                        recording_id=record_id,
                         title=plaud_title,
-                        created_at=rec.created_at,
-                        duration_seconds=rec.duration_seconds,
-                        local_audio_path=rec.local_audio_path,
-                        source=rec.source,
-                        device_id=rec.device_id,
-                        checksum=rec.checksum,
+                        created_at=created_at,
+                        duration_seconds=duration_seconds,
+                        local_audio_path=local_audio_path,
+                        source=source,
+                        device_id=device_id,
+                        checksum=checksum,
                     )
             except Exception:
                 pass
@@ -790,39 +1033,36 @@ Extract events from this transcript following the schema exactly."""
                 )
                 try:
                     set_chronos_recording_transcript(
-                        self.db, rec.recording_id, transcript_text
+                        self.db, record_id, transcript_text
                     )
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to cache transcript for {rec.recording_id}: {e}"
-                    )
+                    logger.warning(f"Failed to cache transcript for {record_id}: {e}")
 
             if not transcript_text:
-                logger.warning(f"No transcript for {rec.recording_id}")
+                logger.warning(f"No transcript for {record_id}")
                 xray_log(
-                    "gemini",
+                    "pipeline",
                     "skip",
                     f"This recording has no transcript — nothing to analyze",
                     level="warn",
                 )
                 mark_chronos_recording_status(
                     self.db,
-                    rec.recording_id,
+                    record_id,
                     "failed",
                     error_message="No transcript available in Plaud source_list",
                 )
                 return False
 
-            # Process through Gemini — pass real recording date for temporal anchoring
+            # Process through the configured provider — pass real recording date
+            # for temporal anchoring.
             recording_date = ""
-            if rec.created_at:
+            if created_at:
                 try:
-                    from datetime import datetime as dt_cls
-
-                    if isinstance(rec.created_at, str):
-                        recording_date = rec.created_at[:10]
+                    if isinstance(created_at, str):
+                        recording_date = created_at[:10]
                     else:
-                        recording_date = rec.created_at.strftime("%Y-%m-%d")
+                        recording_date = created_at.strftime("%Y-%m-%d")
                 except Exception:
                     pass
 
@@ -847,51 +1087,60 @@ Extract events from this transcript following the schema exactly."""
 
             output = self.process_transcript_text(
                 transcript_text,
-                rec.recording_id,
+                record_id,
                 recording_date=recording_date,
                 plaud_context=plaud_context,
                 progress_callback=progress_callback,
             )
 
-            # Auto-retry once if Gemini returned no events but transcript is substantial
-            if (not output or not output.events) and len(
-                transcript_text.strip()
-            ) >= 500:
+            # Auto-retry once only for single-provider Gemini mode. The auto mode
+            # already chains providers and doesn't need a second outer retry.
+            if (
+                provider == "gemini"
+                and (not output or not output.events)
+                and len(transcript_text.strip()) >= 500
+            ):
                 logger.info(
-                    f"Retrying {rec.recording_id} — Gemini returned no events on first attempt"
+                    f"Retrying {record_id} — {provider_label} returned no events on first attempt"
                 )
                 xray_log(
-                    "gemini",
+                    "pipeline",
                     "retry",
-                    "Gemini blanked on a real transcript — giving it one more shot",
+                    f"{provider_label} blanked on a real transcript — giving it one more shot",
                     level="warn",
                 )
                 self._emit_progress(
                     progress_callback,
-                    "Retrying Gemini",
+                    f"Retrying {provider_label}",
                     "first attempt returned no events",
                 )
                 output = self.process_transcript_text(
                     transcript_text,
-                    rec.recording_id,
+                    record_id,
                     recording_date=recording_date,
                     plaud_context=plaud_context,
                     progress_callback=progress_callback,
                 )
 
             if not output or not output.events:
-                logger.warning(f"No events extracted for {rec.recording_id}")
+                logger.warning(f"No events extracted for {record_id}")
+                failure_reason = self._last_processing_error
+                if not failure_reason:
+                    if provider == "auto":
+                        failure_reason = "No AI provider returned any events"
+                    else:
+                        failure_reason = f"{provider_label} returned no events"
                 xray_log(
-                    "gemini",
+                    "pipeline",
                     "fail",
-                    f"Gemini couldn't find anything meaningful in this recording",
+                    failure_reason,
                     level="warn",
                 )
                 mark_chronos_recording_status(
                     self.db,
-                    rec.recording_id,
+                    record_id,
                     "failed",
-                    error_message="Gemini returned no events",
+                    error_message=failure_reason,
                 )
                 return False
 
@@ -903,25 +1152,13 @@ Extract events from this transcript following the schema exactly."""
                     recording_id=e.recording_id,
                     start_ts=e.start_ts,
                     end_ts=e.end_ts,
-                    day_of_week=(
-                        e.day_of_week.value
-                        if hasattr(e.day_of_week, "value")
-                        else str(e.day_of_week)
-                    ),
+                    day_of_week=str(getattr(e.day_of_week, "value", e.day_of_week)),
                     hour_of_day=e.hour_of_day,
                     clean_text=e.clean_text,
-                    category=(
-                        e.category.value
-                        if hasattr(e.category, "value")
-                        else str(e.category)
-                    ),
+                    category=str(getattr(e.category, "value", e.category)),
                     sentiment=e.sentiment,
                     keywords=e.keywords,
-                    speaker=(
-                        e.speaker.value
-                        if hasattr(e.speaker, "value")
-                        else str(e.speaker)
-                    ),
+                    speaker=str(getattr(e.speaker, "value", e.speaker)),
                     raw_transcript_snippet=e.raw_transcript_snippet,
                     gemini_reasoning=e.gemini_reasoning,
                 )
@@ -936,7 +1173,7 @@ Extract events from this transcript following the schema exactly."""
 
             # Update status
             mark_chronos_recording_status(
-                self.db, rec.recording_id, "completed", error_message=None
+                self.db, record_id, "completed", error_message=None
             )
             self._emit_progress(
                 progress_callback,
@@ -946,26 +1183,26 @@ Extract events from this transcript following the schema exactly."""
 
             _proc_ms = (_time.perf_counter() - _proc_t0) * 1000
             xray_log(
-                "gemini",
+                "pipeline",
                 "done",
-                f"Done! Found {len(output.events)} moments in this recording",
+                f"Done with {provider_label}! Found {len(output.events)} moments in this recording",
                 duration_ms=round(_proc_ms, 1),
             )
 
-            logger.info(f"✓ Processed {rec.recording_id}: {len(output.events)} events")
+            logger.info(f"✓ Processed {record_id}: {len(output.events)} events")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to process {rec.recording_id}: {e}")
+            logger.error(f"Failed to process {recording_id}: {e}")
             xray_log(
-                "gemini",
+                "pipeline",
                 "error",
                 f"This recording crashed the processor: {str(e)[:60]}",
                 level="error",
             )
             mark_chronos_recording_status(
                 self.db,
-                rec.recording_id,
+                str(recording_id),
                 "failed",
                 error_message=str(e),
             )

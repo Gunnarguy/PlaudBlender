@@ -11,7 +11,7 @@ from app_v2.components import create_search_results
 logger = logging.getLogger(__name__)
 
 
-def _build_ai_answer_section(question: str, results) -> html.Div:
+def _build_ai_answer_section(question: str, results) -> html.Div | None:
     """Try OpenAI Responses API for a conversational answer. Returns Div or None."""
     from src.config import get_settings
 
@@ -56,7 +56,7 @@ def _build_ai_answer_section(question: str, results) -> html.Div:
                     className="ai-answer-header",
                     children=[
                         html.Span("🧠", className="ai-icon"),
-                        html.Span("Chronos AI", className="ai-label"),
+                        html.Span("Chronos AI · OpenAI", className="ai-label"),
                         html.Span(
                             f"{model} · {latency_ms}ms · {usage.get('total_tokens', '?')} tokens",
                             className="ai-meta",

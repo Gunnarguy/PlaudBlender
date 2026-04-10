@@ -90,15 +90,28 @@ async def plaud_refresh():
 async def notion_status():
     """Check Notion authentication status."""
     from src.notion_oauth import NotionOAuthClient
+    from src.config import get_settings
 
     client = NotionOAuthClient()
     ts = client.token_status
+    settings = get_settings()
+    integration_token_present = bool(getattr(settings, "notion_token", None))
+
+    is_authenticated = ts.get("is_authenticated", False) or integration_token_present
+    has_access_token = bool(client.access_token) or integration_token_present
+    auth_mode = (
+        "oauth"
+        if bool(client.access_token)
+        else ("integration_token" if integration_token_present else "none")
+    )
+
     return TokenStatusOut(
-        is_authenticated=ts.get("is_authenticated", False),
-        has_access_token=bool(client.access_token),
+        is_authenticated=is_authenticated,
+        has_access_token=has_access_token,
         extra={
             "workspace_name": ts.get("workspace_name"),
             "workspace_id": ts.get("workspace_id"),
+            "auth_mode": auth_mode,
         },
     )
 

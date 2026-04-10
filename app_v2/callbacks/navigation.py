@@ -1168,15 +1168,13 @@ def _check_services(settings):
         checks["gemini"] = (False, str(e)[:80])
 
     # OpenAI
-    openai_ok = bool(settings.openai_api_key)
-    checks["openai"] = (
-        openai_ok,
-        (
-            f"API key set — {settings.openai_model}"
-            if openai_ok
-            else "OPENAI_API_KEY not set"
-        ),
-    )
+    try:
+        from src.chronos.openai_service import OpenAIResponseService
+
+        openai_ok, openai_detail = OpenAIResponseService().check_connection()
+        checks["openai"] = (openai_ok, openai_detail)
+    except Exception as e:
+        checks["openai"] = (False, str(e)[:80])
 
     # SQLite
     try:
@@ -1399,12 +1397,44 @@ def create_settings_view(preferences=None) -> html.Div:
             html.P(
                 "Model selection for each processing stage. "
                 "Change via .env or the controls below. "
-                "Prices: input/output per 1M tokens.",
+                "Prices: input/output per 1M tokens. "
+                "Processing Provider controls transcript cleanup/event extraction. "
+                "OpenAI below is used for Search/Ask responses and for transcript extraction whenever Processing Provider includes OpenAI. Embeddings still use the Gemini settings above.",
                 className="setting-note",
             ),
             html.Div(
                 className="settings-grid",
                 children=[
+                    html.Div(
+                        className="setting-control-row",
+                        children=[
+                            html.Label("Processing Provider"),
+                            dcc.Dropdown(
+                                id="setting-processing-provider",
+                                options=[
+                                    {
+                                        "label": "auto (Gemini first, OpenAI fallback)",
+                                        "value": "auto",
+                                    },
+                                    {
+                                        "label": "gemini",
+                                        "value": "gemini",
+                                    },
+                                    {
+                                        "label": "openai",
+                                        "value": "openai",
+                                    },
+                                ],
+                                value=settings.chronos_processing_provider,
+                                clearable=False,
+                                className="settings-dropdown",
+                            ),
+                            html.Span(
+                                "Controls transcript cleanup/event extraction only. Embeddings still use the Gemini embedding model below.",
+                                className="param-note",
+                            ),
+                        ],
+                    ),
                     # Cleaning model
                     html.Div(
                         className="setting-control-row",
@@ -1564,7 +1594,7 @@ def create_settings_view(preferences=None) -> html.Div:
                                 className="settings-dropdown",
                             ),
                             html.Span(
-                                "Used for RAG responses (Responses API)",
+                                "Used for Search/Ask RAG responses and for transcript extraction when Processing Provider is openai or auto fallback.",
                                 className="param-note",
                             ),
                         ],
@@ -2334,6 +2364,7 @@ def register_navigation_callbacks(app):
     @app.callback(
         Output("env-save-status", "children"),
         Input("save-env-btn", "n_clicks"),
+        State("setting-processing-provider", "value"),
         State("setting-cleaning-model", "value"),
         State("setting-analyst-model", "value"),
         State("setting-embedding-model", "value"),
@@ -2351,6 +2382,7 @@ def register_navigation_callbacks(app):
     )
     def save_env_settings(
         n_clicks,
+        processing_provider,
         cleaning_model,
         analyst_model,
         embedding_model,
@@ -2396,6 +2428,7 @@ def register_navigation_callbacks(app):
 
         # Map of env var name → new value
         updates = {
+            "CHRONOS_PROCESSING_PROVIDER": processing_provider,
             "CHRONOS_CLEANING_MODEL": cleaning_model,
             "CHRONOS_ANALYST_MODEL": analyst_model,
             "CHRONOS_EMBEDDING_MODEL": embedding_model,

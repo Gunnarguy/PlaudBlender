@@ -91,6 +91,14 @@ class Settings:
         "CHRONOS_ANALYST_MODEL",
         "gemini-3.1-pro-preview",
     )
+    chronos_processing_provider: str = (
+        os.getenv(
+            "CHRONOS_PROCESSING_PROVIDER",
+            "auto",
+        )
+        .strip()
+        .lower()
+    )
     gemini_billing_tier: str = os.getenv("GEMINI_BILLING_TIER", "paid").strip().lower()
     chronos_allow_paid_gemini_fallback: bool = (
         os.getenv("CHRONOS_ALLOW_PAID_GEMINI_FALLBACK", "0") == "1"

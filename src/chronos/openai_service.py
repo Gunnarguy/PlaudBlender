@@ -9,6 +9,7 @@ import logging
 from typing import Any, List, Optional
 
 from src.config import get_settings, normalize_openai_model_name
+from src.models.chronos_schemas import GeminiEventOutput
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,108 @@ class OpenAIResponseService:
 
             self._client = OpenAI(api_key=self._api_key)
         return self._client
+
+    def extract_events(
+        self,
+        prompt: str,
+        *,
+        recording_id: str,
+        system_prompt: Optional[str] = None,
+    ) -> dict:
+        """Extract Chronos events from a transcript using structured OpenAI output."""
+        if not self.available:
+            return {"error": "OPENAI_API_KEY not configured"}
+
+        instructions = system_prompt or (
+            "You are Chronos, an event extraction engine. "
+            "Read the transcript and return only structured Chronos events that satisfy the provided schema. "
+            "Do not summarize away concrete details. Preserve exact meaning, names, and technical terminology."
+        )
+
+        try:
+            from app_v2.services.xray import xray_log
+        except ImportError:
+            xray_log = None
+
+        try:
+            import time as _time
+
+            _t0 = _time.perf_counter()
+
+            if xray_log:
+                xray_log(
+                    "pipeline",
+                    "openai",
+                    f"Sending transcript to OpenAI ({len(prompt.split()):,} words)",
+                )
+
+            client = self._get_client()
+            kwargs: dict[str, Any] = {
+                "model": self._model,
+                "instructions": instructions,
+                "input": prompt,
+                "text_format": GeminiEventOutput,
+                "max_output_tokens": 32768,
+            }
+
+            # GPT-5.4 family accepts temperature when reasoning is omitted.
+            kwargs["temperature"] = self._temperature
+
+            response = client.responses.parse(**kwargs)
+            _elapsed = (_time.perf_counter() - _t0) * 1000
+            usage = getattr(response, "usage", None)
+            input_tokens = getattr(usage, "input_tokens", 0)
+            output_tokens = getattr(usage, "output_tokens", 0)
+            total_tokens = getattr(usage, "total_tokens", input_tokens + output_tokens)
+
+            parsed = response.output_parsed
+            if parsed is None:
+                raw_text = getattr(response, "output_text", "") or ""
+                if not raw_text.strip():
+                    return {"error": "OpenAI returned no structured output"}
+                parsed = GeminiEventOutput.model_validate_json(raw_text)
+
+            from src.chronos.cost_tracker import track_usage
+
+            track_usage(
+                response.model,
+                "generate",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                recording_id=recording_id,
+            )
+
+            if xray_log:
+                xray_log(
+                    "pipeline",
+                    "openai",
+                    f"OpenAI extracted {parsed.total_events} events",
+                    duration_ms=round(_elapsed, 1),
+                    detail=(
+                        f"model={response.model} in={input_tokens} "
+                        f"out={output_tokens}"
+                    ),
+                )
+
+            return {
+                "output": parsed,
+                "model": response.model,
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens,
+                },
+            }
+        except Exception as e:
+            logger.exception("OpenAI transcript extraction failed")
+            if xray_log:
+                xray_log(
+                    "pipeline",
+                    "openai",
+                    f"OpenAI extraction error: {str(e)[:100]}",
+                    level="error",
+                )
+            return {"error": str(e)}
 
     def ask(
         self,

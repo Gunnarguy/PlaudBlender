@@ -277,6 +277,7 @@ class ChronosDataService:
         """Initialize the data service."""
         self._qdrant = None
         self._embedder = None
+        self._service_init_lock = threading.Lock()
         self._events_cache: List[Event] = []
         self._last_cache_time: Optional[datetime] = None
         self._cache_ttl_seconds = 60  # Refresh cache every minute
@@ -306,6 +307,31 @@ class ChronosDataService:
 
         except Exception as e:
             logger.error(f"Service init error: {e}")
+
+    def _ensure_backend_services(
+        self,
+        *,
+        require_qdrant: bool = False,
+        require_embedder: bool = False,
+    ) -> None:
+        """Retry backend initialization when startup raced a dependency.
+
+        The Dash app holds a singleton data service for its entire lifetime.
+        If Qdrant or Gemini is unavailable during that singleton's initial
+        construction, the UI can otherwise stay stuck with missing backends
+        until the whole process is restarted.
+        """
+        needs_qdrant = require_qdrant and self._qdrant is None
+        needs_embedder = require_embedder and self._embedder is None
+        if not (needs_qdrant or needs_embedder):
+            return
+
+        with self._service_init_lock:
+            needs_qdrant = require_qdrant and self._qdrant is None
+            needs_embedder = require_embedder and self._embedder is None
+            if not (needs_qdrant or needs_embedder):
+                return
+            self._init_services()
 
     def _normalize_notion_event_times(self, events: List[Event]) -> List[Event]:
         """Re-anchor Notion event times to the recording's actual local window.
@@ -413,6 +439,8 @@ class ChronosDataService:
         from app_v2.services.xray import xray_log
         import time as _time
         now = datetime.now()
+
+        self._ensure_backend_services(require_qdrant=True)
 
         # Check cache validity (read outside lock for fast path)
         if (
@@ -1372,6 +1400,8 @@ class ChronosDataService:
         Returns:
             List of SearchResult with scores
         """
+        self._ensure_backend_services(require_qdrant=True, require_embedder=True)
+
         if not self._qdrant or not self._embedder or not query.strip():
             return self._text_search(query, limit)
 

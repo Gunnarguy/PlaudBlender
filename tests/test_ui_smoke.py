@@ -7,6 +7,7 @@ Covers Dash v2 app (app_v2/) and core src packages.
 import pytest
 import sys
 import os
+import threading
 
 # Ensure project root is on path
 ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -64,6 +65,30 @@ class TestDashApp:
         from app_v2.services.data_service import ChronosDataService
 
         assert ChronosDataService is not None
+
+    def test_data_service_retries_backend_init(self, monkeypatch):
+        """Verify the singleton data service can recover if Qdrant was down at startup."""
+        from app_v2.services.data_service import ChronosDataService
+
+        service = ChronosDataService.__new__(ChronosDataService)
+        service._qdrant = None
+        service._embedder = None
+        service._service_init_lock = threading.Lock()
+
+        calls = {"count": 0}
+
+        def fake_init_services():
+            calls["count"] += 1
+            service.__dict__["_qdrant"] = object()
+            service.__dict__["_embedder"] = object()
+
+        monkeypatch.setattr(service, "_init_services", fake_init_services)
+
+        service._ensure_backend_services(require_qdrant=True, require_embedder=True)
+
+        assert calls["count"] == 1
+        assert service._qdrant is not None
+        assert service._embedder is not None
 
 
 # ===========================================================================
