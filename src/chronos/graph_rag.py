@@ -298,7 +298,7 @@ Return ONLY the JSON object, no other text."""
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
-                    max_tokens=4096,
+                    max_completion_tokens=4096,
                 )
                 return _CompletionResult(response.choices[0].message.content or "")
 
@@ -1092,7 +1092,7 @@ Respond in JSON:
                 model=model_name,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=2048,
+                max_completion_tokens=2048,
             )
             # Track cost
             _usage = response.usage
