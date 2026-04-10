@@ -91,18 +91,28 @@ async def notion_status():
     """Check Notion authentication status."""
     from src.notion_oauth import NotionOAuthClient
     from src.config import get_settings
+    from notion_client import Client
 
     client = NotionOAuthClient()
     ts = client.token_status
     settings = get_settings()
-    integration_token_present = bool(getattr(settings, "notion_token", None))
+    integration_token = (getattr(settings, "notion_token", None) or "").strip()
+    integration_token_valid = False
 
-    is_authenticated = ts.get("is_authenticated", False) or integration_token_present
-    has_access_token = bool(client.access_token) or integration_token_present
+    if integration_token:
+        try:
+            integration_client = Client(auth=integration_token, timeout_ms=5_000)
+            integration_client.users.me()
+            integration_token_valid = True
+        except Exception:
+            integration_token_valid = False
+
+    is_authenticated = ts.get("is_authenticated", False) or integration_token_valid
+    has_access_token = bool(client.access_token) or integration_token_valid
     auth_mode = (
         "oauth"
         if bool(client.access_token)
-        else ("integration_token" if integration_token_present else "none")
+        else ("integration_token" if integration_token_valid else "none")
     )
 
     return TokenStatusOut(

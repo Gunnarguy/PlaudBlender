@@ -14,8 +14,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dotenv import load_dotenv
 
 
-# Load .env once at import time
-load_dotenv()
+# Load .env once at import time, override stale shell env vars
+load_dotenv(override=True)
 
 
 _OPENAI_MODEL_ALIASES = {

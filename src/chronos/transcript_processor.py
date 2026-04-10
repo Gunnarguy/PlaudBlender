@@ -33,6 +33,7 @@ from src.chronos.openai_service import OpenAIResponseService
 from src.chronos.genai_helpers import (
     is_model_not_found,
     is_model_temporarily_unavailable,
+    is_permission_denied,
     normalize_thinking_level,
 )
 
@@ -812,6 +813,23 @@ Extract events from this transcript following the schema exactly."""
                 return None
 
             except Exception as e:
+                # 403 PERMISSION_DENIED = project banned; bail immediately
+                if is_permission_denied(e):
+                    if verbose:
+                        print(
+                            f"      ❌ Error: {str(e)[:80]}",
+                            flush=True,
+                        )
+                    xray_log(
+                        "gemini",
+                        "error",
+                        "Gemini project access denied (403) — no point retrying",
+                        level="error",
+                    )
+                    logger.error("Gemini 403 PERMISSION_DENIED — aborting retries: %s", e)
+                    self._last_processing_error = str(e)
+                    return None
+
                 failover_model = engine.pick_failover_model(e)
                 if failover_model:
                     previous_model = engine.model_name

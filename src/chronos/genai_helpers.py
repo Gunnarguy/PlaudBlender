@@ -118,6 +118,14 @@ def is_model_not_found(err: Exception) -> bool:
     return "model" in msg and ("not found" in msg or "does not exist" in msg)
 
 
+def is_permission_denied(err: Exception) -> bool:
+    """Check for 403 PERMISSION_DENIED — project banned or access revoked."""
+    if isinstance(err, errors.APIError) and err.code == 403:
+        return True
+    msg = str(err).lower()
+    return "permission_denied" in msg or "project has been denied" in msg
+
+
 def is_model_temporarily_unavailable(err: Exception) -> bool:
     """Best-effort check for a transient Gemini availability error."""
     if isinstance(err, errors.APIError) and err.code in (429, 503):
