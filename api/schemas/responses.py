@@ -219,6 +219,56 @@ class CategoryOverrideRequest(BaseModel):
     category: str
 
 
+# ── Server Settings ────────────────────────────────────────
+
+
+class ServerSettingsFlagsOut(BaseModel):
+    has_gemini_api_key: bool = False
+    has_openai_api_key: bool = False
+    has_qdrant_api_key: bool = False
+    has_notion_token: bool = False
+    has_notion_oauth: bool = False
+
+
+class ServerSettingsOut(BaseModel):
+    processing_provider: str = "auto"
+    cleaning_model: str = ""
+    analyst_model: str = ""
+    embedding_model: str = ""
+    openai_model: str = ""
+    thinking_level: str = "high"
+    openai_temperature: float = 0.7
+    embedding_dim: int = 768
+    plaud_language: str = "en"
+    plaud_diarization: bool = True
+    log_level: str = "INFO"
+    custom_categories: str = ""
+    notion_weekday_start: str = "07:30"
+    notion_weekend_start: str = "12:00"
+    qdrant_url: str = ""
+    qdrant_collection_name: str = ""
+    flags: ServerSettingsFlagsOut = Field(default_factory=ServerSettingsFlagsOut)
+
+
+class ServerSettingsUpdateRequest(BaseModel):
+    processing_provider: Optional[str] = None
+    cleaning_model: Optional[str] = None
+    analyst_model: Optional[str] = None
+    embedding_model: Optional[str] = None
+    openai_model: Optional[str] = None
+    thinking_level: Optional[str] = None
+    openai_temperature: Optional[float] = None
+    embedding_dim: Optional[int] = None
+    plaud_language: Optional[str] = None
+    plaud_diarization: Optional[bool] = None
+    log_level: Optional[str] = None
+    custom_categories: Optional[str] = None
+    notion_weekday_start: Optional[str] = None
+    notion_weekend_start: Optional[str] = None
+    qdrant_url: Optional[str] = None
+    qdrant_collection_name: Optional[str] = None
+
+
 # ── Costs ───────────────────────────────────────────────────
 
 

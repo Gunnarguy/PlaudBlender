@@ -60,6 +60,7 @@ from api.routes.notion import router as notion_router  # noqa: E402
 from api.routes.xray import router as xray_router  # noqa: E402
 from api.routes.costs import router as costs_router  # noqa: E402
 from api.routes.auth import router as auth_router  # noqa: E402
+from api.routes.settings import router as settings_router  # noqa: E402
 
 app.include_router(health_router)
 app.include_router(timeline_router)
@@ -73,3 +74,4 @@ app.include_router(notion_router)
 app.include_router(xray_router)
 app.include_router(costs_router)
 app.include_router(auth_router)
+app.include_router(settings_router)
