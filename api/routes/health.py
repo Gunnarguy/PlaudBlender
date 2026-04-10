@@ -1,11 +1,22 @@
 """Health / connectivity check endpoints."""
 
+from urllib.parse import urlparse, urlunparse
+
 from fastapi import APIRouter, Depends
 
 from api.schemas.responses import HealthResponse, SystemStatusOut
 from src.config import Settings
 
 router = APIRouter(prefix="/api/v1", tags=["health"])
+
+
+def _qdrant_candidate_urls(url: str) -> list[str]:
+    candidates = [url]
+    parsed = urlparse(url)
+    if parsed.hostname == "localhost":
+        netloc = f"127.0.0.1:{parsed.port}" if parsed.port else "127.0.0.1"
+        candidates.append(urlunparse(parsed._replace(netloc=netloc)))
+    return candidates
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -36,13 +47,21 @@ async def system_status():
     try:
         from qdrant_client import QdrantClient as QC
 
-        qc = QC(url=settings.qdrant_url, timeout=3)
-        collections = qc.get_collections()
-        result["qdrant"] = {
-            "ok": True,
-            "url": settings.qdrant_url,
-            "collections": len(collections.collections),
-        }
+        last_error = None
+        for candidate_url in _qdrant_candidate_urls(settings.qdrant_url):
+            try:
+                qc = QC(url=candidate_url, timeout=3)
+                collections = qc.get_collections()
+                result["qdrant"] = {
+                    "ok": True,
+                    "url": settings.qdrant_url,
+                    "collections": len(collections.collections),
+                }
+                break
+            except Exception as e:  # pragma: no cover - defensive fallback
+                last_error = e
+        else:
+            raise last_error or RuntimeError("Unknown Qdrant connection failure")
     except Exception as e:
         result["qdrant"] = {"ok": False, "error": str(e)}
 
