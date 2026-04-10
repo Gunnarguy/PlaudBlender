@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.database import SessionLocal
 from src.config import get_local_timezone
 from src.database.models import (
+    ChronosEvent as _ChronosEventModel,
     ChronosRecording as _ChronosRecordingModel,
     Recording as _RecordingModel,
 )
@@ -107,6 +108,45 @@ class Event:
             duration_capped=was_capped,
         )
 
+    @classmethod
+    def from_sqlite(cls, row: Any) -> "Event":
+        """Create Event from a persisted ChronosEvent row.
+
+        SQLite is the source-of-truth for processed events. When Qdrant
+        indexing fails, these rows still exist and should remain visible in
+        the UI even though semantic search/index-backed views are degraded.
+        """
+        start_dt = row.start_ts or datetime.now()
+        end_dt = row.end_ts or start_dt
+
+        MAX_EVENT_DURATION = 4 * 3600  # 4 hours
+        was_capped = (end_dt - start_dt).total_seconds() > MAX_EVENT_DURATION
+        if was_capped:
+            end_dt = start_dt + timedelta(seconds=MAX_EVENT_DURATION)
+
+        keywords = row.keywords if isinstance(row.keywords, list) else []
+        category = row.user_category_override or row.category or "unknown"
+        point_id = row.qdrant_point_id or row.event_id
+
+        return cls(
+            id=str(point_id),
+            recording_id=str(row.recording_id),
+            start_ts=start_dt,
+            end_ts=end_dt,
+            clean_text=row.clean_text or "",
+            category=str(category),
+            sentiment=float(row.sentiment or 0.0),
+            keywords=[str(keyword) for keyword in keywords],
+            speaker=str(row.speaker or "unknown"),
+            duration_seconds=max((end_dt - start_dt).total_seconds(), 0.0),
+            day_of_week=str(row.day_of_week or start_dt.strftime("%A")),
+            hour_of_day=int(
+                row.hour_of_day if row.hour_of_day is not None else start_dt.hour
+            ),
+            category_confidence=row.category_confidence,
+            duration_capped=was_capped,
+        )
+
 
 @dataclass
 class RecordingSummary:
@@ -128,6 +168,9 @@ class RecordingSummary:
     time_is_estimated: bool = False
     time_estimate_reason: str = ""
     processing_status: str = "completed"  # pending | processing | completed | failed
+    title: Optional[str] = None
+    plaud_ai_summary: Optional[str] = None
+    cloud_status: Optional[str] = None
 
     @property
     def duration_formatted(self) -> str:
@@ -498,6 +541,17 @@ class ChronosDataService:
                         break
 
                 events = self._normalize_notion_event_times(events)
+                sqlite_backfill = self._get_sqlite_backfill_events(
+                    {event.recording_id for event in events}
+                )
+                if sqlite_backfill:
+                    events.extend(sqlite_backfill)
+                    xray_log(
+                        "data",
+                        "sqlite-backfill",
+                        f"Recovered {len(sqlite_backfill):,} moments from SQLite after index failures",
+                        level="warn",
+                    )
 
                 # Sort by timestamp
                 events.sort(key=lambda e: e.start_ts)
@@ -515,7 +569,48 @@ class ChronosDataService:
 
             except Exception as e:
                 logger.error(f"Error fetching events: {e}")
+                fallback_events = self._get_sqlite_backfill_events(set())
+                if fallback_events:
+                    fallback_events.sort(key=lambda event: event.start_ts)
+                    self._events_cache = fallback_events
+                    self._last_cache_time = datetime.now()
+                    xray_log(
+                        "data",
+                        "sqlite-fallback",
+                        f"Qdrant is unavailable — using {len(fallback_events):,} SQLite moments",
+                        level="warn",
+                    )
+                    return fallback_events
                 return self._events_cache or []
+
+    def _get_sqlite_backfill_events(self, exclude_recording_ids: set[str]) -> List[Event]:
+        """Load completed SQLite events for recordings missing from Qdrant.
+
+        This keeps the timeline/detail views functional when transcript
+        processing succeeded but embedding/indexing failed.
+        """
+        db = SessionLocal()
+        try:
+            query = (
+                db.query(_ChronosEventModel)
+                .join(
+                    _ChronosRecordingModel,
+                    _ChronosRecordingModel.recording_id == _ChronosEventModel.recording_id,
+                )
+                .filter(_ChronosRecordingModel.processing_status == "completed")
+            )
+            if exclude_recording_ids:
+                query = query.filter(
+                    ~_ChronosEventModel.recording_id.in_(list(exclude_recording_ids))
+                )
+
+            rows = query.order_by(_ChronosEventModel.start_ts).all()
+            return [Event.from_sqlite(row) for row in rows]
+        except Exception as exc:
+            logger.warning(f"SQLite backfill lookup failed: {exc}")
+            return []
+        finally:
+            db.close()
 
     def _aggregate_by_recording(
         self, events: List[Event]
@@ -633,9 +728,79 @@ class ChronosDataService:
                     if db_rec
                     else ""
                 ),
+                processing_status=(
+                    str(getattr(db_rec, "processing_status", "completed") or "completed")
+                    if db_rec
+                    else "completed"
+                ),
+                title=(
+                    str(getattr(db_rec, "title", "") or "").strip() or None
+                    if db_rec
+                    else None
+                ),
+                plaud_ai_summary=(
+                    str(getattr(db_rec, "plaud_ai_summary", "") or "").strip() or None
+                    if db_rec
+                    else None
+                ),
+                cloud_status=(self._cloud_status_for_source(str(getattr(db_rec, "source", "") or "")) if db_rec else None),
             )
 
         return summaries
+
+    def _cloud_status_for_source(self, source: str) -> Optional[str]:
+        """Map recording provenance onto the compact UI cloud badge states."""
+        normalized = (source or "").strip().lower()
+        if normalized in {"plaud", "plaud_cloud", "notion"}:
+            return "cloud"
+        if normalized in {"usb", "usb_import", "local"}:
+            return "local"
+        return None
+
+    def _recording_summary_from_db_row(self, rec) -> Optional[RecordingSummary]:
+        """Build a timeline/detail summary from SQLite when Qdrant events are unavailable."""
+        utc_dt = getattr(rec, "created_at", None)
+        if not utc_dt:
+            return None
+
+        try:
+            utc_aware = utc_dt.replace(tzinfo=timezone.utc)
+            local_dt = utc_aware.astimezone(_LOCAL_TZ)
+            start_time = local_dt.replace(tzinfo=None)
+        except Exception:
+            start_time = (
+                utc_dt
+                if isinstance(utc_dt, datetime)
+                else datetime.now(timezone.utc).replace(tzinfo=None)
+            )
+
+        duration = float(getattr(rec, "duration_seconds", 0) or 0)
+        end_time = start_time + timedelta(seconds=duration)
+        title = str(getattr(rec, "title", "") or "").strip() or None
+        plaud_ai_summary = str(getattr(rec, "plaud_ai_summary", "") or "").strip() or None
+        source = str(getattr(rec, "source", "plaud") or "plaud")
+
+        return RecordingSummary(
+            recording_id=str(rec.recording_id),
+            start_time=start_time,
+            end_time=end_time,
+            duration_seconds=duration,
+            event_count=0,
+            categories={},
+            keywords=[],
+            avg_sentiment=0.0,
+            source=source,
+            has_plaud_ai=bool(plaud_ai_summary),
+            preview_text="",
+            event_previews=[],
+            sentiment_arc=[],
+            time_is_estimated=bool(getattr(rec, "time_is_estimated", False)),
+            time_estimate_reason=str(getattr(rec, "time_estimate_reason", "") or ""),
+            processing_status=str(getattr(rec, "processing_status", "pending") or "pending"),
+            title=title,
+            plaud_ai_summary=plaud_ai_summary,
+            cloud_status=self._cloud_status_for_source(source),
+        )
 
     # ═══════════════════════════════════════════════════════════════════════════
     # PUBLIC API - Day Views
@@ -705,57 +870,33 @@ class ChronosDataService:
         if events:
             recording_summaries = self._aggregate_by_recording(events)
 
-        # Also load pending/processing recordings from SQLite so they appear
-        # in the timeline even before Gemini has extracted events.
+        # Also load SQLite recordings that are missing from Qdrant so they still
+        # appear in the timeline when indexing/embedding fails.
         try:
             db = SessionLocal()
             try:
-                pending_rows = (
-                    db.query(_ChronosRecordingModel)
-                    .filter(
-                        _ChronosRecordingModel.processing_status.in_(["pending", "processing"])
-                    )
-                    .all()
-                )
-                for rec in pending_rows:
+                sqlite_rows = db.query(_ChronosRecordingModel).all()
+                for rec in sqlite_rows:
                     rid = str(rec.recording_id)
                     if rid in recording_summaries:
-                        # Already represented via Qdrant events — just tag status
-                        recording_summaries[rid].processing_status = str(rec.processing_status)
+                        summary = recording_summaries[rid]
+                        summary.processing_status = str(rec.processing_status)
+                        summary.title = str(getattr(rec, "title", "") or "").strip() or summary.title
+                        summary.plaud_ai_summary = (
+                            str(getattr(rec, "plaud_ai_summary", "") or "").strip()
+                            or summary.plaud_ai_summary
+                        )
+                        summary.cloud_status = summary.cloud_status or self._cloud_status_for_source(
+                            str(getattr(rec, "source", "") or "")
+                        )
                         continue
-                    utc_dt = getattr(rec, "created_at", None)
-                    if not utc_dt:
-                        continue
-                    try:
-                        utc_aware = utc_dt.replace(tzinfo=timezone.utc)
-                        local_dt = utc_aware.astimezone(_LOCAL_TZ)
-                        start_time = local_dt.replace(tzinfo=None)
-                    except Exception:
-                        start_time = utc_dt if isinstance(utc_dt, datetime) else datetime.now(timezone.utc).replace(tzinfo=None)
-                    duration = float(rec.duration_seconds or 0)
-                    end_time = start_time + timedelta(seconds=duration)
-                    recording_summaries[rid] = RecordingSummary(
-                        recording_id=rid,
-                        start_time=start_time,
-                        end_time=end_time,
-                        duration_seconds=duration,
-                        event_count=0,
-                        categories={},
-                        keywords=[],
-                        avg_sentiment=0.0,
-                        source=str(rec.source or "plaud"),
-                        has_plaud_ai=bool(getattr(rec, "plaud_ai_summary", None)),
-                        preview_text="",
-                        event_previews=[],
-                        sentiment_arc=[],
-                        time_is_estimated=bool(getattr(rec, "time_is_estimated", False)),
-                        time_estimate_reason=str(getattr(rec, "time_estimate_reason", "") or ""),
-                        processing_status=str(rec.processing_status),
-                    )
+                    fallback_summary = self._recording_summary_from_db_row(rec)
+                    if fallback_summary is not None:
+                        recording_summaries[rid] = fallback_summary
             finally:
                 db.close()
         except Exception as e:
-            logger.warning(f"Could not load pending recordings for timeline: {e}")
+            logger.warning(f"Could not load SQLite fallback recordings for timeline: {e}")
 
         if not recording_summaries:
             return []
@@ -964,7 +1105,21 @@ class ChronosDataService:
         # Filter events for this recording
         rec_events = [e for e in events if e.recording_id == recording_id]
         if not rec_events:
-            return None
+            db = SessionLocal()
+            try:
+                rec = (
+                    db.query(_ChronosRecordingModel)
+                    .filter(_ChronosRecordingModel.recording_id == recording_id)
+                    .first()
+                )
+                if rec is None:
+                    return None
+                summary = self._recording_summary_from_db_row(rec)
+                if summary is None:
+                    return None
+                return RecordingDetail(summary=summary, events=[])
+            finally:
+                db.close()
 
         # Apply user category overrides from SQLite
         overrides = self.get_category_overrides(recording_id)
@@ -2469,7 +2624,6 @@ class ChronosDataService:
         Finds the ChronosEvent by its qdrant_point_id and sets user_category_override.
         """
         try:
-            from src.database.engine import SessionLocal
             from src.database.models import ChronosEvent
 
             db = SessionLocal()
@@ -2479,6 +2633,12 @@ class ChronosDataService:
                     .filter_by(qdrant_point_id=event_qdrant_id)
                     .first()
                 )
+                if not evt:
+                    evt = (
+                        db.query(ChronosEvent)
+                        .filter_by(event_id=event_qdrant_id)
+                        .first()
+                    )
                 if evt:
                     setattr(evt, "user_category_override", new_category)
                     db.commit()
@@ -2608,16 +2768,16 @@ class ChronosDataService:
         """Get all user category overrides for events in a recording.
 
         Returns:
-            Dict mapping qdrant_point_id → user_category_override
+            Dict mapping qdrant_point_id/event_id → user_category_override
         """
         try:
-            from src.database.engine import SessionLocal
             from src.database.models import ChronosEvent
 
             db = SessionLocal()
             try:
                 events = (
                     db.query(
+                        ChronosEvent.event_id,
                         ChronosEvent.qdrant_point_id,
                         ChronosEvent.user_category_override,
                     )
@@ -2627,7 +2787,15 @@ class ChronosDataService:
                     )
                     .all()
                 )
-                return {str(e[0]): str(e[1]) for e in events if e[0]}
+                overrides: Dict[str, str] = {}
+                for event_id, qdrant_point_id, override in events:
+                    if not override:
+                        continue
+                    if qdrant_point_id:
+                        overrides[str(qdrant_point_id)] = str(override)
+                    if event_id:
+                        overrides[str(event_id)] = str(override)
+                return overrides
             finally:
                 db.close()
         except Exception as e:
