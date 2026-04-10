@@ -8,10 +8,28 @@ import json
 import logging
 from typing import Any, List, Optional
 
+from pydantic import BaseModel, Field
+
 from src.config import get_settings, normalize_openai_model_name
-from src.models.chronos_schemas import GeminiEventOutput
+from src.models.chronos_schemas import ChronosEvent, GeminiEventOutput
 
 logger = logging.getLogger(__name__)
+
+
+class _OpenAIEventOutput(BaseModel):
+    """OpenAI-compatible subset of GeminiEventOutput.
+
+    Drops ``processing_metadata`` (Optional[dict]) which produces
+    a bare ``object`` JSON-Schema type that OpenAI rejects because
+    it requires ``additionalProperties: false`` on every object.
+    """
+
+    events: List[ChronosEvent] = Field(
+        ..., description="Array of reconstructed events"
+    )
+    total_events: int = Field(
+        0, ge=0, description="Total events extracted"
+    )
 
 
 class OpenAIResponseService:
@@ -74,7 +92,7 @@ class OpenAIResponseService:
                 "model": self._model,
                 "instructions": instructions,
                 "input": prompt,
-                "text_format": GeminiEventOutput,
+                "text_format": _OpenAIEventOutput,
                 "max_output_tokens": 32768,
             }
 
@@ -93,7 +111,14 @@ class OpenAIResponseService:
                 raw_text = getattr(response, "output_text", "") or ""
                 if not raw_text.strip():
                     return {"error": "OpenAI returned no structured output"}
-                parsed = GeminiEventOutput.model_validate_json(raw_text)
+                parsed = _OpenAIEventOutput.model_validate_json(raw_text)
+
+            # Convert to GeminiEventOutput for downstream compatibility
+            result_output = GeminiEventOutput(
+                events=parsed.events,
+                processing_metadata=None,
+                total_events=parsed.total_events,
+            )
 
             from src.chronos.cost_tracker import track_usage
 
@@ -109,7 +134,7 @@ class OpenAIResponseService:
                 xray_log(
                     "pipeline",
                     "openai",
-                    f"OpenAI extracted {parsed.total_events} events",
+                    f"OpenAI extracted {result_output.total_events} events",
                     duration_ms=round(_elapsed, 1),
                     detail=(
                         f"model={response.model} in={input_tokens} "
@@ -118,7 +143,7 @@ class OpenAIResponseService:
                 )
 
             return {
-                "output": parsed,
+                "output": result_output,
                 "model": response.model,
                 "usage": {
                     "input_tokens": input_tokens,
