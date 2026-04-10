@@ -11,6 +11,9 @@ from api.schemas.responses import (
     PipelineRunResponse,
     RecordingWorkflowRequest,
     SuccessResponse,
+    SyncFailureSummaryOut,
+    UploadProcessRequest,
+    UploadProcessResultOut,
     WorkflowRefreshRequest,
     WorkflowSubmitRequest,
 )
@@ -136,6 +139,12 @@ async def sync_db_stats(svc: ChronosDataService = Depends(get_service)):
     return svc.get_recording_db_stats()
 
 
+@router.get("/failures", response_model=SyncFailureSummaryOut)
+async def sync_failures(svc: ChronosDataService = Depends(get_service)):
+    """Summarize actionable versus archived sync failures."""
+    return svc.get_sync_failure_summary()
+
+
 @router.post("/reset-stuck", response_model=SuccessResponse)
 async def reset_stuck(svc: ChronosDataService = Depends(get_service)):
     """Reset stuck processing recordings back to pending."""
@@ -154,3 +163,28 @@ async def refresh_cache(svc: ChronosDataService = Depends(get_service)):
 async def upload_candidates(svc: ChronosDataService = Depends(get_service)):
     """Recordings eligible for Plaud cloud upload."""
     return svc.get_upload_candidates()
+
+
+@router.post("/upload/process", response_model=UploadProcessResultOut)
+async def upload_and_process_candidates(
+    body: UploadProcessRequest,
+    svc: ChronosDataService = Depends(get_service),
+):
+    """Upload local audio files to Plaud cloud and submit workflows."""
+    file_paths = body.file_paths or [item["path"] for item in svc.get_upload_candidates()]
+    if not file_paths:
+        return UploadProcessResultOut(uploaded_count=0, error_count=0)
+
+    result = svc.upload_and_process_files(
+        file_paths=file_paths,
+        template_id=body.template_id,
+        model=body.model,
+    )
+    uploaded = result.get("uploaded", [])
+    errors = result.get("errors", [])
+    return UploadProcessResultOut(
+        uploaded_count=len(uploaded),
+        error_count=len(errors),
+        uploaded=uploaded,
+        errors=errors,
+    )

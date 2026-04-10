@@ -215,6 +215,57 @@ class RecordingWorkflowRequest(BaseModel):
     model: str = "gemini"
 
 
+class UploadProcessRequest(BaseModel):
+    file_paths: Optional[List[str]] = None
+    template_id: Optional[str] = None
+    model: str = "gemini"
+
+
+class UploadProcessItemOut(BaseModel):
+    path: str
+    file_id: Optional[str] = None
+    workflow_id: Optional[str] = None
+    error: Optional[str] = None
+
+
+class UploadProcessResultOut(BaseModel):
+    uploaded_count: int = 0
+    error_count: int = 0
+    uploaded: List[UploadProcessItemOut] = Field(default_factory=list)
+    errors: List[UploadProcessItemOut] = Field(default_factory=list)
+
+
+class SyncFailureItemOut(BaseModel):
+    recording_id: Optional[str] = None
+    source: Optional[str] = None
+    title: Optional[str] = None
+    error: str = ""
+    reason: Optional[str] = None
+
+
+class SyncFailureSummaryOut(BaseModel):
+    actionable_count: int = 0
+    archived_count: int = 0
+    actionable: List[SyncFailureItemOut] = Field(default_factory=list)
+    archived: List[SyncFailureItemOut] = Field(default_factory=list)
+
+
+class StackControlResponse(BaseModel):
+    action: str
+    status: str
+    message: str = ""
+    output: str = ""
+    public_url: Optional[str] = None
+
+
+class BackupInfoOut(BaseModel):
+    filename: str
+    created_at: str
+    size_bytes: int
+    download_path: str
+    message: str = ""
+
+
 class CategoryOverrideRequest(BaseModel):
     category: str
 
