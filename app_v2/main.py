@@ -353,11 +353,18 @@ def create_app() -> Dash:
 
     # Start auto-sync service in background
     try:
+        from src.plaud_oauth import PlaudOAuthClient
         from src.plaud_auto_sync import get_auto_sync
 
-        auto_sync = get_auto_sync()
-        auto_sync.start()
-        logger.info("Auto-sync service started in background")
+        oauth_client = PlaudOAuthClient()
+        if oauth_client.is_authenticated:
+            auto_sync = get_auto_sync()
+            auto_sync.start()
+            logger.info("Auto-sync service started in background")
+        else:
+            logger.info(
+                "Plaud is not authenticated locally; skipping auto-sync startup"
+            )
     except Exception as e:
         logger.warning(f"Could not start auto-sync: {e}")
 

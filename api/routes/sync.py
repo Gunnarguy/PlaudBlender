@@ -171,7 +171,9 @@ async def upload_and_process_candidates(
     svc: ChronosDataService = Depends(get_service),
 ):
     """Upload local audio files to Plaud cloud and submit workflows."""
-    file_paths = body.file_paths or [item["path"] for item in svc.get_upload_candidates()]
+    file_paths = body.file_paths or [
+        item["path"] for item in svc.get_upload_candidates()
+    ]
     if not file_paths:
         return UploadProcessResultOut(uploaded_count=0, error_count=0)
 

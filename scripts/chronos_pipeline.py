@@ -39,11 +39,6 @@ from src.chronos.transcript_processor import TranscriptProcessor
 from src.chronos.engine import ChronosEngine, validate_event_quality
 from src.models.chronos_schemas import ChronosEvent as ChronosEventSchema
 from src.config import get_settings
-from src.chronos.genai_helpers import (
-    get_genai_client,
-    list_model_names,
-    pick_first_available,
-)
 from src.chronos.pipeline_progress import progress as pipeline_progress
 
 logging.basicConfig(
@@ -97,110 +92,52 @@ def print_phase_complete(phase: str, count: int, elapsed: float):
 
 
 def run_preflight(*, smoke_call: bool = False) -> int:
-    """Validate Gemini configuration and show available models.
-
-    This is the fastest way to debug "model not found / not supported" issues.
-    It lists models accessible to your API key and checks whether the configured
-    Chronos models are present.
+    """Validate OpenAI configuration and verify embedding connectivity.
 
     Args:
         smoke_call: If True, performs a tiny embed call to verify connectivity.
 
     Returns:
-        int: 0 if ok, non-zero if configuration is missing or models unavailable.
+        int: 0 if ok, non-zero if configuration is missing.
     """
     logger.info("=" * 60)
-    logger.info("PREFLIGHT: GEMINI MODELS")
+    logger.info("PREFLIGHT: OPENAI MODELS")
     logger.info("=" * 60)
 
     settings = get_settings()
-    if not settings.gemini_api_key:
-        logger.error("GEMINI_API_KEY is not set. Update your .env and retry.")
+    if not settings.openai_api_key:
+        logger.error("OPENAI_API_KEY is not set. Update your .env and retry.")
         return 2
-
-    logger.info(
-        f"Gemini API version: {getattr(settings, 'gemini_api_version', 'v1beta')}"
-    )
-    logger.info("Listing models available to this API key...")
-    try:
-        names = list_model_names()
-    except Exception as e:
-        logger.error(f"Failed to list models: {e}")
-        return 3
-
-    if not names:
-        logger.error("No models were returned by models.list().")
-        return 4
-
-    # Show a short, helpful subset (full list is often huge).
-    preview = [
-        n
-        for n in names
-        if any(
-            k in n
-            for k in (
-                "gemini-3-",
-                "gemini-2.5-",
-                "gemini-embedding-",
-                "text-embedding",
-            )
-        )
-    ]
-
-    logger.info(f"Found {len(names)} models. Relevant subset ({len(preview)}):")
-    for n in preview[:40]:
-        logger.info(f"  - {n}")
-    if len(preview) > 40:
-        logger.info(f"  ... (+{len(preview) - 40} more)")
 
     configured_clean = (settings.chronos_cleaning_model or "").strip()
     configured_analyst = (settings.chronos_analyst_model or "").strip()
     configured_embed = (settings.chronos_embedding_model or "").strip()
+    provider = (settings.chronos_processing_provider or "openai").strip()
 
-    chosen_clean = pick_first_available(
-        configured_clean,
-        "gemini-3-flash-preview",
-        "gemini-3.1-pro-preview",
-        "gemini-2.5-flash",
-    )
-    chosen_analyst = pick_first_available(
-        configured_analyst,
-        "gemini-3.1-pro-preview",
-        "gemini-3-flash-preview",
-        "gemini-2.5-flash",
-    )
-    chosen_embed = pick_first_available(
-        configured_embed,
-        "gemini-embedding-2-preview",
-    )
-
-    def _present(label: str, configured: str, chosen: str | None) -> None:
-        ok = (configured in names) if configured else True
-        chosen_ok = (chosen in names) if chosen else False
-        logger.info(
-            f"{label}: configured={configured or '(default)'} (present={ok}), chosen={chosen or '(none)'} (present={chosen_ok})"
-        )
-
-    _present("Chronos cleaning model", configured_clean, chosen_clean)
-    _present("Chronos analyst model", configured_analyst, chosen_analyst)
-    _present("Chronos embedding model", configured_embed, chosen_embed)
+    logger.info(f"Processing provider: {provider}")
+    logger.info(f"Cleaning model:  {configured_clean}")
+    logger.info(f"Analyst model:   {configured_analyst}")
+    logger.info(f"Embedding model: {configured_embed}")
+    logger.info(f"Embedding dim:   {settings.chronos_embedding_dim}")
+    logger.info(f"OpenAI RAG model: {settings.openai_model}")
 
     if smoke_call:
-        # A tiny call that should be cheap and fast.
-        from google.genai import types
+        from openai import OpenAI
 
-        client = get_genai_client()
-        model = chosen_embed or configured_embed or "gemini-embedding-2-preview"
+        client = OpenAI(api_key=settings.openai_api_key)
+        model = configured_embed or "text-embedding-3-large"
         logger.info(f"Running embed smoke call with model={model!r}...")
         try:
-            client.models.embed_content(
+            resp = client.embeddings.create(
                 model=model,
-                contents="ping",
-                config=types.EmbedContentConfig(
-                    task_type="RETRIEVAL_DOCUMENT", output_dimensionality=8
-                ),
+                input="ping",
+                dimensions=settings.chronos_embedding_dim,
             )
-            logger.info("Embed smoke call succeeded.")
+            dim = len(resp.data[0].embedding)
+            logger.info(
+                f"Embed smoke call succeeded — {dim} dims, "
+                f"{resp.usage.total_tokens} tokens"
+            )
         except Exception as e:
             logger.error(f"Embed smoke call failed: {e}")
             return 5
@@ -507,9 +444,9 @@ def run_index(
 
     # Generate embeddings with progress
     #
-    # When using gemini-embedding-2-preview with audio files available,
-    # we create fused text+audio embeddings per-event. Otherwise we
-    # fall back to the fast text-only batch path.
+    # Uses OpenAI text-embedding-3-large (or text-embedding-3-small) via the
+    # embedding service. Text-only (OpenAI embeddings don't support audio).
+    # Dimensionality controlled by CHRONOS_EMBEDDING_DIM (default 768).
     print(f"\n\n🔮 Generating embeddings for {len(pydantic_events)} events...")
     pipeline_progress.update(
         step=f"Generating embeddings for {len(pydantic_events)} events…"

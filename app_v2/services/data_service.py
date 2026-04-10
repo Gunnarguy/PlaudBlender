@@ -481,6 +481,7 @@ class ChronosDataService:
         """Get all events from Qdrant with caching."""
         from app_v2.services.xray import xray_log
         import time as _time
+
         now = datetime.now()
 
         self._ensure_backend_services(require_qdrant=True)
@@ -493,8 +494,11 @@ class ChronosDataService:
             and (now - self._last_cache_time).seconds < self._cache_ttl_seconds
         ):
             _age = (now - self._last_cache_time).seconds
-            xray_log("data", "cache-hit",
-                     f"Already have your {len(self._events_cache):,} moments ready (grabbed {_age}s ago)")
+            xray_log(
+                "data",
+                "cache-hit",
+                f"Already have your {len(self._events_cache):,} moments ready (grabbed {_age}s ago)",
+            )
             return self._events_cache
 
         with self._cache_lock:
@@ -516,8 +520,7 @@ class ChronosDataService:
                 offset = None
                 _scroll_t0 = _time.perf_counter()
                 _scroll_pages = 0
-                xray_log("data", "cache-miss",
-                         f"Grabbing all your recordings…")
+                xray_log("data", "cache-miss", f"Grabbing all your recordings…")
 
                 while True:
                     response = self._qdrant.client.scroll(
@@ -561,9 +564,12 @@ class ChronosDataService:
                 self._last_cache_time = datetime.now()
                 _scroll_ms = (_time.perf_counter() - _scroll_t0) * 1000
 
-                xray_log("data", "loaded",
-                         f"Got {len(events):,} moments from your recordings",
-                         duration_ms=round(_scroll_ms, 1))
+                xray_log(
+                    "data",
+                    "loaded",
+                    f"Got {len(events):,} moments from your recordings",
+                    duration_ms=round(_scroll_ms, 1),
+                )
                 logger.info(f"Loaded {len(events)} events from Qdrant")
                 return events
 
@@ -583,7 +589,9 @@ class ChronosDataService:
                     return fallback_events
                 return self._events_cache or []
 
-    def _get_sqlite_backfill_events(self, exclude_recording_ids: set[str]) -> List[Event]:
+    def _get_sqlite_backfill_events(
+        self, exclude_recording_ids: set[str]
+    ) -> List[Event]:
         """Load completed SQLite events for recordings missing from Qdrant.
 
         This keeps the timeline/detail views functional when transcript
@@ -595,7 +603,8 @@ class ChronosDataService:
                 db.query(_ChronosEventModel)
                 .join(
                     _ChronosRecordingModel,
-                    _ChronosRecordingModel.recording_id == _ChronosEventModel.recording_id,
+                    _ChronosRecordingModel.recording_id
+                    == _ChronosEventModel.recording_id,
                 )
                 .filter(_ChronosRecordingModel.processing_status == "completed")
             )
@@ -690,7 +699,9 @@ class ChronosDataService:
                 txt = (ev.clean_text or "").strip()
                 if txt and len(txt) > 20:
                     if not preview_text:
-                        preview_text = txt[:150].rsplit(" ", 1)[0] if len(txt) > 150 else txt
+                        preview_text = (
+                            txt[:150].rsplit(" ", 1)[0] if len(txt) > 150 else txt
+                        )
                     if len(event_previews) < 3:
                         snippet = txt[:120].rsplit(" ", 1)[0] if len(txt) > 120 else txt
                         event_previews.append(snippet)
@@ -729,7 +740,9 @@ class ChronosDataService:
                     else ""
                 ),
                 processing_status=(
-                    str(getattr(db_rec, "processing_status", "completed") or "completed")
+                    str(
+                        getattr(db_rec, "processing_status", "completed") or "completed"
+                    )
                     if db_rec
                     else "completed"
                 ),
@@ -743,7 +756,13 @@ class ChronosDataService:
                     if db_rec
                     else None
                 ),
-                cloud_status=(self._cloud_status_for_source(str(getattr(db_rec, "source", "") or "")) if db_rec else None),
+                cloud_status=(
+                    self._cloud_status_for_source(
+                        str(getattr(db_rec, "source", "") or "")
+                    )
+                    if db_rec
+                    else None
+                ),
             )
 
         return summaries
@@ -777,7 +796,9 @@ class ChronosDataService:
         duration = float(getattr(rec, "duration_seconds", 0) or 0)
         end_time = start_time + timedelta(seconds=duration)
         title = str(getattr(rec, "title", "") or "").strip() or None
-        plaud_ai_summary = str(getattr(rec, "plaud_ai_summary", "") or "").strip() or None
+        plaud_ai_summary = (
+            str(getattr(rec, "plaud_ai_summary", "") or "").strip() or None
+        )
         source = str(getattr(rec, "source", "plaud") or "plaud")
 
         return RecordingSummary(
@@ -796,7 +817,9 @@ class ChronosDataService:
             sentiment_arc=[],
             time_is_estimated=bool(getattr(rec, "time_is_estimated", False)),
             time_estimate_reason=str(getattr(rec, "time_estimate_reason", "") or ""),
-            processing_status=str(getattr(rec, "processing_status", "pending") or "pending"),
+            processing_status=str(
+                getattr(rec, "processing_status", "pending") or "pending"
+            ),
             title=title,
             plaud_ai_summary=plaud_ai_summary,
             cloud_status=self._cloud_status_for_source(source),
@@ -818,7 +841,9 @@ class ChronosDataService:
                 rows = (
                     db.query(_ChronosRecordingModel)
                     .filter(
-                        _ChronosRecordingModel.processing_status.in_(["pending", "processing"])
+                        _ChronosRecordingModel.processing_status.in_(
+                            ["pending", "processing"]
+                        )
                     )
                     .order_by(_ChronosRecordingModel.created_at.desc())
                     .all()
@@ -881,13 +906,19 @@ class ChronosDataService:
                     if rid in recording_summaries:
                         summary = recording_summaries[rid]
                         summary.processing_status = str(rec.processing_status)
-                        summary.title = str(getattr(rec, "title", "") or "").strip() or summary.title
+                        summary.title = (
+                            str(getattr(rec, "title", "") or "").strip()
+                            or summary.title
+                        )
                         summary.plaud_ai_summary = (
                             str(getattr(rec, "plaud_ai_summary", "") or "").strip()
                             or summary.plaud_ai_summary
                         )
-                        summary.cloud_status = summary.cloud_status or self._cloud_status_for_source(
-                            str(getattr(rec, "source", "") or "")
+                        summary.cloud_status = (
+                            summary.cloud_status
+                            or self._cloud_status_for_source(
+                                str(getattr(rec, "source", "") or "")
+                            )
                         )
                         continue
                     fallback_summary = self._recording_summary_from_db_row(rec)
@@ -896,7 +927,9 @@ class ChronosDataService:
             finally:
                 db.close()
         except Exception as e:
-            logger.warning(f"Could not load SQLite fallback recordings for timeline: {e}")
+            logger.warning(
+                f"Could not load SQLite fallback recordings for timeline: {e}"
+            )
 
         if not recording_summaries:
             return []
@@ -913,11 +946,14 @@ class ChronosDataService:
         _summaries_by_id: Dict[str, str] = {}
         try:
             from src.database.models import ChronosRecording
+
             _all_rec_ids = [rec.recording_id for recs in days.values() for rec in recs]
             db = SessionLocal()
             try:
                 rows = (
-                    db.query(ChronosRecording.recording_id, ChronosRecording.plaud_ai_summary)
+                    db.query(
+                        ChronosRecording.recording_id, ChronosRecording.plaud_ai_summary
+                    )
                     .filter(
                         ChronosRecording.recording_id.in_(_all_rec_ids),
                         ChronosRecording.plaud_ai_summary.isnot(None),
@@ -1562,6 +1598,7 @@ class ChronosDataService:
 
         from app_v2.services.xray import xray_log
         import time as _time
+
         try:
             from src.models.chronos_schemas import TemporalFilter
             from datetime import datetime as dt_cls
@@ -1583,9 +1620,12 @@ class ChronosDataService:
             _embed_t0 = _time.perf_counter()
             query_vector = self._embedder.embed_text(query, task_type=task_type)
             _embed_ms = (_time.perf_counter() - _embed_t0) * 1000
-            xray_log("search", "embed",
-                     f"Turned your search into numbers so the computer can match it",
-                     duration_ms=round(_embed_ms, 1))
+            xray_log(
+                "search",
+                "embed",
+                f"Turned your search into numbers so the computer can match it",
+                duration_ms=round(_embed_ms, 1),
+            )
 
             # Use hybrid search if filters are present
             if temporal_filter or categories:
@@ -1724,6 +1764,7 @@ class ChronosDataService:
             from sqlalchemy import func as _func
             from src.database.engine import SessionLocal as _SL
             from src.database.models import ChronosRecording as _CR
+
             _db = _SL()
             try:
                 row = _db.query(
@@ -2512,7 +2553,10 @@ class ChronosDataService:
         transcript = str(rec.transcript or "")
 
         if source in {"notion", "usb_import"}:
-            return "archived", f"{source} recordings are not retryable through Plaud sync"
+            return (
+                "archived",
+                f"{source} recordings are not retryable through Plaud sync",
+            )
 
         if recording_id.startswith("notion:"):
             return "archived", "synthetic Notion IDs cannot be fetched from Plaud"

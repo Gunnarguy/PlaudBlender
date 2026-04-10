@@ -38,7 +38,9 @@ def _run_chronos(args: list[str], timeout: int = 90) -> StackControlResponse:
         timeout=timeout,
         check=False,
     )
-    output = ((result.stdout or "") + ("\n" + result.stderr if result.stderr else "")).strip()
+    output = (
+        (result.stdout or "") + ("\n" + result.stderr if result.stderr else "")
+    ).strip()
     status = "ok" if result.returncode == 0 else "failed"
     return StackControlResponse(
         action=" ".join(args),
@@ -109,7 +111,11 @@ async def restart_public_stack():
 @router.get("/backups", response_model=list[BackupInfoOut])
 async def list_backups():
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    backups = sorted(BACKUP_DIR.glob("chronos_backup_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+    backups = sorted(
+        BACKUP_DIR.glob("chronos_backup_*.zip"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
     return [_backup_info(path) for path in backups]
 
 

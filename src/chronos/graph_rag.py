@@ -258,40 +258,51 @@ Return ONLY the JSON object, no other text."""
         Initialize entity extractor.
 
         Args:
-            llm: LLM instance (defaults to Gemini)
+            llm: LLM instance (defaults to OpenAI via direct client)
         """
-        # Rate limit guardrails (Gemini free tier is ~10 RPM per model)
-        rpm = float(os.getenv("GEMINI_MAX_RPM", "10"))
-        self.min_interval = max(60.0 / rpm, 0) + 0.5  # small buffer
+        self.min_interval = 0.1  # OpenAI rate limits are generous
         self._last_call_ts: float = 0.0
 
         if llm is None:
-            try:
-                from llama_index.llms.gemini import Gemini
-
-                api_key = os.getenv("GEMINI_API_KEY")
-                if not api_key:
-                    raise ValueError("GEMINI_API_KEY required for entity extraction")
-                # Use latest Gemini 3 Flash (free tier) for entity extraction
-                model_name = os.getenv(
-                    "CHRONOS_CLEANING_MODEL", "gemini-3-flash-preview"
-                )
-                self.llm = Gemini(
-                    model=f"models/{model_name}",
-                    api_key=api_key,
-                    temperature=0.1,  # Low temp for structured extraction
-                )
-            except ImportError:
-                # llama_index.llms.gemini not available - set to None
-                # (this shouldn't happen with current requirements.txt)
-                logger.warning(
-                    "llama_index.llms.gemini not available; entity extraction disabled"
-                )
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                logger.warning("OPENAI_API_KEY not set; entity extraction disabled")
                 self.llm = None
+            else:
+                from openai import OpenAI
+
+                self._openai_client = OpenAI(api_key=api_key)
+                self._openai_model = os.getenv("CHRONOS_CLEANING_MODEL", "gpt-4.1-mini")
+                # Wrapper object with .complete() and .model for compatibility
+                self.llm = self._make_openai_wrapper()
         else:
             self.llm = llm
 
         logger.info("✅ EntityExtractor initialized")
+
+    def _make_openai_wrapper(self):
+        """Create a simple wrapper matching the llama_index LLM interface."""
+        client = self._openai_client
+        model = self._openai_model
+
+        class _CompletionResult:
+            def __init__(self, text: str):
+                self.text = text
+
+        class _OpenAIWrapper:
+            def __init__(self):
+                self.model = model
+
+            def complete(self, prompt: str) -> _CompletionResult:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=4096,
+                )
+                return _CompletionResult(response.choices[0].message.content or "")
+
+        return _OpenAIWrapper()
 
     def extract_entities(
         self,
@@ -897,14 +908,15 @@ Respond in JSON:
         self._llm = None
 
     def _get_llm(self):
-        """Lazy load LLM client + model for summarization."""
+        """Lazy load OpenAI client + model for summarization."""
         if self._llm is None:
-            from src.chronos.genai_helpers import get_genai_client
             from src.config import get_settings
 
             settings = get_settings()
-            if settings.gemini_api_key:
-                client = get_genai_client()
+            if settings.openai_api_key:
+                from openai import OpenAI
+
+                client = OpenAI(api_key=settings.openai_api_key)
                 model_name = settings.chronos_cleaning_model
                 self._llm = (client, model_name)
         return self._llm
@@ -1076,19 +1088,24 @@ Respond in JSON:
         )
 
         try:
-            response = client.models.generate_content(model=model_name, contents=prompt)
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=2048,
+            )
             # Track cost
-            _usage = getattr(response, "usage_metadata", None)
+            _usage = response.usage
             if _usage:
                 from src.chronos.cost_tracker import track_usage
 
                 track_usage(
                     model_name,
                     "community",
-                    input_tokens=getattr(_usage, "prompt_token_count", 0),
-                    output_tokens=getattr(_usage, "candidates_token_count", 0),
+                    input_tokens=getattr(_usage, "prompt_tokens", 0),
+                    output_tokens=getattr(_usage, "completion_tokens", 0),
                 )
-            text = (response.text or "").strip()
+            text = (response.choices[0].message.content or "").strip()
 
             # Parse JSON
             if "```json" in text:

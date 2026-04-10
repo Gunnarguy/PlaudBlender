@@ -141,7 +141,9 @@ async def update_server_settings(body: ServerSettingsUpdateRequest):
 
     if weekday is not None:
         if not _valid_hhmm(weekday):
-            raise HTTPException(status_code=400, detail="Weekday fallback start must be HH:MM")
+            raise HTTPException(
+                status_code=400, detail="Weekday fallback start must be HH:MM"
+            )
         weekday_hour, weekday_minute = [
             int(part) for part in str(weekday).strip().split(":", 1)
         ]
@@ -152,7 +154,9 @@ async def update_server_settings(body: ServerSettingsUpdateRequest):
             )
 
     if weekend is not None and not _valid_hhmm(weekend):
-        raise HTTPException(status_code=400, detail="Weekend fallback start must be HH:MM")
+        raise HTTPException(
+            status_code=400, detail="Weekend fallback start must be HH:MM"
+        )
 
     updates = {
         _FIELD_TO_ENV[field]: _env_string(value)
@@ -163,4 +167,6 @@ async def update_server_settings(body: ServerSettingsUpdateRequest):
     changed = _write_env_updates(updates)
     if changed == 0:
         return SuccessResponse(message="Settings unchanged — nothing to save")
-    return SuccessResponse(message=f"Saved {changed} setting{'s' if changed != 1 else ''} to .env")
+    return SuccessResponse(
+        message=f"Saved {changed} setting{'s' if changed != 1 else ''} to .env"
+    )

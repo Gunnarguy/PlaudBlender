@@ -111,6 +111,20 @@ _OPENAI_PRICING: dict[str, dict] = {
         "tier": "paid",
         "label": "GPT-4.1",
     },
+    "text-embedding-3-large": {
+        "provider": "openai",
+        "input_per_mtok": 0.13,
+        "output_per_mtok": 0.00,
+        "tier": "paid",
+        "label": "Embedding 3 Large",
+    },
+    "text-embedding-3-small": {
+        "provider": "openai",
+        "input_per_mtok": 0.02,
+        "output_per_mtok": 0.00,
+        "tier": "paid",
+        "label": "Embedding 3 Small",
+    },
 }
 
 

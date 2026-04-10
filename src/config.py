@@ -58,43 +58,39 @@ class Settings:
     # ─────────────────────────────────────────────────────────────────────────
     # Chronos: Gemini Model Selection (March 2026 — Latest Available Models)
     # ─────────────────────────────────────────────────────────────────────────
+    # Chronos: OpenAI Model Selection (April 2026)
+    # ─────────────────────────────────────────────────────────────────────────
     # Model Hierarchy (best to fastest):
-    #   gemini-3.1-pro-preview  → Highest-quality paid reasoning model
-    #   gemini-3-flash-preview  → Strong fast model; billed on paid projects
-    #   gemini-2.5-pro          → Stable paid reasoning model
-    #   gemini-2.5-flash        → Stable fast model; billed on paid projects
-    #   gemini-2.0-flash        → ⚠️ DEPRECATED (shutdown June 1, 2026)
+    #   gpt-5.4       → Flagship ($2.50/$15 MTok), 1M context, 128K output
+    #   gpt-5.4-mini  → Strong mini ($0.75/$4.50 MTok), 400K context
+    #   gpt-5.4-nano  → Cheapest ($0.20/$1.25 MTok), 400K context
     #
     # Embeddings:
-    #   gemini-embedding-2-preview → Multimodal (text+audio+image+video+PDF)
-    #   gemini-embedding-001       → Text-only stable model (legacy)
-    #
-    # Billing note:
-    #   Gemini free-vs-paid pricing depends on whether the API key's project has
-    #   billing enabled in AI Studio / Cloud Billing. Chronos assumes paid-tier
-    #   pricing by default to avoid under-reporting spend.
+    #   text-embedding-3-large → Best quality (3072 native, MRL to any dim)
+    #   text-embedding-3-small → Fast & cheap (1536 native, MRL to any dim)
+    #   Both support `dimensions` param for Matryoshka dimensionality reduction.
+    #   8192 token input limit. Vectors are L2-normalized by the API.
     # ─────────────────────────────────────────────────────────────────────────
     chronos_cleaning_model: str = os.getenv(
-        # Gemini 3 Flash Preview — fast default for extraction / cleanup
+        # gpt-5.4-mini — strong structured extraction at low cost
         "CHRONOS_CLEANING_MODEL",
-        "gemini-3-flash-preview",
+        "gpt-5.4-mini",
     )
     chronos_embedding_model: str = os.getenv(
-        # Gemini Embedding 2 Preview — multimodal (text, audio, image, video, PDF)
-        # Input limit: 8192 tokens. Audio: WAV/MP3 ≤80s. MRL: 128–3072 dims.
+        # text-embedding-3-large with MRL at 768 dims — best accuracy
         "CHRONOS_EMBEDDING_MODEL",
-        "gemini-embedding-2-preview",
+        "text-embedding-3-large",
     )
     chronos_embedding_dim: int = int(os.getenv("CHRONOS_EMBEDDING_DIM", "768"))
     chronos_analyst_model: str = os.getenv(
-        # Gemini 3.1 Pro Preview — optional paid fallback for harder cleanup tasks
+        # gpt-5.4 — flagship for hard tasks, fallback, RAG
         "CHRONOS_ANALYST_MODEL",
-        "gemini-3.1-pro-preview",
+        "gpt-5.4",
     )
     chronos_processing_provider: str = (
         os.getenv(
             "CHRONOS_PROCESSING_PROVIDER",
-            "auto",
+            "openai",
         )
         .strip()
         .lower()
@@ -175,7 +171,9 @@ class Settings:
     # ─────────────────────────────────────────────────────────────────────────
     # Notion: OAuth + Direct API Integration
     # ─────────────────────────────────────────────────────────────────────────
-    notion_token: Optional[str] = os.getenv("NOTION_TOKEN")  # Static internal token (fallback)
+    notion_token: Optional[str] = os.getenv(
+        "NOTION_TOKEN"
+    )  # Static internal token (fallback)
     notion_database_id: Optional[str] = os.getenv("NOTION_DATABASE_ID")
     notion_client_id: Optional[str] = os.getenv("NOTION_CLIENT_ID")
     notion_client_secret: Optional[str] = os.getenv("NOTION_CLIENT_SECRET")
