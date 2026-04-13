@@ -6,6 +6,8 @@ After=chronos-qdrant.service
 Type=oneshot
 User=gunnarhostetler
 WorkingDirectory=/home/gunnarhostetler/PlaudBlender
+Environment=HOME=/home/gunnarhostetler
+Environment=PYTHONUNBUFFERED=1
 Environment=PATH=/home/gunnarhostetler/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=/home/gunnarhostetler/PlaudBlender/.env
 ExecStart=/home/gunnarhostetler/PlaudBlender/venv/bin/python scripts/chronos_pipeline.py --full

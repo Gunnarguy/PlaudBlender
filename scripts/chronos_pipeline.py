@@ -9,11 +9,13 @@ Usage:
     python scripts/chronos_pipeline.py --full      # Run full pipeline
 """
 import argparse
+from dataclasses import dataclass
 import logging
 import sys
 import time
 import threading
 from pathlib import Path
+from typing import Any, Optional, cast
 
 # Increase Python's integer string conversion limit (default 4300 digits).
 # This prevents "Exceeds the limit (4300 digits)" errors when parsing JSON
@@ -46,6 +48,15 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PhaseResult:
+    """Result for a pipeline phase with optional hard-failure context."""
+
+    processed_count: int
+    failure_count: int = 0
+    error_message: Optional[str] = None
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -89,6 +100,12 @@ def print_phase_header(phase: str, icon: str = "▶"):
 def print_phase_complete(phase: str, count: int, elapsed: float):
     """Print phase completion summary."""
     print(f"\n✅ {phase} complete: {count} items in {elapsed:.1f}s")
+
+
+def print_phase_failed(phase: str, error: str, elapsed: float):
+    """Print phase failure summary."""
+    print(f"\n❌ {phase} failed after {elapsed:.1f}s")
+    print(f"   {error}")
 
 
 def run_preflight(*, smoke_call: bool = False) -> int:
@@ -146,7 +163,9 @@ def run_preflight(*, smoke_call: bool = False) -> int:
     return 0
 
 
-def run_ingest(session, limit: int = 100, *, fetch_all_pages: bool = False) -> int:
+def run_ingest(
+    session, limit: int = 100, *, fetch_all_pages: bool = False
+) -> PhaseResult:
     """Run ingestion phase: download recordings from Plaud.
 
     Returns:
@@ -165,18 +184,27 @@ def run_ingest(session, limit: int = 100, *, fetch_all_pages: bool = False) -> i
     def on_progress(current, total, recording_id):
         print_progress("Plaud", current, total, recording_id, time.time() - start_time)
 
+    error_message = None
+
     try:
         success_count, failure_count = service.ingest_recent_recordings(
             limit=limit, fetch_all_pages=fetch_all_pages
         )
     except Exception as e:
-        # Auth failure or network error — log warning but don't crash
-        # so process/index phases can still run on existing data.
-        print(f"⚠️  Ingest failed: {e}")
-        logger.warning(f"Ingest phase failed (non-fatal): {e}")
+        error_message = str(e)
+        logger.warning(f"Ingest phase failed: {e}")
         success_count, failure_count = 0, 0
 
     elapsed = time.time() - start_time
+    if error_message:
+        print_phase_failed("Ingest", error_message, elapsed)
+        pipeline_progress.finish_phase(summary=f"FAILED: {error_message[:120]}")
+        return PhaseResult(
+            processed_count=success_count,
+            failure_count=failure_count,
+            error_message=error_message,
+        )
+
     print_phase_complete("Ingest", success_count, elapsed)
     pipeline_progress.finish_phase(
         summary=f"{success_count} ingested, {failure_count} failed"
@@ -185,7 +213,7 @@ def run_ingest(session, limit: int = 100, *, fetch_all_pages: bool = False) -> i
     if failure_count > 0:
         print(f"⚠️  {failure_count} recordings failed to ingest")
 
-    return success_count
+    return PhaseResult(processed_count=success_count, failure_count=failure_count)
 
 
 def run_process(
@@ -233,8 +261,9 @@ def run_process(
         failure_count = 0
 
         for i, rec in enumerate(pending):
-            rec_id = rec.recording_id
-            duration_mins = (rec.duration_seconds or 0) // 60
+            rec_id = str(rec.recording_id)
+            duration_seconds = getattr(rec, "duration_seconds", 0) or 0
+            duration_mins = int(cast(Any, duration_seconds)) // 60
 
             # Show which recording we're starting
             print(
@@ -417,6 +446,7 @@ def run_index(
                 hour_of_day=db_event.hour_of_day,
                 clean_text=db_event.clean_text,
                 category=EventCategory(db_event.category),
+                category_confidence=getattr(db_event, "category_confidence", None),
                 sentiment=db_event.sentiment,
                 keywords=db_event.keywords or [],
                 speaker=(
@@ -606,6 +636,7 @@ def run_graph(
                 hour_of_day=db_event.hour_of_day,
                 clean_text=db_event.clean_text,
                 category=EventCategory(db_event.category),
+                category_confidence=getattr(db_event, "category_confidence", None),
                 sentiment=db_event.sentiment,
                 keywords=db_event.keywords or [],
                 speaker=(
@@ -613,6 +644,10 @@ def run_graph(
                     if db_event.speaker
                     else SpeakerMode.SELF_TALK
                 ),
+                raw_transcript_snippet=getattr(
+                    db_event, "raw_transcript_snippet", None
+                ),
+                gemini_reasoning=getattr(db_event, "gemini_reasoning", None),
             )
             pydantic_events.append(pydantic_event)
         except Exception as e:
@@ -793,6 +828,9 @@ def main():
     init_db()
     session = SessionLocal()
 
+    exit_code = 0
+    phase_errors: list[str] = []
+
     try:
         if args.reindex:
             from src.database.models import ChronosEvent as ChronosEventDB
@@ -819,7 +857,11 @@ def main():
         if args.full or args.ingest:
             # --full always fetches all pages; --ingest alone respects --fetch-all flag
             fetch_all = True if args.full else bool(args.fetch_all)
-            run_ingest(session, limit=args.limit, fetch_all_pages=fetch_all)
+            ingest_result = run_ingest(
+                session, limit=args.limit, fetch_all_pages=fetch_all
+            )
+            if ingest_result.error_message:
+                phase_errors.append(f"ingest: {ingest_result.error_message}")
 
         if args.full or args.process:
             run_process(
@@ -838,16 +880,28 @@ def main():
         if args.full or args.refresh_workflows:
             run_refresh_workflows(session, days_back=30, limit=args.limit)
 
-        logger.info("=" * 60)
-        logger.info("PIPELINE COMPLETE")
-        logger.info("=" * 60)
-        pipeline_progress.finish_run()
+        if phase_errors:
+            logger.warning("=" * 60)
+            logger.warning("PIPELINE COMPLETE WITH WARNINGS")
+            for phase_error in phase_errors:
+                logger.warning(phase_error)
+            logger.warning("=" * 60)
+            pipeline_progress.finish_run(error="; ".join(phase_errors))
+            exit_code = 1
+        else:
+            logger.info("=" * 60)
+            logger.info("PIPELINE COMPLETE")
+            logger.info("=" * 60)
+            pipeline_progress.finish_run()
 
     except Exception as e:
         pipeline_progress.finish_run(error=str(e))
         raise
     finally:
         session.close()
+
+    if exit_code:
+        raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":

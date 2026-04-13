@@ -233,6 +233,113 @@ class TestAutoSyncImport:
         syncer._queue_for_processing("rec_123", "test")
         assert syncer._pending_recordings.count("rec_123") == 1
 
+    def test_process_single_runs_pipeline_stages(self, monkeypatch):
+        """Single-record processing should use pipeline subprocess stages."""
+        from scripts.auto_sync import ChronosAutoSync
+
+        syncer = ChronosAutoSync(
+            enable_webhook=False,
+            enable_usb=False,
+            auto_process=False,
+        )
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append((args, kwargs))
+            return True
+
+        monkeypatch.setattr(syncer, "_run_pipeline_subprocess", fake_run)
+
+        syncer._process_single("rec_123")
+
+        assert [call[0] for call in calls] == [
+            [sys.executable, "scripts/chronos_pipeline.py", "--ingest"],
+            [
+                sys.executable,
+                "scripts/chronos_pipeline.py",
+                "--process",
+                "--recording-id",
+                "rec_123",
+            ],
+            [
+                sys.executable,
+                "scripts/chronos_pipeline.py",
+                "--index",
+                "--recording-id",
+                "rec_123",
+            ],
+            [
+                sys.executable,
+                "scripts/chronos_pipeline.py",
+                "--graph",
+                "--recording-id",
+                "rec_123",
+            ],
+        ]
+
+    def test_poll_runs_graph_stage(self, monkeypatch):
+        """Scheduled polling should refresh graph cache after indexing."""
+        from scripts.auto_sync import ChronosAutoSync
+
+        syncer = ChronosAutoSync(
+            enable_webhook=False,
+            enable_usb=False,
+            auto_process=False,
+        )
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append((args, kwargs))
+            return True
+
+        monkeypatch.setattr(syncer, "_run_pipeline_subprocess", fake_run)
+
+        syncer._poll_plaud_api()
+
+        assert [call[0] for call in calls] == [
+            [sys.executable, "scripts/chronos_pipeline.py", "--ingest"],
+            [sys.executable, "scripts/chronos_pipeline.py", "--process"],
+            [sys.executable, "scripts/chronos_pipeline.py", "--index"],
+            [sys.executable, "scripts/chronos_pipeline.py", "--graph"],
+        ]
+
+
+class TestChronosPipeline:
+    """Tests for scripts/chronos_pipeline.py reliability semantics."""
+
+    def test_full_pipeline_exits_nonzero_when_ingest_fails(self, monkeypatch):
+        """Full pipeline should not silently report success when ingest fails."""
+        import scripts.chronos_pipeline as pipeline
+
+        class DummySession:
+            def close(self):
+                return None
+
+        monkeypatch.setattr(sys, "argv", ["chronos_pipeline.py", "--full"])
+        monkeypatch.setattr(pipeline, "init_db", lambda: None)
+        monkeypatch.setattr(pipeline, "SessionLocal", lambda: DummySession())
+        monkeypatch.setattr(pipeline, "pipeline_progress", Mock())
+        monkeypatch.setattr(
+            pipeline,
+            "run_ingest",
+            lambda *args, **kwargs: pipeline.PhaseResult(
+                processed_count=0,
+                failure_count=0,
+                error_message="Plaud not authenticated",
+            ),
+        )
+        monkeypatch.setattr(pipeline, "run_process", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(pipeline, "run_index", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(pipeline, "run_graph", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(
+            pipeline, "run_refresh_workflows", lambda *args, **kwargs: 0
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            pipeline.main()
+
+        assert exc_info.value.code == 1
+
 
 # ===========================================================================
 # Webhook Server Tests

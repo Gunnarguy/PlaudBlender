@@ -59,8 +59,14 @@ echo "[6/7] Installing systemd services..."
 SYSTEMD_DIR="/etc/systemd/system"
 for svc in "$REPO_DIR"/deploy/systemd/chronos-*.service; do
     svc_name=$(basename "$svc")
-    sudo cp "$svc" "$SYSTEMD_DIR/$svc_name"
+    sudo install -m 0644 "$svc" "$SYSTEMD_DIR/$svc_name"
     echo "  → $svc_name"
+done
+for timer in "$REPO_DIR"/deploy/systemd/chronos-*.timer; do
+    [ -e "$timer" ] || continue
+    timer_name=$(basename "$timer")
+    sudo install -m 0644 "$timer" "$SYSTEMD_DIR/$timer_name"
+    echo "  → $timer_name"
 done
 sudo systemctl daemon-reload
 echo "  ✓ Systemd services installed"
@@ -86,7 +92,9 @@ echo "     sudo systemctl enable --now chronos-ui"
 echo "     sudo systemctl enable --now chronos-auto-sync"
 echo "     sudo systemctl enable --now chronos-api"
 echo "     sudo systemctl enable --now chronos-mcp"
+echo "     sudo systemctl enable --now chronos-watchdog.timer"
 echo ""
 echo "  3. Check status:    sudo systemctl status 'chronos-*'"
 echo "  4. View logs:       journalctl -u chronos-ui -f"
+echo "  5. Update later:    ~/PlaudBlender/deploy/update-pi.sh"
 echo ""

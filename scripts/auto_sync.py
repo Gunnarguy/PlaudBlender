@@ -138,9 +138,9 @@ class ChronosAutoSync:
             )
             # Refresh workflow statuses to pull results into DB
             try:
-                from app_v2.services.data_service import get_service
+                from app_v2.services.data_service import get_data_service
 
-                svc = get_service()
+                svc = get_data_service()
                 svc.refresh_plaud_workflow_statuses()
                 logger.info("Refreshed workflow statuses after webhook notification")
             except Exception as e:
@@ -246,23 +246,67 @@ class ChronosAutoSync:
 
         def run():
             try:
-                import subprocess
-
                 self._log_activity("pipeline", "started", stage)
-                result = subprocess.run(
+                timeout = 900 if stage == "full" else 600
+                ok = self._run_pipeline_subprocess(
                     [sys.executable, "scripts/chronos_pipeline.py", f"--{stage}"],
-                    capture_output=True,
-                    text=True,
-                    timeout=600,
-                    cwd=str(Path(__file__).parent.parent),
+                    timeout=timeout,
+                    source="pipeline",
+                    success_action="success",
+                    success_details=stage,
+                    failure_action="failed",
+                    failure_prefix=stage,
                 )
-                status = "success" if result.returncode == 0 else "failed"
-                self._log_activity("pipeline", status, f"exit={result.returncode}")
+                if not ok:
+                    logger.warning("Background pipeline stage failed: %s", stage)
             except Exception as e:
                 self._log_activity("pipeline", "error", str(e))
 
         thread = threading.Thread(target=run, daemon=True)
         thread.start()
+
+    @staticmethod
+    def _format_subprocess_tail(output: str, *, max_lines: int = 6) -> str:
+        """Format the tail of subprocess output for activity logs."""
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        if not lines:
+            return ""
+        return " | ".join(lines[-max_lines:])[:500]
+
+    def _run_pipeline_subprocess(
+        self,
+        args: List[str],
+        *,
+        timeout: int,
+        source: str,
+        success_action: str,
+        success_details: str,
+        failure_action: str,
+        failure_prefix: str,
+    ) -> bool:
+        """Run a pipeline subprocess and log a concise result summary."""
+        import subprocess
+
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(Path(__file__).parent.parent),
+        )
+        if result.returncode == 0:
+            self._log_activity(source, success_action, success_details)
+            return True
+
+        combined = "\n".join(
+            part for part in [result.stdout or "", result.stderr or ""] if part
+        )
+        tail = self._format_subprocess_tail(combined)
+        details = f"{failure_prefix} exit={result.returncode}"
+        if tail:
+            details = f"{details} — {tail}"
+        self._log_activity(source, failure_action, details)
+        return False
 
     def _process_loop(self):
         """Background loop that processes queued recordings."""
@@ -282,46 +326,66 @@ class ChronosAutoSync:
         try:
             self._log_activity("pipeline", "processing", recording_id)
 
-            # Ingest (fetch from Plaud if not already in DB)
-            from src.database import SessionLocal
-            from src.chronos.ingest_service import ChronosIngestService
+            if not self._run_pipeline_subprocess(
+                [sys.executable, "scripts/chronos_pipeline.py", "--ingest"],
+                timeout=300,
+                source="pipeline",
+                success_action="ingest_done",
+                success_details=recording_id,
+                failure_action="ingest_warn",
+                failure_prefix=f"{recording_id} ingest",
+            ):
+                return
 
-            db = SessionLocal()
-            try:
-                ingest = ChronosIngestService(db)
-                ingest.sync_recordings()
-                db.commit()
-            finally:
-                db.close()
+            if not self._run_pipeline_subprocess(
+                [
+                    sys.executable,
+                    "scripts/chronos_pipeline.py",
+                    "--process",
+                    "--recording-id",
+                    recording_id,
+                ],
+                timeout=600,
+                source="pipeline",
+                success_action="processed",
+                success_details=recording_id,
+                failure_action="process_error",
+                failure_prefix=f"{recording_id} process",
+            ):
+                return
 
-            # Process through Gemini
-            from src.chronos.transcript_processor import TranscriptProcessor
+            if not self._run_pipeline_subprocess(
+                [
+                    sys.executable,
+                    "scripts/chronos_pipeline.py",
+                    "--index",
+                    "--recording-id",
+                    recording_id,
+                ],
+                timeout=300,
+                source="pipeline",
+                success_action="indexed",
+                success_details=recording_id,
+                failure_action="index_error",
+                failure_prefix=f"{recording_id} index",
+            ):
+                return
 
-            db = SessionLocal()
-            try:
-                processor = TranscriptProcessor(db)
-                processor.process_recording_id(recording_id)
-                db.commit()
-                self._log_activity("pipeline", "processed", recording_id)
-            except Exception as e:
-                self._log_activity("pipeline", "process_error", f"{recording_id}: {e}")
-            finally:
-                db.close()
-
-            # Index to Qdrant
-            try:
-                import subprocess
-
-                subprocess.run(
-                    [sys.executable, "scripts/index_unindexed.py"],
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                    cwd=str(Path(__file__).parent.parent),
-                )
-                self._log_activity("pipeline", "indexed", recording_id)
-            except Exception as e:
-                self._log_activity("pipeline", "index_error", str(e))
+            self._run_pipeline_subprocess(
+                [
+                    sys.executable,
+                    "scripts/chronos_pipeline.py",
+                    "--graph",
+                    "--recording-id",
+                    recording_id,
+                ],
+                timeout=300,
+                source="pipeline",
+                success_action="graph_done",
+                success_details=recording_id,
+                failure_action="graph_error",
+                failure_prefix=f"{recording_id} graph",
+            )
 
         except Exception as e:
             self._log_activity("pipeline", "error", f"{recording_id}: {e}")
@@ -346,10 +410,13 @@ class ChronosAutoSync:
                 logger.exception("Poll cycle failed")
 
             # Sleep in 10s increments so we can stop quickly
-            for _ in range(self.POLL_INTERVAL // 10):
+            remaining = max(self.POLL_INTERVAL, 1)
+            while remaining > 0:
                 if not self._running:
                     return
-                time.sleep(10)
+                sleep_for = min(10, remaining)
+                time.sleep(sleep_for)
+                remaining -= sleep_for
 
     def _poll_plaud_api(self):
         """Run a full sync cycle: ingest → process unprocessed → index unindexed."""
@@ -361,65 +428,71 @@ class ChronosAutoSync:
             f"cycle #{self._poll_count} (every {self.POLL_INTERVAL}s)",
         )
 
-        import subprocess
-
-        project_root = str(Path(__file__).parent.parent)
         python = sys.executable
 
         # Phase 1: Ingest — fetch new recordings from Plaud API
         try:
-            result = subprocess.run(
+            ok = self._run_pipeline_subprocess(
                 [python, "scripts/chronos_pipeline.py", "--ingest"],
-                capture_output=True,
-                text=True,
                 timeout=300,
-                cwd=project_root,
+                source="poll",
+                success_action="ingest_done",
+                success_details="checked Plaud API for new recordings",
+                failure_action="ingest_warn",
+                failure_prefix="ingest",
             )
-            if result.returncode == 0:
-                self._log_activity(
-                    "poll", "ingest_done", "checked Plaud API for new recordings"
-                )
-            else:
-                self._log_activity("poll", "ingest_warn", f"exit={result.returncode}")
-                logger.warning(
-                    f"Ingest returned {result.returncode}: {result.stderr[-500:]}"
-                )
+            if not ok:
+                logger.warning("Auto-sync poll ingest stage failed")
         except Exception as e:
             self._log_activity("poll", "ingest_error", str(e))
 
         # Phase 2: Process — run Gemini on unprocessed recordings
         try:
-            result = subprocess.run(
+            ok = self._run_pipeline_subprocess(
                 [python, "scripts/chronos_pipeline.py", "--process"],
-                capture_output=True,
-                text=True,
                 timeout=600,
-                cwd=project_root,
+                source="poll",
+                success_action="process_done",
+                success_details="processed pending recordings",
+                failure_action="process_warn",
+                failure_prefix="process",
             )
-            if result.returncode == 0:
-                self._log_activity(
-                    "poll", "process_done", "processed pending recordings"
-                )
-            else:
-                self._log_activity("poll", "process_warn", f"exit={result.returncode}")
+            if not ok:
+                logger.warning("Auto-sync poll process stage failed")
         except Exception as e:
             self._log_activity("poll", "process_error", str(e))
 
         # Phase 3: Index — embed and store any unindexed events
         try:
-            result = subprocess.run(
+            ok = self._run_pipeline_subprocess(
                 [python, "scripts/chronos_pipeline.py", "--index"],
-                capture_output=True,
-                text=True,
                 timeout=300,
-                cwd=project_root,
+                source="poll",
+                success_action="index_done",
+                success_details="indexed pending events",
+                failure_action="index_warn",
+                failure_prefix="index",
             )
-            if result.returncode == 0:
-                self._log_activity("poll", "index_done", "indexed pending events")
-            else:
-                self._log_activity("poll", "index_warn", f"exit={result.returncode}")
+            if not ok:
+                logger.warning("Auto-sync poll index stage failed")
         except Exception as e:
             self._log_activity("poll", "index_error", str(e))
+
+        # Phase 4: Graph — keep the knowledge graph current for UI + MCP
+        try:
+            ok = self._run_pipeline_subprocess(
+                [python, "scripts/chronos_pipeline.py", "--graph"],
+                timeout=600,
+                source="poll",
+                success_action="graph_done",
+                success_details="refreshed graph cache",
+                failure_action="graph_warn",
+                failure_prefix="graph",
+            )
+            if not ok:
+                logger.warning("Auto-sync poll graph stage failed")
+        except Exception as e:
+            self._log_activity("poll", "graph_error", str(e))
 
         self._log_activity("poll", "complete", f"cycle #{self._poll_count} finished")
 

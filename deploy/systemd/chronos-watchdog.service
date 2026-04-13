@@ -1,11 +1,12 @@
 [Unit]
 Description=Chronos Health Watchdog
-After=chronos-qdrant.service
+After=network-online.target chronos-qdrant.service chronos-ui.service chronos-api.service chronos-auto-sync.service
+Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=gunnarhostetler
 WorkingDirectory=/home/gunnarhostetler/PlaudBlender
+Environment=HOME=/home/gunnarhostetler
 Environment=PATH=/home/gunnarhostetler/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=/home/gunnarhostetler/PlaudBlender/.env
 ExecStart=/home/gunnarhostetler/PlaudBlender/deploy/watchdog.sh

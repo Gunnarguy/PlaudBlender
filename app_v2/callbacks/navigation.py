@@ -816,7 +816,7 @@ def create_sync_view(service) -> html.Div:
                                 className="big-number",
                                 style={"color": "#f59e0b"},
                             ),
-                            html.Span("Ready", className="stat-label"),
+                            html.Span("Cloud Ready", className="stat-label"),
                         ],
                         className="status-stat",
                     ),
@@ -979,12 +979,14 @@ def create_sync_view(service) -> html.Div:
                                         className="btn-text",
                                     ),
                                 ],
-                                disabled=(workflow_stats.get("workflow_pending", 0) == 0),
+                                disabled=(
+                                    workflow_stats.get("workflow_pending", 0) == 0
+                                ),
                             ),
                         ],
                     ),
                     html.P(
-                        "Targets recent recordings missing a Plaud AI summary. Select a template for AI_ETL structured extraction, or leave on 'Summary Only' for just the AI summary.",
+                        "Targets recent recordings that already finished local processing but do not have an optional Plaud Cloud AI summary yet. Select a template for AI_ETL structured extraction, or leave on 'Summary Only' for just the AI summary.",
                         className="sync-note",
                     ),
                 ],

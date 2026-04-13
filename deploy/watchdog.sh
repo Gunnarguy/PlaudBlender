@@ -4,53 +4,91 @@
 
 set -euo pipefail
 
+ROOT="/home/gunnarhostetler/PlaudBlender"
+PYTHON_BIN="$ROOT/venv/bin/python"
 LOG_PREFIX="[watchdog $(date '+%Y-%m-%d %H:%M:%S')]"
 
 ok=true
 
-# --- 1. Qdrant health ---
-if ! curl -sf http://localhost:6333/healthz >/dev/null 2>&1; then
-    echo "$LOG_PREFIX Qdrant unhealthy — restarting chronos-qdrant"
-    sudo systemctl restart chronos-qdrant
-    sleep 10
+restart_unit() {
+    local unit="$1"
+    if systemctl restart "$unit"; then
+        echo "$LOG_PREFIX restarted $unit"
+    else
+        echo "$LOG_PREFIX ERROR: failed to restart $unit"
+    fi
     ok=false
+}
+
+http_healthy() {
+    local url="$1"
+    curl -fsS --max-time 10 -o /dev/null "$url"
+}
+
+# --- 1. Qdrant health ---
+if ! http_healthy http://localhost:6333/healthz >/dev/null 2>&1; then
+    echo "$LOG_PREFIX Qdrant unhealthy — restarting chronos-qdrant"
+    restart_unit chronos-qdrant
+    sleep 10
 fi
 
 # --- 2. Dash UI responds ---
-if ! curl -sf -o /dev/null http://localhost:8050/ 2>/dev/null; then
+if ! http_healthy http://localhost:8050/ >/dev/null 2>&1; then
     echo "$LOG_PREFIX Dash UI unreachable — restarting chronos-ui"
-    sudo systemctl restart chronos-ui
-    ok=false
+    restart_unit chronos-ui
 fi
 
 # --- 3. FastAPI responds ---
-if ! curl -sf -o /dev/null http://localhost:8000/api/v1/health 2>/dev/null; then
+if ! http_healthy http://localhost:8000/api/v1/health >/dev/null 2>&1; then
     echo "$LOG_PREFIX FastAPI unreachable — restarting chronos-api"
-    sudo systemctl restart chronos-api
-    ok=false
+    restart_unit chronos-api
 fi
 
 # --- 4. Auto-sync is alive ---
 if ! systemctl is-active --quiet chronos-auto-sync; then
     echo "$LOG_PREFIX Auto-sync not active — restarting"
-    sudo systemctl restart chronos-auto-sync
+    restart_unit chronos-auto-sync
+fi
+
+# --- 5. MCP server process is alive ---
+if ! systemctl is-active --quiet chronos-mcp; then
+    echo "$LOG_PREFIX MCP server not active — restarting"
+    restart_unit chronos-mcp
+fi
+
+# --- 6. Plaud auth tokens present and refreshable ---
+if ! auth_status=$(cd "$ROOT" && "$PYTHON_BIN" - <<'PY' 2>&1
+from src.plaud_oauth import PlaudOAuthClient
+
+client = PlaudOAuthClient()
+status = client.token_status
+
+if not status["has_access_token"] and not status["has_refresh_token"]:
+    raise SystemExit("Plaud OAuth tokens are missing")
+
+if status["needs_refresh"]:
+    client.ensure_valid_token()
+
+print("ok")
+PY
+); then
+    echo "$LOG_PREFIX WARNING: Plaud auth unhealthy — ${auth_status}"
     ok=false
 fi
 
-# --- 5. Disk space check (warn if <1GB free) ---
+# --- 7. Disk space check (warn if <1GB free) ---
 avail_kb=$(df /home | tail -1 | awk '{print $4}')
 if [ "$avail_kb" -lt 1048576 ] 2>/dev/null; then
     echo "$LOG_PREFIX WARNING: Low disk space — ${avail_kb}KB available"
     # Trim old logs to free space
-    find /home/gunnarhostetler/PlaudBlender/logs -name "*.log" -size +50M -exec truncate -s 10M {} \;
+    find "$ROOT/logs" -name "*.log" -size +50M -exec truncate -s 10M {} \;
     ok=false
 fi
 
-# --- 6. Docker container running ---
-if ! docker ps --format '{{.Names}}' | grep -q qdrant; then
+# --- 8. Docker container running ---
+if command -v docker >/dev/null 2>&1 && ! docker ps --format '{{.Names}}' | grep -q qdrant; then
     echo "$LOG_PREFIX Qdrant Docker container not running — restarting chronos-qdrant"
-    sudo systemctl restart chronos-qdrant
-    ok=false
+    restart_unit chronos-qdrant
 fi
 
 if $ok; then
