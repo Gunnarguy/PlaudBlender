@@ -58,6 +58,14 @@ def create_sidebar() -> html.Div:
                         ],
                     ),
                     html.Button(
+                        id={"type": "nav-item", "view": "system"},
+                        className="nav-item",
+                        children=[
+                            html.Span("🖥", className="nav-icon"),
+                            html.Span("System", className="nav-label"),
+                        ],
+                    ),
+                    html.Button(
                         id={"type": "nav-item", "view": "notion"},
                         className="nav-item",
                         children=[

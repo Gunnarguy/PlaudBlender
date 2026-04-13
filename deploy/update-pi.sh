@@ -59,10 +59,8 @@ restart_if_enabled chronos-mcp.service
 restart_if_enabled chronos-ngrok.service
 echo "  ✓ Service restart pass complete"
 
-echo "[6/6] Quick health check..."
-curl -fsS --max-time 10 http://localhost:8050/ >/dev/null && echo "  ✓ UI reachable" || echo "  ⚠ UI not reachable yet"
-curl -fsS --max-time 10 http://localhost:8000/api/v1/health >/dev/null && echo "  ✓ API reachable" || echo "  ⚠ API not reachable yet"
-systemctl is-active --quiet chronos-auto-sync && echo "  ✓ Auto-sync active" || echo "  ⚠ Auto-sync inactive"
+echo "[6/6] Verifying Pi health..."
+"$REPO_DIR/deploy/verify-pi.sh" || true
 
 echo ""
 echo "Update complete."

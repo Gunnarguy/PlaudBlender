@@ -61,6 +61,30 @@ class TestDashApp:
         assert dv_cb is not None
         assert graph_cb is not None
 
+    def test_sidebar_has_system_navigation(self):
+        """Sidebar should expose the dedicated System page."""
+        from app_v2.components.sidebar import create_sidebar
+
+        sidebar = create_sidebar()
+        found_system = False
+
+        def walk(node):
+            nonlocal found_system
+            node_id = getattr(node, "id", None)
+            if node_id == {"type": "nav-item", "view": "system"}:
+                found_system = True
+                return
+            children = getattr(node, "children", None)
+            if isinstance(children, list):
+                for child in children:
+                    if child is not None:
+                        walk(child)
+            elif children is not None and not isinstance(children, str):
+                walk(children)
+
+        walk(sidebar)
+        assert found_system
+
     def test_data_service_import(self):
         """Verify data service can be imported."""
         from app_v2.services.data_service import ChronosDataService
@@ -125,6 +149,74 @@ class TestDashApp:
 
         assert should_start is True
         assert reason == "forced by CHRONOS_EMBEDDED_AUTO_SYNC"
+
+    def test_create_system_view_renders_runtime_details(self, monkeypatch):
+        """System view should render host/runtime diagnostics without touching real services."""
+        from app_v2.callbacks import navigation
+
+        monkeypatch.setattr(
+            navigation,
+            "_get_local_runtime_status",
+            lambda: {
+                "manager_label": "systemd",
+                "manager_detail": "Dedicated systemd services own the pipeline",
+                "systemd_managed_auto_sync": True,
+                "auto_sync_ok": True,
+                "auto_sync_label": "Active",
+                "auto_sync_detail": "chronos-auto-sync.service: active (enabled)",
+                "watchdog_ok": True,
+                "watchdog_label": "Active",
+                "watchdog_detail": "chronos-watchdog.timer: active (enabled)",
+                "plaud_ok": True,
+                "plaud_label": "Linked",
+                "plaud_detail": "Token valid for ~50 min",
+                "ports": [
+                    {"label": "UI", "port": 8050, "ok": True},
+                    {"label": "API", "port": 8000, "ok": True},
+                ],
+            },
+        )
+        monkeypatch.setattr(
+            navigation,
+            "_check_services",
+            lambda _settings: {
+                "plaud": (True, "Token valid"),
+                "gemini": (True, "API key valid"),
+                "openai": (True, "API key valid"),
+                "sqlite": (True, "1 recordings, 2 events"),
+                "qdrant": (True, "2 points"),
+                "webhook_listener": (True, "Live on :8090"),
+                "webhook_config": (True, "Configured"),
+            },
+        )
+        monkeypatch.setattr(
+            navigation,
+            "_systemd_unit_state",
+            lambda _unit: ("active", "enabled"),
+        )
+        monkeypatch.setattr(
+            navigation,
+            "_read_log_tail",
+            lambda _name, max_lines=12: ["line 1", "line 2"],
+        )
+
+        class FakeStats:
+            total_events = 12
+            total_topics = 4
+
+        class FakeService:
+            def get_recording_db_stats(self):
+                return {"pending": 1, "processing": 2, "completed": 3, "failed": 0}
+
+            def get_stats(self):
+                return FakeStats()
+
+        view = navigation.create_system_view(FakeService())
+        rendered = str(view)
+
+        assert "System" in rendered
+        assert "Dedicated systemd services own the pipeline" in rendered
+        assert "verify-pi.sh" in rendered
 
 
 # ===========================================================================

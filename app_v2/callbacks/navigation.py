@@ -5,6 +5,7 @@ import platform
 import shutil
 import socket
 import subprocess
+from pathlib import Path
 from dash import Input, Output, State, callback, ctx, html, no_update, ALL, dcc
 from dash.exceptions import PreventUpdate
 import logging
@@ -43,7 +44,16 @@ def merge_preferences(preferences):
     merged["auto_refresh_enabled"] = bool(merged.get("auto_refresh_enabled", True))
 
     default_view = str(merged.get("default_view", "timeline"))
-    allowed_views = {"timeline", "days", "topics", "graph", "stats", "sync", "settings"}
+    allowed_views = {
+        "timeline",
+        "days",
+        "topics",
+        "graph",
+        "stats",
+        "system",
+        "sync",
+        "settings",
+    }
     merged["default_view"] = (
         default_view if default_view in allowed_views else "timeline"
     )
@@ -169,6 +179,474 @@ def _get_local_runtime_status() -> dict:
             {"label": "Webhook", "port": 8090, "ok": _local_port_open(8090)},
         ],
     }
+
+
+def _read_log_tail(log_name: str, max_lines: int = 12) -> list[str]:
+    """Read the last few lines from a local log file if it exists."""
+    log_path = Path(__file__).resolve().parents[2] / "logs" / log_name
+    if not log_path.exists():
+        return []
+
+    try:
+        lines = log_path.read_text(errors="replace").splitlines()
+    except Exception as exc:
+        return [f"Could not read {log_name}: {str(exc)[:80]}"]
+
+    trimmed = [line.strip() for line in lines if line.strip()]
+    return trimmed[-max_lines:]
+
+
+def create_system_view(service) -> html.Div:
+    """Create a dedicated host/runtime diagnostics page for Pi and desktop installs."""
+    from src.config import get_settings
+
+    runtime_status = _get_local_runtime_status()
+    checks = _check_services(get_settings())
+    db_stats = service.get_recording_db_stats()
+    stats = service.get_stats()
+
+    service_units = [
+        ("UI", "chronos-ui.service"),
+        ("Auto-Sync", "chronos-auto-sync.service"),
+        ("API", "chronos-api.service"),
+        ("MCP", "chronos-mcp.service"),
+        ("Qdrant", "chronos-qdrant.service"),
+        ("Watchdog", "chronos-watchdog.timer"),
+    ]
+
+    unit_rows = []
+    for label, unit_name in service_units:
+        active_state, enabled_state = _systemd_unit_state(unit_name)
+        ok = active_state in {"active", "activating", "reloading"}
+        unit_rows.append(
+            html.Div(
+                className="setting-row",
+                children=[
+                    html.Label(f"{label}:"),
+                    html.Span(
+                        active_state.title(),
+                        className=f"status-badge {'connected' if ok else 'disconnected'}",
+                    ),
+                    html.Span(
+                        f"{unit_name} ({enabled_state})",
+                        className="status-detail",
+                    ),
+                ],
+            )
+        )
+
+    connectivity_rows = []
+    for label, key in [
+        ("Plaud", "plaud"),
+        ("Gemini", "gemini"),
+        ("OpenAI", "openai"),
+        ("SQLite", "sqlite"),
+        ("Qdrant", "qdrant"),
+        ("Webhook Listener", "webhook_listener"),
+        ("Webhook Config", "webhook_config"),
+    ]:
+        ok, detail = checks.get(key, (False, "Unavailable"))
+        connectivity_rows.append(
+            html.Div(
+                className="setting-row",
+                children=[
+                    html.Label(f"{label}:"),
+                    html.Span(
+                        "OK" if ok else "Check",
+                        className=f"status-badge {'connected' if ok else 'disconnected'}",
+                    ),
+                    html.Span(detail, className="status-detail"),
+                ],
+            )
+        )
+
+    port_badges = []
+    for port in runtime_status.get("ports", []):
+        port_badges.append(
+            html.Div(
+                className="status-stat",
+                children=[
+                    html.Span(
+                        "UP" if port["ok"] else "DOWN",
+                        className="big-number",
+                        style={
+                            "fontSize": "0.95rem",
+                            "color": "#10b981" if port["ok"] else "#ef4444",
+                        },
+                    ),
+                    html.Span(
+                        f"{port['label']}:{port['port']}",
+                        className="stat-label",
+                    ),
+                ],
+            )
+        )
+
+    watchdog_lines = _read_log_tail("watchdog.log")
+    auto_sync_lines = _read_log_tail("auto_sync.log")
+
+    quick_commands = [
+        "~/PlaudBlender/deploy/verify-pi.sh",
+        "~/PlaudBlender/deploy/update-pi.sh",
+        "systemctl status chronos-ui chronos-auto-sync chronos-api chronos-mcp chronos-qdrant",
+        "journalctl -u chronos-auto-sync -f",
+        "journalctl -u chronos-watchdog.service -n 50 --no-pager",
+    ]
+
+    pending_count = int(db_stats.get("pending", 0) or 0)
+    processing_count = int(db_stats.get("processing", 0) or 0)
+    completed_count = int(db_stats.get("completed", 0) or 0)
+    failed_count = int(db_stats.get("failed", 0) or 0)
+
+    return html.Div(
+        className="sync-view system-view",
+        children=[
+            html.Div(
+                className="view-header",
+                children=[
+                    html.H2("🖥 System", className="view-title"),
+                    html.P(
+                        "Live host diagnostics for the machine serving Chronos. On the Pi, this is the actual systemd-managed runtime.",
+                        className="view-subtitle",
+                    ),
+                ],
+            ),
+            html.Div(
+                className="sync-dashboard-grid",
+                children=[
+                    html.Div(
+                        className="sync-main-column",
+                        children=[
+                            html.Div(
+                                className="sync-status-card runtime-status-card",
+                                children=[
+                                    html.H4("Runtime Overview"),
+                                    html.Div(
+                                        className="status-stats",
+                                        children=[
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        runtime_status["manager_label"],
+                                                        className="big-number",
+                                                        style={
+                                                            "fontSize": "0.95rem",
+                                                            "color": "#60a5fa",
+                                                        },
+                                                    ),
+                                                    html.Span(
+                                                        "Manager",
+                                                        className="stat-label",
+                                                    ),
+                                                ],
+                                                className="status-stat",
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        runtime_status[
+                                                            "auto_sync_label"
+                                                        ],
+                                                        className="big-number",
+                                                        style={
+                                                            "fontSize": "0.95rem",
+                                                            "color": (
+                                                                "#10b981"
+                                                                if runtime_status[
+                                                                    "auto_sync_ok"
+                                                                ]
+                                                                else "#ef4444"
+                                                            ),
+                                                        },
+                                                    ),
+                                                    html.Span(
+                                                        "Auto-Sync",
+                                                        className="stat-label",
+                                                    ),
+                                                ],
+                                                className="status-stat",
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        runtime_status[
+                                                            "watchdog_label"
+                                                        ],
+                                                        className="big-number",
+                                                        style={
+                                                            "fontSize": "0.95rem",
+                                                            "color": (
+                                                                "#10b981"
+                                                                if runtime_status[
+                                                                    "watchdog_ok"
+                                                                ]
+                                                                else "#94a3b8"
+                                                            ),
+                                                        },
+                                                    ),
+                                                    html.Span(
+                                                        "Watchdog",
+                                                        className="stat-label",
+                                                    ),
+                                                ],
+                                                className="status-stat",
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        runtime_status["plaud_label"],
+                                                        className="big-number",
+                                                        style={
+                                                            "fontSize": "0.95rem",
+                                                            "color": (
+                                                                "#10b981"
+                                                                if runtime_status[
+                                                                    "plaud_ok"
+                                                                ]
+                                                                else "#ef4444"
+                                                            ),
+                                                        },
+                                                    ),
+                                                    html.Span(
+                                                        "Plaud Auth",
+                                                        className="stat-label",
+                                                    ),
+                                                ],
+                                                className="status-stat",
+                                            ),
+                                        ],
+                                    ),
+                                    html.Div(
+                                        className="auto-sync-details",
+                                        children=[
+                                            html.Span(
+                                                runtime_status["manager_detail"],
+                                                className="sync-detail-text",
+                                            ),
+                                            html.Span(
+                                                " · ", className="sync-detail-sep"
+                                            ),
+                                            html.Span(
+                                                runtime_status["auto_sync_detail"],
+                                                className="sync-detail-text",
+                                            ),
+                                            html.Span(
+                                                " · ", className="sync-detail-sep"
+                                            ),
+                                            html.Span(
+                                                runtime_status["watchdog_detail"],
+                                                className="sync-detail-text",
+                                            ),
+                                        ],
+                                    ),
+                                    html.Div(
+                                        className="status-stats",
+                                        style={"marginTop": "12px"},
+                                        children=port_badges,
+                                    ),
+                                    html.Div(
+                                        className="auto-sync-details",
+                                        children=[
+                                            html.Span(
+                                                runtime_status["plaud_detail"],
+                                                className="sync-detail-text",
+                                            )
+                                        ],
+                                    ),
+                                ],
+                            ),
+                            html.Div(
+                                className="sync-status-card",
+                                children=[
+                                    html.H4("Service Diagnostics"),
+                                    *unit_rows,
+                                    html.H4(
+                                        "Connectivity Checks",
+                                        style={"marginTop": "14px"},
+                                    ),
+                                    *connectivity_rows,
+                                ],
+                            ),
+                            html.Div(
+                                className="sync-status-card",
+                                children=[
+                                    html.H4("Quick Commands"),
+                                    html.P(
+                                        "These run on the Pi itself. The verify script is the single-command red/green report.",
+                                        className="sync-note",
+                                    ),
+                                    html.Pre(
+                                        "\n".join(quick_commands),
+                                        style={
+                                            "whiteSpace": "pre-wrap",
+                                            "wordBreak": "break-word",
+                                            "fontSize": "0.85rem",
+                                            "background": "rgba(9, 105, 218, 0.04)",
+                                            "border": "1px solid rgba(9, 105, 218, 0.1)",
+                                            "borderRadius": "12px",
+                                            "padding": "12px",
+                                            "margin": "10px 0 0 0",
+                                        },
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                    html.Div(
+                        className="sync-side-column",
+                        children=[
+                            html.Div(
+                                className="sync-status-card",
+                                children=[
+                                    html.H4("Pipeline Snapshot"),
+                                    html.Div(
+                                        className="status-stats",
+                                        children=[
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        str(pending_count),
+                                                        className="big-number",
+                                                        style={"color": "#f59e0b"},
+                                                    ),
+                                                    html.Span(
+                                                        "Pending",
+                                                        className="stat-label",
+                                                    ),
+                                                ],
+                                                className="status-stat",
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        str(processing_count),
+                                                        className="big-number",
+                                                        style={"color": "#3b82f6"},
+                                                    ),
+                                                    html.Span(
+                                                        "Processing",
+                                                        className="stat-label",
+                                                    ),
+                                                ],
+                                                className="status-stat",
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        str(completed_count),
+                                                        className="big-number",
+                                                        style={"color": "#10b981"},
+                                                    ),
+                                                    html.Span(
+                                                        "Completed",
+                                                        className="stat-label",
+                                                    ),
+                                                ],
+                                                className="status-stat",
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        str(failed_count),
+                                                        className="big-number",
+                                                        style={
+                                                            "color": (
+                                                                "#ef4444"
+                                                                if failed_count
+                                                                else "#94a3b8"
+                                                            )
+                                                        },
+                                                    ),
+                                                    html.Span(
+                                                        "Failed", className="stat-label"
+                                                    ),
+                                                ],
+                                                className="status-stat",
+                                            ),
+                                        ],
+                                    ),
+                                    html.Div(
+                                        className="auto-sync-details",
+                                        children=[
+                                            html.Span(
+                                                f"Events indexed: {stats.total_events}",
+                                                className="sync-detail-text",
+                                            ),
+                                            html.Span(
+                                                " · ", className="sync-detail-sep"
+                                            ),
+                                            html.Span(
+                                                f"Topics: {stats.total_topics}",
+                                                className="sync-detail-text",
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                            html.Div(
+                                className="sync-status-card",
+                                children=[
+                                    html.H4("Recent Watchdog Activity"),
+                                    html.P(
+                                        "Latest lines from logs/watchdog.log on this host.",
+                                        className="sync-note",
+                                    ),
+                                    html.Pre(
+                                        (
+                                            "\n".join(watchdog_lines)
+                                            if watchdog_lines
+                                            else "No watchdog log entries yet."
+                                        ),
+                                        style={
+                                            "whiteSpace": "pre-wrap",
+                                            "wordBreak": "break-word",
+                                            "fontSize": "0.82rem",
+                                            "background": "rgba(15, 23, 42, 0.03)",
+                                            "border": "1px solid rgba(148, 163, 184, 0.18)",
+                                            "borderRadius": "12px",
+                                            "padding": "12px",
+                                            "margin": "10px 0 0 0",
+                                            "maxHeight": "280px",
+                                            "overflowY": "auto",
+                                        },
+                                    ),
+                                ],
+                            ),
+                            html.Div(
+                                className="sync-status-card",
+                                children=[
+                                    html.H4("Recent Auto-Sync Activity"),
+                                    html.P(
+                                        "Latest lines from logs/auto_sync.log on this host.",
+                                        className="sync-note",
+                                    ),
+                                    html.Pre(
+                                        (
+                                            "\n".join(auto_sync_lines)
+                                            if auto_sync_lines
+                                            else "No auto-sync log entries yet."
+                                        ),
+                                        style={
+                                            "whiteSpace": "pre-wrap",
+                                            "wordBreak": "break-word",
+                                            "fontSize": "0.82rem",
+                                            "background": "rgba(15, 23, 42, 0.03)",
+                                            "border": "1px solid rgba(148, 163, 184, 0.18)",
+                                            "borderRadius": "12px",
+                                            "padding": "12px",
+                                            "margin": "10px 0 0 0",
+                                            "maxHeight": "280px",
+                                            "overflowY": "auto",
+                                        },
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
 
 
 def create_sync_view(service) -> html.Div:
@@ -2931,6 +3409,8 @@ def register_navigation_callbacks(app):
             elif view == "stats":
                 stats = get_service().get_stats()
                 content = create_stats_view(stats)
+            elif view == "system":
+                content = create_system_view(get_service())
             elif view == "sync":
                 content = create_sync_view(get_service())
             elif view == "notion":
