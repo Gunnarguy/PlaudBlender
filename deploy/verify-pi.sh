@@ -39,6 +39,26 @@ check_unit() {
     fi
 }
 
+check_optional_unit() {
+    local unit="$1"
+    local label="$2"
+    local active
+    local enabled
+    active=$(systemctl is-active "$unit" 2>/dev/null || true)
+    enabled=$(systemctl is-enabled "$unit" 2>/dev/null || true)
+
+    if [[ "$enabled" == "disabled" || "$enabled" == "static" || "$enabled" == "indirect" || -z "$enabled" ]]; then
+        warn "$label: optional service is $active ($enabled)"
+        return
+    fi
+
+    if [[ "$active" == "active" || "$active" == "activating" || "$active" == "reloading" ]]; then
+        pass "$label: $active ($enabled)"
+    else
+        fail "$label: $active ($enabled)"
+    fi
+}
+
 check_http() {
     local url="$1"
     local label="$2"
@@ -63,7 +83,7 @@ check_unit chronos-qdrant.service "Qdrant service"
 check_unit chronos-ui.service "UI service"
 check_unit chronos-auto-sync.service "Auto-sync service"
 check_unit chronos-api.service "API service"
-check_unit chronos-mcp.service "MCP service"
+check_optional_unit chronos-mcp.service "MCP service"
 check_unit chronos-watchdog.timer "Watchdog timer"
 
 echo "[2/5] Checking ports and health endpoints..."
