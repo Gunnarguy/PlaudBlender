@@ -2570,13 +2570,12 @@ class ChronosDataService:
                 "Plaud API returned a server error — recording may no longer exist",
             )
 
-        if "500 Server Error" in error:
-            return (
-                "archived",
-                "Plaud API returned a server error — recording may no longer exist",
-            )
-
-        if "Gemini returned no events" in error and len(transcript.strip()) < 200:
+        no_events = (
+            "Gemini returned no events" in error
+            or "No AI provider returned any events" in error
+            or "OpenAI returned no events" in error
+        )
+        if no_events and len(transcript.strip()) < 200:
             return "archived", "transcript is too short to produce structured events"
 
         return "actionable", "retryable processing or Plaud fetch failure"
