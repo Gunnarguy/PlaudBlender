@@ -20,6 +20,13 @@ restart_unit() {
     ok=false
 }
 
+unit_enabled() {
+    local unit="$1"
+    local enabled
+    enabled=$(systemctl is-enabled "$unit" 2>/dev/null || true)
+    [[ "$enabled" == "enabled" || "$enabled" == "enabled-runtime" || "$enabled" == "linked" || "$enabled" == "alias" ]]
+}
+
 http_healthy() {
     local url="$1"
     curl -fsS --max-time 10 -o /dev/null "$url"
@@ -51,7 +58,7 @@ if ! systemctl is-active --quiet chronos-auto-sync; then
 fi
 
 # --- 5. MCP server process is alive ---
-if ! systemctl is-active --quiet chronos-mcp; then
+if unit_enabled chronos-mcp.service && ! systemctl is-active --quiet chronos-mcp; then
     echo "$LOG_PREFIX MCP server not active — restarting"
     restart_unit chronos-mcp
 fi
