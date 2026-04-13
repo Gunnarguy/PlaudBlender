@@ -5,7 +5,10 @@ Run with: python -m app_v2.main
 
 import logging
 import os
+import platform
 import secrets
+import shutil
+import subprocess
 import threading
 import time
 
@@ -35,6 +38,52 @@ INAPP_REDIRECT_URI = "https://localhost:8050/auth/plaud/callback"
 NOTION_REDIRECT_URI = os.environ.get(
     "NOTION_REDIRECT_URI", "http://localhost:8000/api/v1/auth/notion/callback"
 )
+
+
+def _should_start_embedded_auto_sync() -> tuple[bool, str]:
+    """Decide whether the Dash app should spawn its in-process auto-sync worker."""
+    override = str(os.environ.get("CHRONOS_EMBEDDED_AUTO_SYNC", "")).strip().lower()
+    if override in {"0", "false", "off", "no"}:
+        return False, "disabled by CHRONOS_EMBEDDED_AUTO_SYNC"
+    if override in {"1", "true", "on", "yes"}:
+        return True, "forced by CHRONOS_EMBEDDED_AUTO_SYNC"
+
+    if platform.system() != "Linux":
+        return True, "non-Linux runtime"
+
+    if not shutil.which("systemctl"):
+        return True, "systemctl unavailable"
+
+    try:
+        enabled = subprocess.run(
+            ["systemctl", "is-enabled", "chronos-auto-sync.service"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        enabled_state = (enabled.stdout or enabled.stderr or "").strip() or "unknown"
+
+        active = subprocess.run(
+            ["systemctl", "is-active", "chronos-auto-sync.service"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        active_state = (active.stdout or active.stderr or "").strip() or "unknown"
+
+        managed_states = {"enabled", "enabled-runtime", "linked", "alias", "static", "indirect"}
+        active_states = {"active", "activating", "reloading"}
+        if enabled_state in managed_states or active_state in active_states:
+            return (
+                False,
+                f"systemd manages chronos-auto-sync.service ({active_state}/{enabled_state})",
+            )
+    except Exception as exc:
+        logger.debug("Could not inspect systemd auto-sync service: %s", exc)
+
+    return True, "no systemd-managed auto-sync detected"
 
 
 def _register_auth_routes(server):
@@ -357,7 +406,10 @@ def create_app() -> Dash:
         from src.plaud_auto_sync import get_auto_sync
 
         oauth_client = PlaudOAuthClient()
-        if oauth_client.is_authenticated:
+        should_start_auto_sync, auto_sync_reason = _should_start_embedded_auto_sync()
+        if not should_start_auto_sync:
+            logger.info("Skipping embedded auto-sync startup: %s", auto_sync_reason)
+        elif oauth_client.is_authenticated:
             auto_sync = get_auto_sync()
             auto_sync.start()
             logger.info("Auto-sync service started in background")

@@ -1,6 +1,10 @@
 """Navigation callbacks - view switching and main content updates."""
 
 import os
+import platform
+import shutil
+import socket
+import subprocess
 from dash import Input, Output, State, callback, ctx, html, no_update, ALL, dcc
 from dash.exceptions import PreventUpdate
 import logging
@@ -46,12 +50,134 @@ def merge_preferences(preferences):
     return merged
 
 
+def _local_port_open(port: int, host: str = "127.0.0.1", timeout: float = 0.35) -> bool:
+    """Return True when a local TCP port is accepting connections."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _systemd_unit_state(unit_name: str) -> tuple[str, str]:
+    """Return (active_state, enabled_state) for a systemd unit when available."""
+    if platform.system() != "Linux" or not shutil.which("systemctl"):
+        return ("unavailable", "unavailable")
+
+    try:
+        active = subprocess.run(
+            ["systemctl", "is-active", unit_name],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        enabled = subprocess.run(
+            ["systemctl", "is-enabled", unit_name],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        active_state = (active.stdout or active.stderr or "").strip() or "unknown"
+        enabled_state = (enabled.stdout or enabled.stderr or "").strip() or "unknown"
+        return (active_state, enabled_state)
+    except Exception as exc:
+        return ("error", str(exc)[:80])
+
+
+def _get_local_runtime_status() -> dict:
+    """Return lightweight runtime status for the host running the Dash UI."""
+    systemd_available = platform.system() == "Linux" and bool(shutil.which("systemctl"))
+    auto_sync_active, auto_sync_enabled = _systemd_unit_state("chronos-auto-sync.service")
+    watchdog_active, watchdog_enabled = _systemd_unit_state("chronos-watchdog.timer")
+
+    managed_states = {"enabled", "enabled-runtime", "linked", "alias", "static", "indirect"}
+    active_states = {"active", "activating", "reloading"}
+    systemd_managed_auto_sync = systemd_available and (
+        auto_sync_enabled in managed_states or auto_sync_active in active_states
+    )
+
+    plaud_ok = False
+    plaud_label = "Missing"
+    plaud_detail = "No local Plaud token"
+    try:
+        from src.plaud_oauth import PlaudOAuthClient
+
+        token_status = PlaudOAuthClient().token_status
+        plaud_ok = bool(token_status.get("is_authenticated"))
+        mins = token_status.get("expires_in_minutes")
+        if plaud_ok:
+            plaud_label = "Linked"
+            if mins is not None:
+                plaud_detail = f"Token valid for ~{int(mins)} min"
+            else:
+                plaud_detail = "Token active"
+        elif token_status.get("has_refresh_token"):
+            plaud_label = "Refreshable"
+            plaud_detail = "Access token expired; refresh token present"
+    except Exception as exc:
+        plaud_label = "Error"
+        plaud_detail = str(exc)[:80]
+
+    if systemd_managed_auto_sync:
+        manager_label = "systemd"
+        auto_sync_label = auto_sync_active.title()
+        auto_sync_ok = auto_sync_active in active_states
+        auto_sync_detail = (
+            f"chronos-auto-sync.service: {auto_sync_active} ({auto_sync_enabled})"
+        )
+    else:
+        manager_label = "embedded"
+        auto_sync_label = "In-App"
+        auto_sync_ok = _local_port_open(8090)
+        auto_sync_detail = (
+            "Managed inside the Dash app on this host"
+            if not systemd_available
+            else "No active systemd auto-sync unit detected"
+        )
+
+    watchdog_ok = watchdog_active in active_states
+    if systemd_available and watchdog_enabled != "unavailable":
+        watchdog_label = watchdog_active.title()
+        watchdog_detail = f"chronos-watchdog.timer: {watchdog_active} ({watchdog_enabled})"
+    else:
+        watchdog_label = "N/A"
+        watchdog_detail = "systemd timer not available on this host"
+
+    return {
+        "manager_label": manager_label,
+        "manager_detail": (
+            "Dedicated systemd services own the pipeline"
+            if systemd_managed_auto_sync
+            else "Dash app owns the local background sync worker"
+        ),
+        "systemd_managed_auto_sync": systemd_managed_auto_sync,
+        "auto_sync_ok": auto_sync_ok,
+        "auto_sync_label": auto_sync_label,
+        "auto_sync_detail": auto_sync_detail,
+        "watchdog_ok": watchdog_ok,
+        "watchdog_label": watchdog_label,
+        "watchdog_detail": watchdog_detail,
+        "plaud_ok": plaud_ok,
+        "plaud_label": plaud_label,
+        "plaud_detail": plaud_detail,
+        "ports": [
+            {"label": "UI", "port": 8050, "ok": _local_port_open(8050)},
+            {"label": "API", "port": 8000, "ok": _local_port_open(8000)},
+            {"label": "Qdrant", "port": 6333, "ok": _local_port_open(6333)},
+            {"label": "Webhook", "port": 8090, "ok": _local_port_open(8090)},
+        ],
+    }
+
+
 def create_sync_view(service) -> html.Div:
     """Create the sync view with full pipeline controls and auto-sync status."""
     stats = service.get_stats()
     db_stats = service.get_recording_db_stats()
     workflow_stats = service.get_plaud_workflow_stats(days_back=30)
     failure_summary = service.get_sync_failure_summary(limit=5)
+    runtime_status = _get_local_runtime_status()
 
     pending = db_stats.get("pending", 0)
     processing = db_stats.get("processing", 0)
@@ -63,161 +189,161 @@ def create_sync_view(service) -> html.Div:
 
     # Auto-sync status
     auto_sync_children = []
-    try:
-        from src.plaud_auto_sync import get_auto_sync
+    if not runtime_status.get("systemd_managed_auto_sync"):
+        try:
+            from src.plaud_auto_sync import get_auto_sync
 
-        sync_svc = get_auto_sync()
-        status = sync_svc.get_status()
-        is_running = status.get("running", False)
-        devices = status.get("connected_devices", 0)
-        pending_jobs = status.get("pending_jobs", 0)
-        total_syncs = status.get("total_syncs", 0)
-        last_sync = status.get("last_sync")
-        config = status.get("config", {})
+            sync_svc = get_auto_sync()
+            status = sync_svc.get_status()
+            is_running = status.get("running", False)
+            devices = status.get("connected_devices", 0)
+            pending_jobs = status.get("pending_jobs", 0)
+            total_syncs = status.get("total_syncs", 0)
+            last_sync = status.get("last_sync")
+            config = status.get("config", {})
 
-        auto_sync_children = [
-            html.Div(
-                className="sync-status-card auto-sync-card",
-                children=[
-                    html.H4("⚡ Auto-Sync"),
-                    html.Div(
-                        className="status-stats",
-                        children=[
-                            html.Div(
-                                [
-                                    html.Span(
-                                        "●",
-                                        className="big-number",
-                                        style={
-                                            "color": (
-                                                "#10b981" if is_running else "#ef4444"
-                                            )
-                                        },
-                                    ),
-                                    html.Span(
-                                        "Running" if is_running else "Stopped",
-                                        className="stat-label",
-                                    ),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(str(devices), className="big-number"),
-                                    html.Span("USB Devices", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(
-                                        str(pending_jobs), className="big-number"
-                                    ),
-                                    html.Span("Pending Jobs", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                            html.Div(
-                                [
-                                    html.Span(str(total_syncs), className="big-number"),
-                                    html.Span("Total Syncs", className="stat-label"),
-                                ],
-                                className="status-stat",
-                            ),
-                        ],
-                    ),
-                    html.Div(
-                        className="auto-sync-details",
-                        children=[
-                            html.Span(
-                                f"Last sync: {last_sync or 'Never'}",
-                                className="sync-detail-text",
-                            ),
-                            html.Span(" · ", className="sync-detail-sep"),
-                            html.Span(
-                                f"USB: {'on' if config.get('sync_on_usb') else 'off'}",
-                                className="sync-detail-text",
-                            ),
-                            html.Span(" · ", className="sync-detail-sep"),
-                            html.Span(
-                                f"Webhook: {'on' if config.get('sync_on_webhook') else 'off'}",
-                                className="sync-detail-text",
-                            ),
-                            html.Span(" · ", className="sync-detail-sep"),
-                            html.Span(
-                                f"Webhook server: {'port ' + str(status.get('webhook_port', 8090)) if status.get('webhook_server_running') else 'off'}",
-                                className="sync-detail-text",
-                            ),
-                            html.Span(" · ", className="sync-detail-sep"),
-                            html.Span(
-                                f"Cloud poll: {'every ' + str(config.get('poll_interval_minutes', 15)) + 'm' if config.get('enable_scheduled_poll') else 'off'}",
-                                className="sync-detail-text",
-                            ),
-                            *(
-                                [
-                                    html.Span(" · ", className="sync-detail-sep"),
-                                    html.Span(
-                                        f"Last poll: {status.get('last_poll', 'Never')}",
-                                        className="sync-detail-text",
-                                    ),
-                                ]
-                                if status.get("last_poll")
-                                else []
-                            ),
-                        ],
-                    ),
-                    # Sync history
-                    *(
-                        [
-                            html.H5(
-                                "Recent Activity",
-                                style={"marginTop": "12px", "marginBottom": "6px"},
-                            ),
-                            html.Div(
-                                className="sync-history",
-                                children=[
-                                    html.Div(
-                                        className=f"sync-history-item {job.status}",
-                                        children=[
-                                            html.Span(
-                                                {
-                                                    "completed": "✅",
-                                                    "failed": "❌",
-                                                    "running": "🔄",
-                                                    "timeout": "⏰",
-                                                    "error": "⚠️",
-                                                    "pending": "⏳",
-                                                }.get(job.status, "•"),
-                                                className="history-icon",
-                                            ),
-                                            html.Span(
-                                                job.trigger.value.replace(
-                                                    "_", " "
-                                                ).title(),
-                                                className="history-trigger",
-                                            ),
-                                            html.Span(
-                                                job.timestamp.strftime("%H:%M:%S"),
-                                                className="history-time",
-                                            ),
-                                            html.Span(
-                                                (job.result or "")[:60],
-                                                className="history-result",
-                                            ),
-                                        ],
-                                    )
-                                    for job in reversed(sync_svc.sync_history[-10:])
-                                ],
-                            ),
-                        ]
-                        if sync_svc.sync_history
-                        else []
-                    ),
-                ],
-            ),
-        ]
-    except Exception as e:
-        logger.debug(f"Auto-sync status unavailable: {e}")
+            auto_sync_children = [
+                html.Div(
+                    className="sync-status-card auto-sync-card",
+                    children=[
+                        html.H4("⚡ Auto-Sync"),
+                        html.Div(
+                            className="status-stats",
+                            children=[
+                                html.Div(
+                                    [
+                                        html.Span(
+                                            "●",
+                                            className="big-number",
+                                            style={
+                                                "color": (
+                                                    "#10b981" if is_running else "#ef4444"
+                                                )
+                                            },
+                                        ),
+                                        html.Span(
+                                            "Running" if is_running else "Stopped",
+                                            className="stat-label",
+                                        ),
+                                    ],
+                                    className="status-stat",
+                                ),
+                                html.Div(
+                                    [
+                                        html.Span(str(devices), className="big-number"),
+                                        html.Span("USB Devices", className="stat-label"),
+                                    ],
+                                    className="status-stat",
+                                ),
+                                html.Div(
+                                    [
+                                        html.Span(
+                                            str(pending_jobs), className="big-number"
+                                        ),
+                                        html.Span("Pending Jobs", className="stat-label"),
+                                    ],
+                                    className="status-stat",
+                                ),
+                                html.Div(
+                                    [
+                                        html.Span(str(total_syncs), className="big-number"),
+                                        html.Span("Total Syncs", className="stat-label"),
+                                    ],
+                                    className="status-stat",
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            className="auto-sync-details",
+                            children=[
+                                html.Span(
+                                    f"Last sync: {last_sync or 'Never'}",
+                                    className="sync-detail-text",
+                                ),
+                                html.Span(" · ", className="sync-detail-sep"),
+                                html.Span(
+                                    f"USB: {'on' if config.get('sync_on_usb') else 'off'}",
+                                    className="sync-detail-text",
+                                ),
+                                html.Span(" · ", className="sync-detail-sep"),
+                                html.Span(
+                                    f"Webhook: {'on' if config.get('sync_on_webhook') else 'off'}",
+                                    className="sync-detail-text",
+                                ),
+                                html.Span(" · ", className="sync-detail-sep"),
+                                html.Span(
+                                    f"Webhook server: {'port ' + str(status.get('webhook_port', 8090)) if status.get('webhook_server_running') else 'off'}",
+                                    className="sync-detail-text",
+                                ),
+                                html.Span(" · ", className="sync-detail-sep"),
+                                html.Span(
+                                    f"Cloud poll: {'every ' + str(config.get('poll_interval_minutes', 15)) + 'm' if config.get('enable_scheduled_poll') else 'off'}",
+                                    className="sync-detail-text",
+                                ),
+                                *(
+                                    [
+                                        html.Span(" · ", className="sync-detail-sep"),
+                                        html.Span(
+                                            f"Last poll: {status.get('last_poll', 'Never')}",
+                                            className="sync-detail-text",
+                                        ),
+                                    ]
+                                    if status.get("last_poll")
+                                    else []
+                                ),
+                            ],
+                        ),
+                        *(
+                            [
+                                html.H5(
+                                    "Recent Activity",
+                                    style={"marginTop": "12px", "marginBottom": "6px"},
+                                ),
+                                html.Div(
+                                    className="sync-history",
+                                    children=[
+                                        html.Div(
+                                            className=f"sync-history-item {job.status}",
+                                            children=[
+                                                html.Span(
+                                                    {
+                                                        "completed": "✅",
+                                                        "failed": "❌",
+                                                        "running": "🔄",
+                                                        "timeout": "⏰",
+                                                        "error": "⚠️",
+                                                        "pending": "⏳",
+                                                    }.get(job.status, "•"),
+                                                    className="history-icon",
+                                                ),
+                                                html.Span(
+                                                    job.trigger.value.replace(
+                                                        "_", " "
+                                                    ).title(),
+                                                    className="history-trigger",
+                                                ),
+                                                html.Span(
+                                                    job.timestamp.strftime("%H:%M:%S"),
+                                                    className="history-time",
+                                                ),
+                                                html.Span(
+                                                    (job.result or "")[:60],
+                                                    className="history-result",
+                                                ),
+                                            ],
+                                        )
+                                        for job in reversed(sync_svc.sync_history[-10:])
+                                    ],
+                                ),
+                            ]
+                            if sync_svc.sync_history
+                            else []
+                        ),
+                    ],
+                ),
+            ]
+        except Exception as e:
+            logger.debug(f"Auto-sync status unavailable: {e}")
 
     # Plaud cloud stats row
     plaud_cloud_children = []
@@ -481,6 +607,120 @@ def create_sync_view(service) -> html.Div:
                 ]
                 if not auth_connected
                 else []
+            ),
+        ],
+    )
+
+    runtime_port_children = []
+    for idx, port_status in enumerate(runtime_status.get("ports", [])):
+        if idx:
+            runtime_port_children.append(
+                html.Span(" · ", className="sync-detail-sep")
+            )
+        runtime_port_children.append(
+            html.Span(
+                f"{port_status['label']}:{port_status['port']} {'up' if port_status['ok'] else 'down'}",
+                className="sync-detail-text",
+                style={"color": "#10b981" if port_status["ok"] else "#ef4444"},
+            )
+        )
+
+    runtime_card = html.Div(
+        className="sync-status-card runtime-status-card",
+        children=[
+            html.H4("🖥 Local Runtime"),
+            html.Div(
+                className="status-stats",
+                children=[
+                    html.Div(
+                        [
+                            html.Span(
+                                runtime_status["manager_label"],
+                                className="big-number",
+                                style={"fontSize": "0.95rem", "color": "#60a5fa"},
+                            ),
+                            html.Span("Manager", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(
+                                runtime_status["auto_sync_label"],
+                                className="big-number",
+                                style={
+                                    "fontSize": "0.95rem",
+                                    "color": "#10b981"
+                                    if runtime_status["auto_sync_ok"]
+                                    else "#ef4444",
+                                },
+                            ),
+                            html.Span("Auto-Sync", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(
+                                runtime_status["watchdog_label"],
+                                className="big-number",
+                                style={
+                                    "fontSize": "0.95rem",
+                                    "color": "#10b981"
+                                    if runtime_status["watchdog_ok"]
+                                    else "#94a3b8",
+                                },
+                            ),
+                            html.Span("Watchdog", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                    html.Div(
+                        [
+                            html.Span(
+                                runtime_status["plaud_label"],
+                                className="big-number",
+                                style={
+                                    "fontSize": "0.95rem",
+                                    "color": "#10b981"
+                                    if runtime_status["plaud_ok"]
+                                    else "#ef4444",
+                                },
+                            ),
+                            html.Span("Plaud Auth", className="stat-label"),
+                        ],
+                        className="status-stat",
+                    ),
+                ],
+            ),
+            html.Div(
+                className="auto-sync-details",
+                children=[
+                    html.Span(
+                        runtime_status["manager_detail"],
+                        className="sync-detail-text",
+                    ),
+                    html.Span(" · ", className="sync-detail-sep"),
+                    html.Span(
+                        runtime_status["auto_sync_detail"],
+                        className="sync-detail-text",
+                    ),
+                    html.Span(" · ", className="sync-detail-sep"),
+                    html.Span(
+                        runtime_status["watchdog_detail"],
+                        className="sync-detail-text",
+                    ),
+                ],
+            ),
+            html.Div(className="auto-sync-details", children=runtime_port_children),
+            html.Div(
+                className="auto-sync-details",
+                children=[
+                    html.Span(
+                        runtime_status["plaud_detail"],
+                        className="sync-detail-text",
+                    )
+                ],
             ),
         ],
     )
@@ -1044,6 +1284,7 @@ def create_sync_view(service) -> html.Div:
                     html.Div(
                         className="sync-side-column",
                         children=[
+                            runtime_card,
                             pipeline_status_card,
                             plaud_enrichment_card,
                             *auto_sync_children,

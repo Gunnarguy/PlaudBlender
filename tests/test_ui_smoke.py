@@ -8,6 +8,7 @@ import pytest
 import sys
 import os
 import threading
+from types import SimpleNamespace
 
 # Ensure project root is on path
 ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -89,6 +90,41 @@ class TestDashApp:
         assert calls["count"] == 1
         assert service._qdrant is not None
         assert service._embedder is not None
+
+    def test_embedded_auto_sync_skips_when_systemd_unit_enabled(self, monkeypatch):
+        """Dash should not start embedded auto-sync when systemd already owns it."""
+        import app_v2.main as app_main
+
+        monkeypatch.delenv("CHRONOS_EMBEDDED_AUTO_SYNC", raising=False)
+        monkeypatch.setattr(app_main.platform, "system", lambda: "Linux")
+        monkeypatch.setattr(app_main.shutil, "which", lambda _name: "/bin/systemctl")
+
+        def fake_run(args, **kwargs):
+            if args[:2] == ["systemctl", "is-enabled"]:
+                return SimpleNamespace(stdout="enabled\n", stderr="", returncode=0)
+            if args[:2] == ["systemctl", "is-active"]:
+                return SimpleNamespace(stdout="active\n", stderr="", returncode=0)
+            raise AssertionError(args)
+
+        monkeypatch.setattr(app_main.subprocess, "run", fake_run)
+
+        should_start, reason = app_main._should_start_embedded_auto_sync()
+
+        assert should_start is False
+        assert "systemd manages chronos-auto-sync.service" in reason
+
+    def test_embedded_auto_sync_respects_env_override(self, monkeypatch):
+        """CHRONOS_EMBEDDED_AUTO_SYNC should allow explicit opt-in override."""
+        import app_v2.main as app_main
+
+        monkeypatch.setenv("CHRONOS_EMBEDDED_AUTO_SYNC", "1")
+        monkeypatch.setattr(app_main.platform, "system", lambda: "Linux")
+        monkeypatch.setattr(app_main.shutil, "which", lambda _name: "/bin/systemctl")
+
+        should_start, reason = app_main._should_start_embedded_auto_sync()
+
+        assert should_start is True
+        assert reason == "forced by CHRONOS_EMBEDDED_AUTO_SYNC"
 
 
 # ===========================================================================
