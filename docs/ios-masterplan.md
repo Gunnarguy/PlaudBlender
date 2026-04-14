@@ -149,17 +149,17 @@ A **native SwiftUI iOS app** called **Chronos** that provides:
 
 ### Current Flask Routes (9 routes)
 
-| Route                   | Method       | Purpose                                      |
-| ----------------------- | ------------ | -------------------------------------------- |
-| `/auth/plaud`           | GET          | Start Plaud OAuth                            |
-| `/auth/plaud/callback`  | GET, OPTIONS | Plaud OAuth callback (triple-hit idempotent) |
-| `/auth/plaud/status`    | GET          | Auth status JSON                             |
-| `/auth/notion`          | GET          | Start Notion OAuth                           |
-| `/auth/notion/callback` | GET, OPTIONS | Notion OAuth callback                        |
-| `/auth/notion/status`   | GET          | Auth status JSON                             |
-| `/xray/api/events`      | GET          | Telemetry events (since_seq)                 |
-| `/xray/api/clear`       | POST         | Clear event buffer                           |
-| `/xray/api/costs`       | GET          | Cost tracking data                           |
+| Route                          | Method       | Purpose                                      |
+| ------------------------------ | ------------ | -------------------------------------------- |
+| `/auth/plaud`                  | GET          | Start Plaud OAuth                            |
+| `/auth/plaud/callback`         | GET, OPTIONS | Plaud OAuth callback (triple-hit idempotent) |
+| `/auth/plaud/status`           | GET          | Auth status JSON                             |
+| `/auth/notion`                 | GET          | Start Notion OAuth                           |
+| `/api/v1/auth/notion/callback` | GET          | Notion OAuth callback handled by FastAPI     |
+| `/auth/notion/status`          | GET          | Auth status JSON                             |
+| `/xray/api/events`             | GET          | Telemetry events (since_seq)                 |
+| `/xray/api/clear`              | POST         | Clear event buffer                           |
+| `/xray/api/costs`              | GET          | Cost tracking data                           |
 
 ### Current MCP Tools (11 tools — already REST-shaped!)
 

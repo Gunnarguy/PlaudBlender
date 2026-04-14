@@ -299,7 +299,7 @@ Sync recordings to Notion pages:
 - **Bridge:** `src/chronos/notion_bridge.py` — integration layer
 - **UI:** Notion view with page filter, channel select, sync preview
 - **Callbacks:** 20 Dash callbacks for full CRUD + batch sync
-- **Flask routes:** `/auth/notion`, `/auth/notion/callback`, `/auth/notion/status`
+- **Notion OAuth entry points:** Dash starts at `/auth/notion`, but the real callback is FastAPI at `/api/v1/auth/notion/callback`
 
 ---
 

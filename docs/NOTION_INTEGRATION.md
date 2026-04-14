@@ -234,12 +234,12 @@ Category filter buttons in the toolbar provide instant filtering. Active categor
 
 ### Environment Variables
 
-| Variable               | Required | Description                                                                |
-| ---------------------- | -------- | -------------------------------------------------------------------------- |
-| `NOTION_CLIENT_ID`     | Yes      | OAuth application client ID                                                |
-| `NOTION_CLIENT_SECRET` | Yes      | OAuth application client secret                                            |
-| `NOTION_DATABASE_ID`   | Auto-set | Selected database UUID (persisted on selection)                            |
-| `NOTION_REDIRECT_URI`  | No       | OAuth callback URL (default: `http://localhost:8050/auth/notion/callback`) |
+| Variable               | Required | Description                                                                       |
+| ---------------------- | -------- | --------------------------------------------------------------------------------- |
+| `NOTION_CLIENT_ID`     | Yes      | OAuth application client ID                                                       |
+| `NOTION_CLIENT_SECRET` | Yes      | OAuth application client secret                                                   |
+| `NOTION_DATABASE_ID`   | Auto-set | Selected database UUID (persisted on selection)                                   |
+| `NOTION_REDIRECT_URI`  | No       | OAuth callback URL (default: `http://localhost:8000/api/v1/auth/notion/callback`) |
 
 ### Notion Database Schema
 

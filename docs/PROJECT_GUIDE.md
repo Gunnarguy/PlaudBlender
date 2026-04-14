@@ -329,7 +329,7 @@ OPENAI_MODEL=gpt-5.4        # gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano, 
 OPENAI_TEMPERATURE=0.7      # 0.0 = deterministic, 2.0 = creative
 NOTION_CLIENT_ID=           # Notion OAuth (for Notion uplink)
 NOTION_CLIENT_SECRET=
-NOTION_REDIRECT_URI=http://localhost:8050/auth/notion/callback
+NOTION_REDIRECT_URI=http://localhost:8000/api/v1/auth/notion/callback
 ```
 
 ---

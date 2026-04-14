@@ -148,21 +148,21 @@ Configure in your MCP client:
 
 ## Environment Variables
 
-| Variable                  | Required | Description                                                                   |
-| ------------------------- | -------- | ----------------------------------------------------------------------------- |
-| `GEMINI_API_KEY`          | Yes      | Google Gemini API key                                                         |
-| `PLAUD_CLIENT_ID`         | Yes      | Plaud OAuth client ID                                                         |
-| `PLAUD_CLIENT_SECRET`     | Yes      | Plaud OAuth client secret                                                     |
-| `PLAUD_REDIRECT_URI`      | No       | OAuth callback (default: `http://localhost:8050/auth/plaud/callback`)         |
-| `QDRANT_URL`              | No       | Qdrant URL (default: `http://localhost:6333`)                                 |
-| `QDRANT_COLLECTION_NAME`  | No       | Collection name (default: `chronos_events`)                                   |
-| `CHRONOS_EMBEDDING_MODEL` | No       | Embedding model (default: `gemini-embedding-2-preview`)                       |
-| `CHRONOS_EMBEDDING_DIM`   | No       | Embedding dim (default: 768, range 128–3072)                                  |
-| `OPENAI_API_KEY`          | No       | OpenAI API key for RAG responses (Responses API)                              |
-| `OPENAI_MODEL`            | No       | OpenAI model (default: `gpt-5.4`)                                             |
-| `NOTION_CLIENT_ID`        | No       | Notion OAuth client ID (for Notion uplink)                                    |
-| `NOTION_CLIENT_SECRET`    | No       | Notion OAuth client secret                                                    |
-| `NOTION_REDIRECT_URI`     | No       | Notion OAuth callback (default: `http://localhost:8050/auth/notion/callback`) |
+| Variable                  | Required | Description                                                                          |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| `GEMINI_API_KEY`          | Yes      | Google Gemini API key                                                                |
+| `PLAUD_CLIENT_ID`         | Yes      | Plaud OAuth client ID                                                                |
+| `PLAUD_CLIENT_SECRET`     | Yes      | Plaud OAuth client secret                                                            |
+| `PLAUD_REDIRECT_URI`      | No       | OAuth callback (default: `http://localhost:8050/auth/plaud/callback`)                |
+| `QDRANT_URL`              | No       | Qdrant URL (default: `http://localhost:6333`)                                        |
+| `QDRANT_COLLECTION_NAME`  | No       | Collection name (default: `chronos_events`)                                          |
+| `CHRONOS_EMBEDDING_MODEL` | No       | Embedding model (default: `gemini-embedding-2-preview`)                              |
+| `CHRONOS_EMBEDDING_DIM`   | No       | Embedding dim (default: 768, range 128–3072)                                         |
+| `OPENAI_API_KEY`          | No       | OpenAI API key for RAG responses (Responses API)                                     |
+| `OPENAI_MODEL`            | No       | OpenAI model (default: `gpt-5.4`)                                                    |
+| `NOTION_CLIENT_ID`        | No       | Notion OAuth client ID (for Notion uplink)                                           |
+| `NOTION_CLIENT_SECRET`    | No       | Notion OAuth client secret                                                           |
+| `NOTION_REDIRECT_URI`     | No       | Notion OAuth callback (default: `http://localhost:8000/api/v1/auth/notion/callback`) |
 
 ## Commands
 

@@ -903,6 +903,19 @@ class TestAuthEndpoints:
             r = client.get("/api/v1/auth/notion/authorize")
             assert r.status_code == 200
 
+    def test_notion_web_authorize_uses_api_callback(self, client, monkeypatch):
+        monkeypatch.delenv("NOTION_REDIRECT_URI", raising=False)
+        with patch("src.notion_oauth.NotionOAuthClient") as MockNotion:
+            MockNotion.return_value.get_authorization_url.return_value = (
+                "https://notion.so/auth",
+                "nonce",
+            )
+            r = client.get("/api/v1/auth/notion/web-authorize", follow_redirects=False)
+            assert r.status_code in (302, 307)
+            MockNotion.assert_called_once_with(
+                redirect_uri="http://testserver/api/v1/auth/notion/callback"
+            )
+
     def test_notion_token_exchange(self, client):
         with patch("src.notion_oauth.NotionOAuthClient") as MockNotion:
             MockNotion.return_value.token_status = {
@@ -1009,7 +1022,11 @@ class TestRouteCount:
         """Verify all expected API routes are registered."""
         from api.main import app
 
-        routes = [r.path for r in app.routes if hasattr(r, "methods")]
+        routes = [
+            getattr(r, "path")
+            for r in app.routes
+            if hasattr(r, "methods") and hasattr(r, "path")
+        ]
         # Spot-check key routes
         assert "/api/v1/health" in routes
         assert "/api/v1/timeline/days" in routes

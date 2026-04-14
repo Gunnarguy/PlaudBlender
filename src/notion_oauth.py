@@ -28,7 +28,7 @@ NOTION_API_VERSION = "2022-06-28"
 
 # Local storage
 TOKEN_FILE = Path(__file__).parent.parent / ".notion_tokens.json"
-DEFAULT_REDIRECT_URI = "https://localhost:8050/auth/notion/callback"
+DEFAULT_REDIRECT_URI = "http://localhost:8000/api/v1/auth/notion/callback"
 
 
 class NotionOAuthClient:
