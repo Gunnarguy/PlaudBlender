@@ -676,6 +676,32 @@ class TestSync:
         r = client.get("/api/v1/sync/db-stats")
         assert r.status_code == 200
 
+    def test_sync_failures_hides_archived_by_default(self, client, mock_svc):
+        mock_svc.get_sync_failure_summary.return_value = {
+            "actionable_count": 0,
+            "archived_count": 0,
+            "actionable": [],
+            "archived": [],
+        }
+
+        r = client.get("/api/v1/sync/failures")
+
+        assert r.status_code == 200
+        mock_svc.get_sync_failure_summary.assert_called_with(include_archived=False)
+
+    def test_sync_failures_can_include_archived(self, client, mock_svc):
+        mock_svc.get_sync_failure_summary.return_value = {
+            "actionable_count": 0,
+            "archived_count": 2,
+            "actionable": [],
+            "archived": [{"recording_id": "rec-1", "error": "dead-end"}],
+        }
+
+        r = client.get("/api/v1/sync/failures?include_archived=true")
+
+        assert r.status_code == 200
+        mock_svc.get_sync_failure_summary.assert_called_with(include_archived=True)
+
     def test_reset_stuck(self, client, mock_svc):
         r = client.post("/api/v1/sync/reset-stuck")
         assert r.status_code == 200

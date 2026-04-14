@@ -140,9 +140,16 @@ async def sync_db_stats(svc: ChronosDataService = Depends(get_service)):
 
 
 @router.get("/failures", response_model=SyncFailureSummaryOut)
-async def sync_failures(svc: ChronosDataService = Depends(get_service)):
-    """Summarize actionable versus archived sync failures."""
-    return svc.get_sync_failure_summary()
+async def sync_failures(
+    include_archived: bool = False,
+    svc: ChronosDataService = Depends(get_service),
+):
+    """Summarize retryable sync failures.
+
+    Archived dead-end failures are hidden by default and only included when
+    `include_archived=true` is passed explicitly.
+    """
+    return svc.get_sync_failure_summary(include_archived=include_archived)
 
 
 @router.post("/reset-stuck", response_model=SuccessResponse)

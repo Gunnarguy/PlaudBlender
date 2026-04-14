@@ -373,9 +373,17 @@ async def get_stats() -> str:
             else 0
         )
 
+        recording_total = db_stats.get(
+            "total",
+            db_stats.get("completed", 0)
+            + db_stats.get("failed", 0)
+            + db_stats.get("pending", 0)
+            + db_stats.get("processing", 0),
+        )
+
         result = {
             "recordings": {
-                "total": sum(db_stats.values()),
+                "total": recording_total,
                 "completed": db_stats.get("completed", 0),
                 "failed": db_stats.get("failed", 0),
                 "pending": db_stats.get("pending", 0),

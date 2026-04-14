@@ -218,6 +218,84 @@ class TestDashApp:
         assert "Dedicated systemd services own the pipeline" in rendered
         assert "verify-pi.sh" in rendered
 
+    def test_create_sync_view_hides_archived_failures(self, monkeypatch):
+        """Sync view should only surface actionable failures, not archived dead-ends."""
+        from app_v2.callbacks import navigation
+
+        monkeypatch.setattr(
+            navigation,
+            "_get_local_runtime_status",
+            lambda: {
+                "manager_label": "systemd",
+                "manager_detail": "Dedicated systemd services own the pipeline",
+                "systemd_managed_auto_sync": True,
+                "auto_sync_ok": True,
+                "auto_sync_label": "Active",
+                "auto_sync_detail": "chronos-auto-sync.service: active (enabled)",
+                "watchdog_ok": True,
+                "watchdog_label": "Active",
+                "watchdog_detail": "chronos-watchdog.timer: active (enabled)",
+                "plaud_ok": True,
+                "plaud_label": "Linked",
+                "plaud_detail": "Token valid for ~50 min",
+                "ports": [],
+            },
+        )
+
+        class FakeStats:
+            total_events = 12
+            total_days = 4
+            total_duration_hours = 2.5
+            plaud_cloud_stats = None
+
+        class FakeService:
+            def get_stats(self):
+                return FakeStats()
+
+            def get_recording_db_stats(self):
+                return {
+                    "pending": 1,
+                    "processing": 0,
+                    "completed": 3,
+                    "failed": 0,
+                    "archived_failed": 6,
+                    "total": 10,
+                }
+
+            def get_plaud_workflow_stats(self, days_back=30):
+                return {
+                    "recent_recordings": 10,
+                    "workflow_success": 0,
+                    "workflow_pending": 0,
+                    "workflow_failed": 0,
+                    "with_ai_summary": 0,
+                }
+
+            def get_sync_failure_summary(self, limit=5):
+                return {
+                    "actionable_count": 0,
+                    "archived_count": 6,
+                    "actionable": [],
+                    "archived": [
+                        {
+                            "recording_id": "rec-archived-001",
+                            "reason": "Plaud has no transcript available for this recording",
+                            "error": "No transcript available in Plaud source_list",
+                        }
+                    ],
+                }
+
+            def get_upload_candidates(self):
+                return []
+
+        view = navigation.create_sync_view(FakeService())
+        rendered = str(view)
+
+        assert "Retryable Issues" not in rendered
+        assert "Archived" not in rendered
+        assert "rec-archived-001" not in rendered
+        assert ">10<" in rendered or "10" in rendered
+
 
 # ===========================================================================
 # Src Module Tests

@@ -2535,7 +2535,34 @@ class ChronosDataService:
                         "SELECT processing_status, COUNT(*) FROM chronos_recordings GROUP BY processing_status"
                     )
                 )
-                return {row[0]: row[1] for row in result}
+
+                status_counts = {str(row[0]): int(row[1]) for row in result}
+                total_count = sum(status_counts.values())
+
+                failed_rows = []
+                raw_failed = int(status_counts.get("failed", 0) or 0)
+                if raw_failed > 0:
+                    failed_rows = (
+                        db.query(_ChronosRecordingModel)
+                        .filter(_ChronosRecordingModel.processing_status == "failed")
+                        .all()
+                    )
+
+                actionable_failed = 0
+                archived_failed = 0
+                for rec in failed_rows:
+                    bucket, _reason = self._classify_sync_failure(rec)
+                    if bucket == "actionable":
+                        actionable_failed += 1
+                    else:
+                        archived_failed += 1
+
+                status_counts["failed"] = actionable_failed
+                status_counts["total"] = total_count
+                if archived_failed:
+                    status_counts["archived_failed"] = archived_failed
+
+                return status_counts
             finally:
                 db.close()
         except Exception as e:
@@ -2580,8 +2607,14 @@ class ChronosDataService:
 
         return "actionable", "retryable processing or Plaud fetch failure"
 
-    def get_sync_failure_summary(self, limit: int = 5) -> Dict[str, Any]:
-        """Return actionable vs archived failed recordings for the Sync UI."""
+    def get_sync_failure_summary(
+        self, limit: int = 5, include_archived: bool = False
+    ) -> Dict[str, Any]:
+        """Return retryable failed recordings for the Sync UI.
+
+        Archived dead-end failures remain in the database, but are hidden from the
+        default UI/API response unless explicitly requested for debugging.
+        """
         summary: Dict[str, Any] = {
             "actionable_count": 0,
             "archived_count": 0,
@@ -2612,7 +2645,7 @@ class ChronosDataService:
                         summary["actionable_count"] += 1
                         if len(summary["actionable"]) < limit:
                             summary["actionable"].append(item)
-                    else:
+                    elif include_archived:
                         summary["archived_count"] += 1
                         if len(summary["archived"]) < limit:
                             summary["archived"].append(item)

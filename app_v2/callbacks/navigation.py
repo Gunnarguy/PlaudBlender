@@ -661,9 +661,8 @@ def create_sync_view(service) -> html.Div:
     processing = db_stats.get("processing", 0)
     failed = db_stats.get("failed", 0)
     completed = db_stats.get("completed", 0)
-    total = pending + processing + failed + completed
+    total = int(db_stats.get("total", pending + processing + failed + completed) or 0)
     actionable_failed = int(failure_summary.get("actionable_count", 0) or 0)
-    archived_failed = int(failure_summary.get("archived_count", 0) or 0)
 
     # Auto-sync status
     auto_sync_children = []
@@ -829,7 +828,6 @@ def create_sync_view(service) -> html.Div:
     # Failed recording details (actionable vs archived)
     failed_details_children = []
     actionable_rows = failure_summary.get("actionable", [])
-    archived_rows = failure_summary.get("archived", [])
     if actionable_rows:
         failed_details_children.append(
             html.Div(
@@ -860,49 +858,6 @@ def create_sync_view(service) -> html.Div:
                                 f"{row['recording_id'][:16]}… — {row['error'][:80]}"
                             )
                             for row in actionable_rows
-                        ],
-                    ),
-                ],
-            )
-        )
-    if archived_rows:
-        failed_details_children.append(
-            html.Div(
-                className="failed-recordings-detail",
-                style={
-                    "marginTop": "10px",
-                    "borderTop": "1px solid var(--border-color, #e2e8f0)",
-                    "paddingTop": "10px",
-                },
-                children=[
-                    html.Span(
-                        "🗃 Archived Issues:",
-                        style={
-                            "fontWeight": "600",
-                            "fontSize": "0.85rem",
-                            "color": "#94a3b8",
-                        },
-                    ),
-                    html.P(
-                        "These stay out of the red failure count because retry/reset will not fix them through Sync.",
-                        style={
-                            "margin": "4px 0 0 0",
-                            "fontSize": "0.78rem",
-                            "color": "#94a3b8",
-                        },
-                    ),
-                    html.Ul(
-                        style={
-                            "margin": "4px 0 0 0",
-                            "paddingLeft": "18px",
-                            "fontSize": "0.8rem",
-                            "color": "#94a3b8",
-                        },
-                        children=[
-                            html.Li(
-                                f"{row['recording_id'][:16]}… — {row['reason']}"
-                            )
-                            for row in archived_rows
                         ],
                     ),
                 ],
@@ -1491,13 +1446,6 @@ def create_sync_view(service) -> html.Div:
                         [
                             html.Span(f"{stats.total_duration_hours:.1f}", className="big-number"),
                             html.Span("Hours Recorded", className="stat-label"),
-                        ],
-                        className="status-stat",
-                    ),
-                    html.Div(
-                        [
-                            html.Span(str(archived_failed), className="big-number"),
-                            html.Span("Archived", className="stat-label"),
                         ],
                         className="status-stat",
                     ),
