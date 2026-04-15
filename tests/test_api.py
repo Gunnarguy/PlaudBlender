@@ -916,6 +916,44 @@ class TestAuthEndpoints:
                 redirect_uri="http://testserver/api/v1/auth/notion/callback"
             )
 
+    def test_notion_web_authorize_tracks_return_to(self, client):
+        from api.routes import auth as auth_routes
+
+        with patch("src.notion_oauth.NotionOAuthClient") as MockNotion:
+            MockNotion.return_value.get_authorization_url.return_value = (
+                "https://notion.so/auth",
+                "nonce-state",
+            )
+            r = client.get(
+                "/api/v1/auth/notion/web-authorize",
+                params={"return_to": "https://dash.example/system"},
+                follow_redirects=False,
+            )
+            assert r.status_code in (302, 307)
+            assert auth_routes._notion_oauth_pending["nonce-state"] == {
+                "source": "web",
+                "return_to": "https://dash.example/system",
+            }
+
+    def test_notion_callback_redirects_back_to_originating_web_host(self, client):
+        from api.routes import auth as auth_routes
+
+        auth_routes._notion_oauth_pending["nonce-state"] = {
+            "source": "web",
+            "return_to": "https://dash.example/system?tab=notion",
+        }
+        with patch("src.notion_oauth.NotionOAuthClient") as MockNotion:
+            r = client.get(
+                "/api/v1/auth/notion/callback",
+                params={"code": "code123", "state": "nonce-state"},
+                follow_redirects=False,
+            )
+            assert r.status_code in (302, 307)
+            assert (
+                r.headers["location"]
+                == "https://dash.example/system?tab=notion&notion_connected=1"
+            )
+
     def test_notion_token_exchange(self, client):
         with patch("src.notion_oauth.NotionOAuthClient") as MockNotion:
             MockNotion.return_value.token_status = {

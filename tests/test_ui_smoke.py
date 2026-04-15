@@ -150,6 +150,23 @@ class TestDashApp:
         assert should_start is True
         assert reason == "forced by CHRONOS_EMBEDDED_AUTO_SYNC"
 
+    def test_notion_api_authorize_url_uses_callback_host(self, monkeypatch):
+        """Dash should start Notion OAuth against the API host from NOTION_REDIRECT_URI."""
+        import app_v2.main as app_main
+
+        monkeypatch.setattr(
+            app_main,
+            "NOTION_REDIRECT_URI",
+            "https://glairy-ona-irreplaceable.ngrok-free.dev/api/v1/auth/notion/callback",
+        )
+
+        url = app_main._notion_api_authorize_url("https://ui.example/notion")
+
+        assert url == (
+            "https://glairy-ona-irreplaceable.ngrok-free.dev/api/v1/auth/notion/web-authorize"
+            "?return_to=https%3A%2F%2Fui.example%2Fnotion"
+        )
+
     def test_create_system_view_renders_runtime_details(self, monkeypatch):
         """System view should render host/runtime diagnostics without touching real services."""
         from app_v2.callbacks import navigation

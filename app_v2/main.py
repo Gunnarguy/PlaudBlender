@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import threading
 import time
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from dash import Dash
 from flask import redirect, request, jsonify, make_response
@@ -38,6 +39,21 @@ INAPP_REDIRECT_URI = "https://localhost:8050/auth/plaud/callback"
 NOTION_REDIRECT_URI = os.environ.get(
     "NOTION_REDIRECT_URI", "http://localhost:8000/api/v1/auth/notion/callback"
 )
+
+
+def _notion_api_authorize_url(return_to: str = "") -> str:
+    """Build the FastAPI Notion authorize URL from the configured callback host."""
+    parsed = urlsplit(NOTION_REDIRECT_URI)
+    if parsed.scheme and parsed.netloc:
+        base = urlunsplit(
+            (parsed.scheme, parsed.netloc, "/api/v1/auth/notion/web-authorize", "", "")
+        )
+    else:
+        base = "http://localhost:8000/api/v1/auth/notion/web-authorize"
+
+    if return_to:
+        return f"{base}?{urlencode({'return_to': return_to})}"
+    return base
 
 
 def _should_start_embedded_auto_sync() -> tuple[bool, str]:
@@ -258,7 +274,8 @@ def _register_auth_routes(server):
     @server.route("/auth/notion")
     def auth_notion_start():
         """Start Notion OAuth — redirect through FastAPI backend."""
-        return redirect("http://localhost:8000/api/v1/auth/notion/web-authorize")
+        return_to = request.host_url.rstrip("/") + "/"
+        return redirect(_notion_api_authorize_url(return_to=return_to))
 
     @server.route("/auth/notion/callback", methods=["GET", "OPTIONS"])
     def auth_notion_callback():

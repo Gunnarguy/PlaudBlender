@@ -1,6 +1,7 @@
 """OAuth authentication flow endpoints (Plaud + Notion)."""
 
 import os
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -9,8 +10,8 @@ from api.schemas.responses import AuthURLResponse, TokenExchangeRequest, TokenSt
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
-# In-memory map: OAuth state → source ("mobile" | "web")
-_notion_oauth_pending: dict[str, str] = {}
+# In-memory map: OAuth state → metadata about the flow source/return path.
+_notion_oauth_pending: dict[str, dict[str, str]] = {}
 
 
 # ── Plaud OAuth ─────────────────────────────────────────────
@@ -136,11 +137,15 @@ async def notion_authorize(request: Request):
     from src.notion_oauth import NotionOAuthClient
 
     mobile = request.query_params.get("mobile", "").lower() in ("true", "1")
+    return_to = _clean_return_to(request.query_params.get("return_to", ""))
     redirect_uri = _notion_redirect_uri(request)
     client = NotionOAuthClient(redirect_uri=redirect_uri)
 
     url, state = client.get_authorization_url()
-    _notion_oauth_pending[state] = "mobile" if mobile else "web"
+    _notion_oauth_pending[state] = {
+        "source": "mobile" if mobile else "web",
+        "return_to": return_to,
+    }
     return AuthURLResponse(auth_url=url, state=state)
 
 
@@ -156,7 +161,10 @@ async def notion_web_authorize(request: Request):
     redirect_uri = _notion_redirect_uri(request)
     client = NotionOAuthClient(redirect_uri=redirect_uri)
     url, state = client.get_authorization_url()
-    _notion_oauth_pending[state] = "web"
+    _notion_oauth_pending[state] = {
+        "source": "web",
+        "return_to": _clean_return_to(request.query_params.get("return_to", "")),
+    }
     return RedirectResponse(url=url)
 
 
@@ -170,13 +178,15 @@ async def notion_callback(
     - ``plaudblender://`` for iOS (ASWebAuthenticationSession catches it)
     - ``http://localhost:8050/`` for the Dash web UI
     """
-    source = _notion_oauth_pending.pop(state, "mobile")
+    pending = _notion_oauth_pending.pop(state, {})
+    source = pending.get("source", "mobile")
+    return_to = pending.get("return_to", "")
 
     if error:
-        return _notion_redirect(source, error=error)
+        return _notion_redirect(source, return_to=return_to, error=error)
 
     if not code:
-        return _notion_redirect(source, error="no_code")
+        return _notion_redirect(source, return_to=return_to, error="no_code")
 
     from src.notion_oauth import NotionOAuthClient
 
@@ -185,9 +195,9 @@ async def notion_callback(
     try:
         client.exchange_code_for_token(code=code)
     except Exception as exc:
-        return _notion_redirect(source, error=str(exc))
+        return _notion_redirect(source, return_to=return_to, error=str(exc))
 
-    return _notion_redirect(source, success=True)
+    return _notion_redirect(source, return_to=return_to, success=True)
 
 
 # ── helpers ──────────────────────────────────────────────────
@@ -203,17 +213,45 @@ def _notion_redirect_uri(request: Request) -> str:
 
 
 def _notion_redirect(
-    source: str, *, success: bool = False, error: str = ""
+    source: str, *, return_to: str = "", success: bool = False, error: str = ""
 ) -> RedirectResponse:
     """Build the post-auth redirect for the given source."""
     if source == "web":
+        base = return_to or "http://localhost:8050/"
         if error:
-            return RedirectResponse(url=f"http://localhost:8050/?notion_error={error}")
-        return RedirectResponse(url="http://localhost:8050/?notion_connected=1")
+            return RedirectResponse(url=_append_query(base, {"notion_error": error}))
+        return RedirectResponse(url=_append_query(base, {"notion_connected": "1"}))
     else:
         if error:
             return RedirectResponse(url=f"plaudblender://notion-callback?error={error}")
         return RedirectResponse(url="plaudblender://notion-callback?success=true")
+
+
+def _clean_return_to(value: str) -> str:
+    """Allow only absolute http/https return URLs for web OAuth redirects."""
+    if not value:
+        return ""
+
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return urlunsplit(parsed)
+
+
+def _append_query(url: str, params: dict[str, str]) -> str:
+    """Append query params to a URL without losing existing parameters."""
+    parsed = urlsplit(url)
+    existing = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    existing.update(params)
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urlencode(existing),
+            parsed.fragment,
+        )
+    )
 
 
 @router.post("/notion/token", response_model=TokenStatusOut)
