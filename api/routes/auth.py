@@ -25,7 +25,7 @@ async def plaud_status():
     from src.plaud_oauth import PlaudOAuthClient
 
     client = PlaudOAuthClient()
-    ts = client.token_status_with_recovery(attempt_recovery=True)
+    ts = client.token_status
     return TokenStatusOut(
         is_authenticated=ts.get("is_authenticated", False),
         has_access_token=ts.get("has_access_token", False),

@@ -142,18 +142,11 @@ async def list_notion_recordings(
     Supports optional pagination via limit/offset query params.
     If limit is omitted, all recordings are returned.
     """
-    from src.chronos.notion_bridge import match_notion_to_chronos
-    from src.database import SessionLocal
-
     ns = _get_notion_service()
-    # Always fetch all pages so we know the true total and can compute real match status.
+    # Always fetch all pages so we know the true total
     pages = ns.fetch_recordings(limit=2000)
     total = len(pages)
-
-    with SessionLocal() as session:
-        match_map = match_notion_to_chronos(pages, session)
-
-    # Apply offset/limit slicing after computing the full match map.
+    # Apply offset/limit slicing
     if offset:
         pages = pages[offset:]
     if limit is not None:
@@ -173,7 +166,7 @@ async def list_notion_recordings(
                 duration=getattr(p, "duration", None),
                 tags=getattr(p, "tags", None),
                 category=getattr(p, "category", None),
-                matched_recording_id=match_map.get(p.page_id),
+                matched_recording_id=getattr(p, "matched_recording_id", None),
             )
         )
     return NotionRecordingsResponse(
