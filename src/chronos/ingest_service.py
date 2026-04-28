@@ -8,7 +8,7 @@ never rely on transient download URLs.
 import os
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse
@@ -59,6 +59,80 @@ class ChronosIngestService:
         Path(self.settings.chronos_raw_audio_dir).mkdir(parents=True, exist_ok=True)
         Path(self.settings.chronos_processed_dir).mkdir(parents=True, exist_ok=True)
         Path(self.settings.chronos_graph_cache_dir).mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _comparison_timestamp(value: Optional[str]) -> Optional[datetime]:
+        """Parse Plaud timestamps into naive UTC datetimes for comparisons."""
+        if not value:
+            return None
+
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+        if parsed.tzinfo is not None:
+            return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        return parsed
+
+    def _fetch_recent_recordings_window(
+        self,
+        *,
+        days_back: int,
+        page_size: int = 20,
+    ) -> Tuple[List[dict], int, str]:
+        """Fetch Plaud pages until the recent time window is fully covered.
+
+        Plaud returns at most 20 recordings per page. When callers ask for a
+        paginated ingest pass, we only keep pulling pages while recordings still
+        fall inside the requested recent window. This keeps manual "full sync"
+        useful for fresh data without hammering the entire history on every run.
+        """
+        cutoff = datetime.utcnow() - timedelta(days=days_back)
+        recordings: List[dict] = []
+        page = 1
+        pages_fetched = 0
+        stop_reason = "no Plaud recordings returned"
+
+        while True:
+            page_records = self.plaud.list_recordings(page=page, page_size=page_size)
+            if not page_records:
+                stop_reason = f"page {page} returned no recordings"
+                break
+
+            pages_fetched += 1
+            recent_records: List[dict] = []
+            older_count = 0
+
+            for rec_data in page_records:
+                record_time = self._comparison_timestamp(
+                    rec_data.get("start_at") or rec_data.get("created_at")
+                )
+                if record_time and record_time < cutoff:
+                    older_count += 1
+                    continue
+                recent_records.append(rec_data)
+
+            recordings.extend(recent_records)
+            logger.info(
+                "Fetched Plaud page %s: kept %s recent recordings, skipped %s older than %s days",
+                page,
+                len(recent_records),
+                older_count,
+                days_back,
+            )
+
+            if older_count > 0:
+                stop_reason = f"page {page} crossed the last-{days_back}-days boundary"
+                break
+
+            if len(page_records) < page_size:
+                stop_reason = f"page {page} was the final Plaud page"
+                break
+
+            page += 1
+
+        return recordings, pages_fetched, stop_reason
 
     def _compute_checksum(self, file_path: str) -> str:
         """Compute SHA256 checksum for file integrity verification.
@@ -288,7 +362,8 @@ class ChronosIngestService:
         Args:
             limit: Max recordings to fetch per batch
             days_back: Only fetch recordings from last N days
-            fetch_all_pages: If True, paginate through all recordings (ignores limit for pagination)
+            fetch_all_pages: If True, paginate through Plaud pages until the
+                recent time window is fully covered
 
         Returns:
             Tuple[int, int]: (success_count, failure_count)
@@ -310,21 +385,39 @@ class ChronosIngestService:
         try:
             _t0 = _time.perf_counter()
             if fetch_all_pages:
-                # Paginate through all recordings (using built-in pagination)
-                logger.info("Fetching ALL recordings from Plaud...")
-                xray_log("ingest", "plaud-api", "Asking Plaud for every single recording you have…")
-                recordings = self.plaud.list_recordings(fetch_all=True)
-                logger.info(f"Plaud returned {len(recordings)} total recordings")
-                # Do NOT cap with limit when fetching all — we want everything
+                logger.info(
+                    "Fetching Plaud recordings across recent pages (days_back=%s)",
+                    days_back,
+                )
+                xray_log(
+                    "ingest",
+                    "plaud-api",
+                    f"Scanning Plaud 20 at a time until we leave the last {days_back} days",
+                )
+                recordings, pages_fetched, stop_reason = (
+                    self._fetch_recent_recordings_window(
+                        days_back=days_back,
+                        page_size=20,
+                    )
+                )
+                logger.info(
+                    "Plaud returned %s recordings across %s page(s); stop reason: %s",
+                    len(recordings),
+                    pages_fetched,
+                    stop_reason,
+                )
             else:
                 # Single page fetch (most recent N only, max 20 per API)
                 page_size = min(limit, 20) if limit else 20
                 xray_log("ingest", "plaud-api", f"Asking Plaud for your newest {page_size} recordings")
                 recordings = self.plaud.list_recordings(page=1, page_size=page_size)
             _api_ms = (_time.perf_counter() - _t0) * 1000
-            xray_log("ingest", "plaud-api",
-                     f"Plaud has {len(recordings)} recordings",
-                     duration_ms=round(_api_ms, 1))
+            xray_log(
+                "ingest",
+                "plaud-api",
+                f"Plaud returned {len(recordings)} recordings inside the sync window",
+                duration_ms=round(_api_ms, 1),
+            )
         except Exception as e:
             xray_log("ingest", "plaud-api", f"Can't reach Plaud right now: {str(e)[:60]}", level="error")
             logger.error(f"Failed to fetch from Plaud API: {e}")

@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -19,6 +20,7 @@ from api.schemas.responses import (
 )
 from api.auth.jwt import require_auth
 from app_v2.services.data_service import ChronosDataService
+from src.chronos.pipeline_progress import progress, read_progress
 
 router = APIRouter(
     prefix="/api/v1/sync",
@@ -51,17 +53,43 @@ async def run_pipeline(body: PipelineRunRequest):
             detail=f"Invalid stage: {body.stage}. Must be one of {valid_stages}",
         )
 
+    current = read_progress()
+    if current and current.get("status") == "running":
+        started_at = float(current.get("started_at") or 0)
+        age_minutes = ((time.time() - started_at) / 60) if started_at else 0
+        if age_minutes < 30:
+            return PipelineRunResponse(
+                status="already_running",
+                message="Pipeline already running — watch the progress panel instead of starting another run.",
+            )
+
+        progress.finish_run(error=f"Stale run auto-cleared after {age_minutes:.0f} min")
+
     cmd = [
         sys.executable,
         "scripts/chronos_pipeline.py",
         f"--{body.stage}",
     ]
+    if body.stage in {"full", "ingest"}:
+        cmd.extend(["--days-back", str(body.days_back)])
+
     # Fire-and-forget subprocess
     subprocess.Popen(cmd, start_new_session=True)
 
     return PipelineRunResponse(
         status="started",
-        message=f"Pipeline stage '{body.stage}' started",
+        message=(
+            f"Smart sync started for the last {body.days_back} days"
+            if body.stage == "full"
+            else (
+                f"Pipeline stage '{body.stage}' started"
+                + (
+                    f" for the last {body.days_back} days"
+                    if body.stage == "ingest"
+                    else ""
+                )
+            )
+        ),
     )
 
 

@@ -263,7 +263,7 @@ def _register_auth_routes(server):
             from src.plaud_oauth import PlaudOAuthClient
 
             client = PlaudOAuthClient()
-            return jsonify(client.token_status)
+            return jsonify(client.token_status_with_recovery(attempt_recovery=True))
         except Exception as e:
             return jsonify({"is_authenticated": False, "error": str(e)})
 

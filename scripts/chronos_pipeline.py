@@ -164,7 +164,11 @@ def run_preflight(*, smoke_call: bool = False) -> int:
 
 
 def run_ingest(
-    session, limit: int = 100, *, fetch_all_pages: bool = False
+    session,
+    limit: int = 100,
+    *,
+    days_back: int = 7,
+    fetch_all_pages: bool = False,
 ) -> PhaseResult:
     """Run ingestion phase: download recordings from Plaud.
 
@@ -188,7 +192,9 @@ def run_ingest(
 
     try:
         success_count, failure_count = service.ingest_recent_recordings(
-            limit=limit, fetch_all_pages=fetch_all_pages
+            limit=limit,
+            days_back=days_back,
+            fetch_all_pages=fetch_all_pages,
         )
     except Exception as e:
         error_message = str(e)
@@ -751,6 +757,12 @@ def main():
     parser.add_argument("--full", action="store_true", help="Run full pipeline")
     parser.add_argument("--limit", type=int, default=10, help="Max items per phase")
     parser.add_argument(
+        "--days-back",
+        type=int,
+        default=7,
+        help="Only ingest Plaud recordings from the last N days when paginating",
+    )
+    parser.add_argument(
         "--recording-id",
         type=str,
         default=None,
@@ -858,7 +870,10 @@ def main():
             # --full always fetches all pages; --ingest alone respects --fetch-all flag
             fetch_all = True if args.full else bool(args.fetch_all)
             ingest_result = run_ingest(
-                session, limit=args.limit, fetch_all_pages=fetch_all
+                session,
+                limit=args.limit,
+                days_back=args.days_back,
+                fetch_all_pages=fetch_all,
             )
             if ingest_result.error_message:
                 phase_errors.append(f"ingest: {ingest_result.error_message}")

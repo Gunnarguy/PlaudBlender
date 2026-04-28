@@ -83,7 +83,20 @@ async def system_status():
         from src.plaud_oauth import PlaudOAuthClient
 
         pc = PlaudOAuthClient()
-        result["plaud"] = {"is_authenticated": pc.is_authenticated}
+        status = dict(pc.token_status)
+        status["recovery_attempted"] = False
+
+        if status.get("has_access_token") or status.get("has_refresh_token"):
+            try:
+                pc.ensure_valid_token()
+                status = dict(pc.token_status)
+                status["recovery_attempted"] = True
+            except Exception as exc:
+                status = dict(pc.token_status)
+                status["recovery_attempted"] = True
+                status["recovery_error"] = str(exc)
+
+        result["plaud"] = status
     except Exception as e:
         result["plaud"] = {"ok": False, "error": str(e)}
 

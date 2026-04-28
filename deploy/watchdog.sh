@@ -73,8 +73,7 @@ status = client.token_status
 if not status["has_access_token"] and not status["has_refresh_token"]:
     raise SystemExit("Plaud OAuth tokens are missing")
 
-if status["needs_refresh"]:
-    client.ensure_valid_token()
+client.ensure_valid_token()
 
 print("ok")
 PY

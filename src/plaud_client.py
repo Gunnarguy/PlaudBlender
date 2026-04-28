@@ -105,18 +105,44 @@ class PlaudClient:
                     method, url, headers=headers, timeout=30, **kwargs
                 )
 
-                # Handle 401 - token was just validated, so this is unexpected
+                # Handle 401 by attempting a refresh before declaring auth lost.
                 if response.status_code == 401:
                     logger.warning(
-                        f"Got 401 on attempt {attempt + 1}, clearing tokens and retrying..."
+                        f"Got 401 on attempt {attempt + 1}, refreshing Plaud token and retrying..."
                     )
-                    self.oauth._clear_tokens()
+                    try:
+                        self.oauth.refresh_access_token()
+                    except Exception:
+                        self.oauth._clear_tokens()
+                        if attempt < retries - 1:
+                            time.sleep(RETRY_DELAY)
+                            continue
+                        raise AuthenticationRequired(
+                            "Authentication expired. Run: python plaud_setup.py"
+                        )
                     if attempt < retries - 1:
                         time.sleep(RETRY_DELAY)
                         continue
                     raise AuthenticationRequired(
                         "Authentication expired. Run: python plaud_setup.py"
                     )
+
+                # Handle rate limiting with exponential backoff.
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After")
+                    delay = RETRY_DELAY * (attempt + 1)
+                    try:
+                        if retry_after:
+                            delay = max(delay, float(retry_after))
+                    except ValueError:
+                        pass
+                    logger.warning(
+                        f"Plaud rate limit hit on attempt {attempt + 1}; retrying in {delay:.1f}s"
+                    )
+                    last_error = "Plaud API rate limit exceeded"
+                    if attempt < retries - 1:
+                        time.sleep(delay)
+                        continue
 
                 # Handle server errors with retry
                 if response.status_code >= 500:
@@ -752,7 +778,7 @@ class PlaudClient:
         return complete_resp
 
     def get_upload_candidates(
-        self, data_dir: Optional[str] = None
+        self, data_dir: Optional[str] = None, check_cloud: bool = False
     ) -> List[Dict[str, Any]]:
         """Find local audio files that exist only locally (USB-imported, not in cloud).
 
@@ -760,6 +786,8 @@ class PlaudClient:
 
         Args:
             data_dir: Directory to scan (defaults to data/raw/usb_import/)
+            check_cloud: When True, fetch cloud recordings to mark duplicates.
+                Keep False for low-latency UI/status endpoints.
 
         Returns:
             List of dicts with path, name, size_mb, format, and cloud_status
@@ -771,16 +799,16 @@ class PlaudClient:
         if not os.path.isdir(data_dir):
             return []
 
-        # Get cloud recording names for dedup
         cloud_names = set()
-        try:
-            cloud_recs = self.list_recordings(fetch_all=True)
-            for rec in cloud_recs:
-                n = rec.get("name") or rec.get("title") or ""
-                cloud_names.add(n.strip().lower())
-        except Exception as e:
-            logger.debug("Could not fetch cloud recordings for dedup: %s", e)
-            pass
+        if check_cloud:
+            try:
+                cloud_recs = self.list_recordings(fetch_all=True)
+                for rec in cloud_recs:
+                    n = rec.get("name") or rec.get("title") or ""
+                    cloud_names.add(n.strip().lower())
+            except Exception as e:
+                logger.debug("Could not fetch cloud recordings for dedup: %s", e)
+                pass
 
         candidates = []
         audio_extensions = {".opus", ".mp3", ".wav", ".m4a", ".ogg"}
@@ -792,7 +820,7 @@ class PlaudClient:
                 continue
 
             display_name = os.path.splitext(entry.name)[0]
-            in_cloud = display_name.strip().lower() in cloud_names
+            in_cloud = display_name.strip().lower() in cloud_names if check_cloud else False
 
             candidates.append(
                 {

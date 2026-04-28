@@ -2729,12 +2729,12 @@ class ChronosDataService:
         return False
 
     def get_upload_candidates(self) -> List[Dict[str, Any]]:
-        """Return list of local audio files in data/raw/usb_import/ that can be uploaded."""
+        """Return local upload candidates without blocking on Plaud cloud scans."""
         try:
             from src.plaud_client import PlaudClient
 
             client = PlaudClient()
-            return client.get_upload_candidates()
+            return client.get_upload_candidates(check_cloud=False)
         except Exception as e:
             logger.error(f"Error getting upload candidates: {e}")
             return []

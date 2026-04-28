@@ -9,6 +9,7 @@ User=gunnarhostetler
 WorkingDirectory=/home/gunnarhostetler/PlaudBlender
 Environment=HOME=/home/gunnarhostetler
 Environment=PYTHONUNBUFFERED=1
+Environment=CHRONOS_API_WORKERS=2
 Environment=PATH=/home/gunnarhostetler/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=/home/gunnarhostetler/PlaudBlender/.env
 ExecStart=/home/gunnarhostetler/PlaudBlender/venv/bin/python scripts/launch_api.py

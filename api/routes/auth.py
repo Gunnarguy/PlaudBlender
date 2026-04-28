@@ -4,13 +4,15 @@ import os
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 
 from api.schemas.responses import AuthURLResponse, TokenExchangeRequest, TokenStatusOut
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 # In-memory map: OAuth state → metadata about the flow source/return path.
+_plaud_oauth_pending: dict[str, dict[str, str]] = {}
+_plaud_oauth_completed: dict[str, dict[str, str]] = {}
 _notion_oauth_pending: dict[str, dict[str, str]] = {}
 
 
@@ -23,7 +25,7 @@ async def plaud_status():
     from src.plaud_oauth import PlaudOAuthClient
 
     client = PlaudOAuthClient()
-    ts = client.token_status
+    ts = client.token_status_with_recovery(attempt_recovery=True)
     return TokenStatusOut(
         is_authenticated=ts.get("is_authenticated", False),
         has_access_token=ts.get("has_access_token", False),
@@ -37,13 +39,102 @@ async def plaud_status():
 
 
 @router.get("/plaud/authorize", response_model=AuthURLResponse)
-async def plaud_authorize():
-    """Get Plaud OAuth authorization URL."""
+async def plaud_authorize(request: Request):
+    """Get Plaud OAuth authorization URL.
+
+    Pass ``?mobile=true`` from iOS so the callback redirects back into the app
+    after the server exchanges the code. Web callers can omit it and optionally
+    provide ``return_to`` to land back on the browser UI.
+    """
     from src.plaud_oauth import PlaudOAuthClient
 
-    client = PlaudOAuthClient()
+    mobile = request.query_params.get("mobile", "").lower() in ("true", "1")
+    return_to = _clean_return_to(request.query_params.get("return_to", ""))
+    redirect_uri = _plaud_redirect_uri(request)
+    client = PlaudOAuthClient(redirect_uri=redirect_uri)
     url, state = client.get_authorization_url()
+    _plaud_oauth_pending[state] = {
+        "source": "mobile" if mobile else "web",
+        "return_to": return_to,
+    }
     return AuthURLResponse(auth_url=url, state=state)
+
+
+@router.options("/plaud/callback")
+async def plaud_callback_options():
+    """Plaud may preflight the callback URL before sending the real GET."""
+    return Response(status_code=204)
+
+
+@router.get("/plaud/callback")
+async def plaud_callback(
+    request: Request, code: str = "", state: str = "", error: str = ""
+):
+    """Handle Plaud OAuth redirect and bounce back to mobile or web.
+
+    Plaud may hit this route more than once for the same state.  We keep a small
+    in-memory completion map so duplicate GETs redirect consistently instead of
+    failing after the first successful exchange.
+    """
+    pending = _plaud_oauth_pending.get(state, {})
+    completed = _plaud_oauth_completed.get(state)
+    source = pending.get("source") or (completed or {}).get("source", "mobile")
+    return_to = pending.get("return_to") or (completed or {}).get("return_to", "")
+
+    if completed:
+        if completed.get("status") == "success":
+            return _plaud_redirect(source, return_to=return_to, success=True)
+        return _plaud_redirect(
+            source,
+            return_to=return_to,
+            error=completed.get("error", "authorization_failed"),
+        )
+
+    if error:
+        _plaud_oauth_pending.pop(state, None)
+        _plaud_oauth_completed[state] = {
+            "source": source,
+            "return_to": return_to,
+            "status": "error",
+            "error": error,
+        }
+        return _plaud_redirect(source, return_to=return_to, error=error)
+
+    if not code:
+        callback_error = "no_code"
+        _plaud_oauth_pending.pop(state, None)
+        _plaud_oauth_completed[state] = {
+            "source": source,
+            "return_to": return_to,
+            "status": "error",
+            "error": callback_error,
+        }
+        return _plaud_redirect(source, return_to=return_to, error=callback_error)
+
+    from src.plaud_oauth import PlaudOAuthClient
+
+    redirect_uri = _plaud_redirect_uri(request)
+    client = PlaudOAuthClient(redirect_uri=redirect_uri)
+    try:
+        client.exchange_code_for_token(code=code, state=state)
+    except Exception as exc:
+        callback_error = str(exc)
+        _plaud_oauth_pending.pop(state, None)
+        _plaud_oauth_completed[state] = {
+            "source": source,
+            "return_to": return_to,
+            "status": "error",
+            "error": callback_error,
+        }
+        return _plaud_redirect(source, return_to=return_to, error=callback_error)
+
+    _plaud_oauth_pending.pop(state, None)
+    _plaud_oauth_completed[state] = {
+        "source": source,
+        "return_to": return_to,
+        "status": "success",
+    }
+    return _plaud_redirect(source, return_to=return_to, success=True)
 
 
 @router.post("/plaud/token", response_model=TokenStatusOut)
@@ -210,6 +301,30 @@ def _notion_redirect_uri(request: Request) -> str:
         return env_uri
     base = str(request.base_url).rstrip("/")
     return f"{base}/api/v1/auth/notion/callback"
+
+
+def _plaud_redirect_uri(request: Request) -> str:
+    """Return the public Plaud callback URI used by the API OAuth flow."""
+    env_uri = os.getenv("PLAUD_API_REDIRECT_URI")
+    if env_uri:
+        return env_uri
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/api/v1/auth/plaud/callback"
+
+
+def _plaud_redirect(
+    source: str, *, return_to: str = "", success: bool = False, error: str = ""
+) -> RedirectResponse:
+    """Build the post-auth redirect for Plaud mobile/web callers."""
+    if source == "web":
+        base = return_to or "http://localhost:8050/"
+        if error:
+            return RedirectResponse(url=_append_query(base, {"plaud_error": error}))
+        return RedirectResponse(url=_append_query(base, {"plaud_connected": "1"}))
+    else:
+        if error:
+            return RedirectResponse(url=f"plaudblender://plaud-callback?error={error}")
+        return RedirectResponse(url="plaudblender://plaud-callback?success=true")
 
 
 def _notion_redirect(

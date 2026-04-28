@@ -301,6 +301,101 @@ class TestPlaudOAuth:
         assert state in url
         assert len(state) > 16  # secrets.token_urlsafe(32) is ~43 chars
 
+    def test_refresh_keeps_token_when_post_refresh_validation_is_transient(self):
+        """Do not discard a freshly refreshed token just because validation is flaky."""
+        from datetime import datetime, timedelta
+        from unittest.mock import patch
+        from src.plaud_oauth import PlaudOAuthClient
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PLAUD_CLIENT_ID": "test_client_id",
+                "PLAUD_CLIENT_SECRET": "test_client_secret",
+            },
+        ):
+            client = PlaudOAuthClient(
+                redirect_uri="https://localhost:8050/auth/plaud/callback"
+            )
+
+        client._access_token = "old-token"
+        client._refresh_token = "refresh-token"
+        client._token_expiry = datetime.now() + timedelta(minutes=5)
+
+        def _fake_refresh():
+            client._access_token = "new-token"
+            client._token_expiry = datetime.now() + timedelta(hours=1)
+
+        with (
+            patch.object(client, "refresh_access_token", side_effect=_fake_refresh),
+            patch.object(client, "_validate_token", side_effect=[False, False]),
+            patch.object(client, "_clear_tokens") as clear_tokens,
+        ):
+            token = client.ensure_valid_token()
+
+        assert token == "new-token"
+        clear_tokens.assert_not_called()
+
+
+class TestPlaudClientAuthResilience:
+    """Regression tests for resilient Plaud API auth handling."""
+
+    def test_request_retries_after_429(self):
+        from unittest.mock import MagicMock, patch
+        from src.plaud_client import PlaudClient
+
+        oauth = MagicMock()
+        oauth.ensure_valid_token.return_value = "token"
+        client = PlaudClient(oauth_client=oauth)
+
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        rate_limited.headers = {"Retry-After": "0"}
+        rate_limited.raise_for_status.side_effect = Exception("should not be raised")
+
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.headers = {}
+        ok.json.return_value = {"ok": True}
+        ok.raise_for_status.return_value = None
+
+        with (
+            patch("src.plaud_client.requests.request", side_effect=[rate_limited, ok]),
+            patch("src.plaud_client.time.sleep") as sleep_mock,
+        ):
+            result = client._request("GET", "/users/current", retries=2)
+
+        assert result == {"ok": True}
+        sleep_mock.assert_called()
+
+    def test_request_refreshes_on_401_before_failing(self):
+        from unittest.mock import MagicMock, patch
+        from src.plaud_client import PlaudClient
+
+        oauth = MagicMock()
+        oauth.ensure_valid_token.return_value = "token"
+        client = PlaudClient(oauth_client=oauth)
+
+        unauthorized = MagicMock()
+        unauthorized.status_code = 401
+        unauthorized.headers = {}
+
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.headers = {}
+        ok.json.return_value = {"ok": True}
+        ok.raise_for_status.return_value = None
+
+        with (
+            patch("src.plaud_client.requests.request", side_effect=[unauthorized, ok]),
+            patch("src.plaud_client.time.sleep"),
+        ):
+            result = client._request("GET", "/users/current", retries=2)
+
+        assert result == {"ok": True}
+        oauth.refresh_access_token.assert_called_once()
+        oauth._clear_tokens.assert_not_called()
+
 
 class TestPlaudWorkflow:
     """Tests for src/plaud_workflow.py."""

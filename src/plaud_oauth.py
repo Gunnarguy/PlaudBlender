@@ -322,9 +322,22 @@ class PlaudOAuthClient:
                 },
                 timeout=10,
             )
+            if response.status_code == 200:
+                return True
+            if response.status_code in {408, 425, 429} or response.status_code >= 500:
+                logger.warning(
+                    "Token validation returned transient status %s; keeping current token",
+                    response.status_code,
+                )
+                return True
             return response.status_code == 200
         except Exception as e:
             logger.debug(f"Token validation failed: {e}")
+            if self._token_expiry and datetime.now() < self._token_expiry:
+                logger.warning(
+                    "Token validation request failed transiently; keeping non-expired token"
+                )
+                return True
             return False
 
     def ensure_valid_token(self) -> str:
@@ -337,15 +350,12 @@ class PlaudOAuthClient:
         Returns:
             Valid access token string
         """
-        # Step 1: Check if we have a token that isn't expired
+        # Step 1: Use the current token while it is not near expiry.
         if self._access_token and self._token_expiry:
-            # Proactive refresh: refresh 30 mins before expiry
             if datetime.now() < self._token_expiry - timedelta(minutes=30):
-                # Token should be valid, but verify it
                 if self._validate_token():
                     return self._access_token
-                else:
-                    logger.warning("Token failed validation, attempting refresh...")
+                logger.warning("Token failed validation, attempting refresh...")
 
         # Step 2: Try to refresh if we have a refresh token
         if self._refresh_token:
@@ -354,12 +364,24 @@ class PlaudOAuthClient:
                 self.refresh_access_token()
                 if self._validate_token():
                     return self._access_token  # type: ignore[return-value]
-                else:
-                    logger.warning("Refreshed token failed validation")
+                if self._access_token and self._token_expiry:
+                    logger.warning(
+                        "Refreshed token could not be validated immediately; using refreshed token until an explicit 401 proves otherwise"
+                    )
+                    return self._access_token
+                logger.warning("Refreshed token failed validation")
             except Exception as e:
                 logger.warning(f"Token refresh failed: {e}")
 
-        # Step 3: Clear invalid tokens and require re-authentication
+        # Step 3: If we still hold a non-expired token, use it and let the
+        # actual API request decide via 401 whether re-auth is needed.
+        if self._access_token and self._token_expiry and datetime.now() < self._token_expiry:
+            logger.warning(
+                "Falling back to cached non-expired Plaud token after validation problems"
+            )
+            return self._access_token
+
+        # Step 4: No usable token remains.
         self._clear_tokens()
         raise AuthenticationRequired(
             "Authentication required. Run: python plaud_setup.py\n"
@@ -436,6 +458,42 @@ class PlaudOAuthClient:
             status["token_valid"] = now < self._token_expiry
 
         return status
+
+    def token_status_with_recovery(self, *, attempt_recovery: bool = True) -> dict:
+        """Return token status and optionally auto-recover via refresh token.
+
+        This is safe for API status endpoints that should self-heal whenever a
+        refresh token is available.
+        """
+        status = dict(self.token_status)
+        status["recovery_attempted"] = False
+
+        if not attempt_recovery:
+            return status
+
+        has_refresh = bool(status.get("has_refresh_token"))
+        should_recover = has_refresh and (
+            not status.get("has_access_token")
+            or not status.get("is_authenticated")
+            or bool(status.get("needs_refresh"))
+        )
+
+        if not should_recover:
+            return status
+
+        status["recovery_attempted"] = True
+        try:
+            self.ensure_valid_token()
+            recovered = dict(self.token_status)
+            recovered["recovery_attempted"] = True
+            recovered["recovered"] = True
+            return recovered
+        except Exception as exc:
+            failed = dict(self.token_status)
+            failed["recovery_attempted"] = True
+            failed["recovered"] = False
+            failed["recovery_error"] = str(exc)
+            return failed
 
     def _open_browser_chrome_first(self, url: str):
         """Try Chrome first (better localhost handling), then fall back to default."""

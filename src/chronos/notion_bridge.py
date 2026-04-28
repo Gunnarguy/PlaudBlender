@@ -9,6 +9,7 @@ This is the critical link that turns raw Notion pages into first-class
 Chronos citizens — searchable, graphable, analyzable.
 """
 
+import hashlib
 import logging
 import time as _time
 import uuid
@@ -222,24 +223,35 @@ def match_notion_to_chronos(
     """
     from app_v2.services.xray import xray_log
 
-    # Build a lookup of Chronos recordings by date -> list of (id, title, created_at)
+    # Build a lookup of Chronos recordings by date -> list of (id, title, created_at, transcript)
     chronos_recs = session.query(ChronosRecording).all()
-    by_date: Dict[str, List[Tuple[str, str, datetime]]] = {}
+    by_date: Dict[str, List[Tuple[str, str, datetime, str]]] = {}
     for rec in chronos_recs:
         if rec.created_at:
             date_key = rec.created_at.strftime("%Y-%m-%d") if isinstance(rec.created_at, datetime) else str(rec.created_at)[:10]
             by_date.setdefault(date_key, []).append(
-                (rec.recording_id, rec.title or "", rec.created_at)
+                (rec.recording_id, rec.title or "", rec.created_at, rec.transcript or "")
             )
 
-    # Phase 0: Direct match — pages already imported via notion:{page_id}
+    # Phase 0: Manual overrides and direct imports.
+    manual_overrides = get_manual_notion_match_overrides()
+    chronos_ids = {rec.recording_id for rec in chronos_recs}
+
     already_imported: Dict[str, str] = {}
+    for nrec in notion_recordings:
+        override_id = manual_overrides.get(nrec.page_id)
+        if override_id and override_id in chronos_ids:
+            already_imported[nrec.page_id] = override_id
+
     notion_rec_ids = {
         rec.recording_id: rec.recording_id
         for rec in chronos_recs
         if rec.recording_id.startswith("notion:")
+        and rec.processing_status == "completed"
     }
     for nrec in notion_recordings:
+        if nrec.page_id in already_imported:
+            continue
         direct_id = f"notion:{nrec.page_id}"
         if direct_id in notion_rec_ids:
             already_imported[nrec.page_id] = direct_id
@@ -253,6 +265,7 @@ def match_notion_to_chronos(
         if nrec.page_id in already_imported:
             continue  # Already matched by direct import
         notion_title = (nrec.title or "").lower().strip()
+        notion_transcript = (nrec.transcript or "").lower().strip()[:4000]
 
         # Determine the true recording date: prefer title-embedded date over page date
         fallback_date = nrec.date or (
@@ -263,7 +276,7 @@ def match_notion_to_chronos(
 
         # Phase 1: Same-date candidates
         candidates = by_date.get(notion_date, [])
-        for cid, ctitle, _ in candidates:
+        for cid, ctitle, _, ctranscript in candidates:
             ctitle_lower = (ctitle or "").lower().strip()
             if not notion_title or not ctitle_lower:
                 score = 0.4  # weak date-only match
@@ -271,6 +284,18 @@ def match_notion_to_chronos(
                 score = SequenceMatcher(None, notion_title, ctitle_lower).ratio()
             if score >= 0.45:
                 scored_pairs.append((score, nrec.page_id, cid))
+                continue
+
+            # Same-date transcript fallback for weak or missing titles.
+            chronos_transcript = (ctranscript or "").lower().strip()[:4000]
+            if notion_transcript and chronos_transcript:
+                transcript_score = SequenceMatcher(
+                    None, notion_transcript, chronos_transcript
+                ).ratio()
+                if transcript_score >= 0.75:
+                    scored_pairs.append(
+                        (0.7 + (transcript_score - 0.75), nrec.page_id, cid)
+                    )
 
         # Phase 2: Adjacent-date fuzzy match (+-1 day, penalized)
         if notion_date:
@@ -279,7 +304,7 @@ def match_notion_to_chronos(
                 nd = datetime.strptime(notion_date, "%Y-%m-%d")
                 for delta in [-1, 1]:
                     adj_date = (nd + timedelta(days=delta)).strftime("%Y-%m-%d")
-                    for cid, ctitle, _ in by_date.get(adj_date, []):
+                    for cid, ctitle, _, _ in by_date.get(adj_date, []):
                         ctitle_lower = (ctitle or "").lower().strip()
                         if notion_title and ctitle_lower:
                             score = (
@@ -309,6 +334,37 @@ def match_notion_to_chronos(
     # Merge direct imports into matches
     matches.update(already_imported)
 
+    # Phase 3: Same-date exact transcript alias match.
+    # Allow many-to-one coverage when the transcript is effectively identical.
+    alias_matches = 0
+    for nrec in notion_recordings:
+        if nrec.page_id in matches:
+            continue
+        notion_transcript = (nrec.transcript or "").lower().strip()[:4000]
+        if not notion_transcript:
+            continue
+
+        fallback_date = nrec.date or (
+            nrec.created_time[:10] if nrec.created_time else ""
+        )
+        title_date = _extract_date_from_title(nrec.title or "", fallback_date)
+        notion_date = title_date or fallback_date
+
+        best_alias: Optional[Tuple[float, str]] = None
+        for cid, _, _, ctranscript in by_date.get(notion_date, []):
+            chronos_transcript = (ctranscript or "").lower().strip()[:4000]
+            if not chronos_transcript:
+                continue
+            transcript_score = SequenceMatcher(
+                None, notion_transcript, chronos_transcript
+            ).ratio()
+            if best_alias is None or transcript_score > best_alias[0]:
+                best_alias = (transcript_score, cid)
+
+        if best_alias and best_alias[0] >= 0.97:
+            matches[nrec.page_id] = best_alias[1]
+            alias_matches += 1
+
     # Fill in unmatched Notion pages as None
     for nrec in notion_recordings:
         if nrec.page_id not in matches:
@@ -318,6 +374,7 @@ def match_notion_to_chronos(
     xray_log(
         "data", "notion-match",
         f"Matched {matched_count} of {len(notion_recordings)} Notion pages to Chronos recordings"
+        f" ({alias_matches} exact transcript aliases)"
     )
     return matches
 
@@ -540,6 +597,68 @@ _PROGRESS_FILE = os.path.join(
     "data",
     "notion_import_progress.json",
 )
+_MATCH_OVERRIDE_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "data",
+    "notion_match_overrides.json",
+)
+
+
+def get_manual_notion_match_overrides() -> Dict[str, str]:
+    """Load persisted manual Notion → Chronos match overrides."""
+    try:
+        with open(_MATCH_OVERRIDE_FILE, "r") as file:
+            data = json.load(file)
+            return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_manual_notion_match_overrides(overrides: Dict[str, str]) -> None:
+    os.makedirs(os.path.dirname(_MATCH_OVERRIDE_FILE), exist_ok=True)
+    with open(_MATCH_OVERRIDE_FILE, "w") as file:
+        json.dump(overrides, file, indent=2, sort_keys=True)
+
+
+def set_manual_notion_match_override(
+    session: Session,
+    *,
+    page_id: str,
+    recording_id: str,
+) -> Tuple[bool, str]:
+    """Persist a manual Notion → Chronos match override."""
+    recording_id = (recording_id or "").strip()
+    page_id = (page_id or "").strip()
+    if not page_id:
+        return False, "page_id is required"
+    if not recording_id:
+        return False, "recording_id is required"
+
+    exists = session.query(ChronosRecording).filter(
+        ChronosRecording.recording_id == recording_id
+    ).first()
+    if not exists:
+        return False, f"Chronos recording {recording_id} was not found"
+
+    overrides = get_manual_notion_match_overrides()
+    overrides[page_id] = recording_id
+    _save_manual_notion_match_overrides(overrides)
+    return True, f"Override saved for {page_id}"
+
+
+def clear_manual_notion_match_override(page_id: str) -> Tuple[bool, str]:
+    """Remove a persisted manual Notion → Chronos match override."""
+    page_id = (page_id or "").strip()
+    if not page_id:
+        return False, "page_id is required"
+
+    overrides = get_manual_notion_match_overrides()
+    if page_id not in overrides:
+        return False, f"No override exists for {page_id}"
+
+    overrides.pop(page_id, None)
+    _save_manual_notion_match_overrides(overrides)
+    return True, f"Override cleared for {page_id}"
 
 
 def _load_progress() -> Dict:
@@ -584,6 +703,123 @@ def get_import_progress() -> Optional[Dict]:
     if not data:
         return None
     return data
+
+
+def collapse_exact_notion_duplicates(
+    recordings: List[NotionRecording],
+) -> Tuple[List[NotionRecording], int]:
+    """Collapse exact duplicate Notion transcripts to one canonical page."""
+    unique: List[NotionRecording] = []
+    seen: Set[str] = set()
+    skipped = 0
+
+    for recording in recordings:
+        transcript = (recording.transcript or '').strip()
+        if not transcript:
+            unique.append(recording)
+            continue
+
+        normalized = ' '.join(transcript.lower().split())[:6000]
+        digest = hashlib.sha1(normalized.encode('utf-8')).hexdigest()
+        if digest in seen:
+            skipped += 1
+            continue
+
+        seen.add(digest)
+        unique.append(recording)
+
+    return unique, skipped
+
+
+def build_notion_match_review(
+    session: Session,
+    *,
+    limit: int = 25,
+) -> Dict[str, Any]:
+    """Build a review payload for high-confidence Notion matching candidates."""
+    svc = get_notion_service()
+    recordings = svc.fetch_recordings(limit=1000)
+    matches = match_notion_to_chronos(recordings, session)
+
+    pending = [recording for recording in recordings if not matches.get(recording.page_id)]
+    pending.sort(key=lambda n: n.date or n.created_time or "", reverse=True)
+
+    chronos_recs = session.query(ChronosRecording).all()
+    by_date: Dict[str, List[Tuple[str, str, datetime, str]]] = {}
+    for rec in chronos_recs:
+        if rec.created_at:
+            date_key = rec.created_at.strftime("%Y-%m-%d") if isinstance(rec.created_at, datetime) else str(rec.created_at)[:10]
+            by_date.setdefault(date_key, []).append(
+                (rec.recording_id, rec.title or "", rec.created_at, rec.transcript or "")
+            )
+
+    transcript_alias_candidates = []
+    for recording in pending:
+        notion_transcript = (recording.transcript or "").lower().strip()[:4000]
+        if not notion_transcript:
+            continue
+        recording_date = recording.date or (recording.created_time[:10] if recording.created_time else "")
+        best_alias: Optional[Tuple[float, str, str]] = None
+        for candidate_id, candidate_title, _, candidate_transcript in by_date.get(recording_date, []):
+            chronos_transcript = (candidate_transcript or "").lower().strip()[:4000]
+            if not chronos_transcript:
+                continue
+            transcript_score = SequenceMatcher(
+                None, notion_transcript, chronos_transcript
+            ).ratio()
+            if best_alias is None or transcript_score > best_alias[0]:
+                best_alias = (transcript_score, candidate_id, candidate_title)
+        if best_alias and best_alias[0] >= 0.9:
+            transcript_alias_candidates.append(
+                {
+                    "page_id": recording.page_id,
+                    "title": recording.title,
+                    "date": recording_date,
+                    "candidate_recording_id": best_alias[1],
+                    "candidate_title": best_alias[2],
+                    "transcript_similarity": round(best_alias[0], 4),
+                }
+            )
+
+    transcript_alias_candidates.sort(
+        key=lambda item: item["transcript_similarity"], reverse=True
+    )
+
+    duplicate_groups: Dict[str, List[Dict[str, Optional[str]]]] = {}
+    for recording in pending:
+        transcript = (recording.transcript or "").strip()
+        if not transcript:
+            continue
+        normalized = " ".join(transcript.lower().split())[:6000]
+        digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+        duplicate_groups.setdefault(digest, []).append(
+            {
+                "page_id": recording.page_id,
+                "title": recording.title,
+                "date": recording.date or (recording.created_time[:10] if recording.created_time else None),
+                "url": recording.url,
+            }
+        )
+
+    duplicate_group_items = [
+        {
+            "group_size": len(group),
+            "pages": group[: min(len(group), 5)],
+        }
+        for group in duplicate_groups.values()
+        if len(group) > 1
+    ]
+    duplicate_group_items.sort(key=lambda item: item["group_size"], reverse=True)
+
+    return {
+        "pending_total": len(pending),
+        "manual_overrides": get_manual_notion_match_overrides(),
+        "manual_override_count": len(get_manual_notion_match_overrides()),
+        "high_confidence_transcript_aliases": transcript_alias_candidates[:limit],
+        "high_confidence_transcript_alias_count": len(transcript_alias_candidates),
+        "duplicate_groups": duplicate_group_items[:limit],
+        "duplicate_group_count": len(duplicate_group_items),
+    }
 
 
 def import_all_unmatched(
@@ -651,16 +887,23 @@ def import_all_unmatched(
         _clear_progress()
         return 0, 0, []
 
+    to_import, duplicate_pages_collapsed = collapse_exact_notion_duplicates(to_import)
+
     # Apply batch size limit
     if batch_size > 0:
         to_import = to_import[:batch_size]
 
     total = len(to_import)
     retrying = sum(1 for n in to_import if n.page_id in failed_notion)
+    duplicate_suffix = (
+        f"; collapsed {duplicate_pages_collapsed} exact duplicate Notion pages"
+        if duplicate_pages_collapsed
+        else ""
+    )
     xray_log(
         "data",
         "notion-import",
-        f"Importing {total} recordings ({retrying} retries) into Chronos...",
+        f"Importing {total} recordings ({retrying} retries) into Chronos{duplicate_suffix}...",
     )
 
     # Initialize progress

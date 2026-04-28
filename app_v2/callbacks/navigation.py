@@ -1550,7 +1550,7 @@ def create_sync_view(service) -> html.Div:
                         children=[
                             html.Span("🚀", className="btn-icon"),
                             html.Span(
-                                "Full Sync (Fetch → Process → Index)",
+                                "Smart Sync (Recent Fetch → Process → Index)",
                                 className="btn-text",
                             ),
                         ],
@@ -3679,7 +3679,7 @@ def register_navigation_callbacks(app):
             xray_log(
                 "sync",
                 "start",
-                f"Kicking off a full sync — checking the last {days_back or 7} days",
+                f"Kicking off a smart sync — checking the last {days_back or 7} days",
             )
 
             # Don't start a second run if one is already going

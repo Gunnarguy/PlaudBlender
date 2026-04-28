@@ -11,16 +11,33 @@ Run:
 """
 
 from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.database import init_db
 
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
     init_db()
+    try:
+        from src.plaud_oauth import PlaudOAuthClient
+
+        status = PlaudOAuthClient().token_status_with_recovery(attempt_recovery=True)
+        if status.get("is_authenticated"):
+            logger.info("Plaud auth is ready")
+        else:
+            logger.warning(
+                "Plaud auth not connected on startup (has_refresh_token=%s)",
+                status.get("has_refresh_token"),
+            )
+    except Exception as exc:  # pragma: no cover - startup should stay resilient
+        logger.warning("Plaud auth warmup failed: %s", exc)
     yield
 
 
