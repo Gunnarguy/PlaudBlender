@@ -10,15 +10,23 @@ with e.connect() as c:
     indexed = c.execute(text("SELECT COUNT(*) FROM chronos_events WHERE qdrant_point_id IS NOT NULL")).scalar()
     unindexed = c.execute(text("SELECT COUNT(*) FROM chronos_events WHERE qdrant_point_id IS NULL")).scalar()
 
-q = QdrantClient(url="http://localhost:6333")
-info = q.get_collection("chronos_events")
-qdrant_pts = info.points_count
+qdrant_pts = None
+try:
+    q = QdrantClient(url="http://localhost:6333")
+    info = q.get_collection("chronos_events")
+    qdrant_pts = info.points_count
+except Exception as e:
+    pass
 
 print("=== SYSTEM STATUS ===")
 print(f"Recordings: {completed}/{recs} completed")
 print(f"Events in SQLite: {events}")
 print(f"  - indexed: {indexed}")
 print(f"  - unindexed: {unindexed}")
-print(f"Qdrant points: {qdrant_pts}")
-match = "YES" if indexed == qdrant_pts else "NO — MISMATCH"
-print(f"Match: {match}")
+if qdrant_pts is not None:
+    print(f"Qdrant points: {qdrant_pts}")
+    match = "YES" if indexed == qdrant_pts else "NO — MISMATCH"
+    print(f"Match: {match}")
+else:
+    print("Qdrant points: OFFLINE")
+    print("Match: N/A (Qdrant offline)")

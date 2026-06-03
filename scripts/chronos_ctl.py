@@ -30,7 +30,9 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-PYTHON_BIN = BASE_DIR / "venv" / "bin" / "python"
+PYTHON_BIN = BASE_DIR / ".venv" / "bin" / "python"
+if not PYTHON_BIN.exists():
+    PYTHON_BIN = BASE_DIR / "venv" / "bin" / "python"
 RUN_DIR = BASE_DIR / ".run"
 LOG_DIR = BASE_DIR / "logs"
 ENV_FILE = BASE_DIR / ".env"

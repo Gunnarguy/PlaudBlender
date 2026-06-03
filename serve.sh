@@ -136,7 +136,12 @@ do_start() {
     # 3. Start the API server
     echo -e "  ${DIM}Starting API server on port $API_PORT…${RESET}"
     cd "$ROOT"
-    nohup "$ROOT/venv/bin/python" scripts/launch_api.py --port "$API_PORT" > "$API_LOG" 2>&1 &
+    if [[ -d "$ROOT/.venv" ]]; then
+        local local_python="$ROOT/.venv/bin/python"
+    else
+        local local_python="$ROOT/venv/bin/python"
+    fi
+    nohup "$local_python" scripts/launch_api.py --port "$API_PORT" > "$API_LOG" 2>&1 &
     echo $! > "$PID_DIR/api.pid"
     sleep 2
 

@@ -1,0 +1,436 @@
+<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8" />
+    <!-- Load 3d-force-graph from a reliable CDN -->
+    <script
+      src="https://unpkg.com/3d-force-graph@1.73.0/dist/3d-force-graph.min.js"
+      onerror="
+        window.webkit.messageHandlers.graphError.postMessage(
+          'Failed to load 3D Force Graph engine from CDN.',
+        )
+      "
+    ></script>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: #090d16; /* Deep cosmic space black */
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      }
+
+      #graph-container {
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Hover tooltip customization */
+      .graph-tooltip {
+        background: rgba(15, 23, 42, 0.9) !important;
+        border: 1px solid rgba(99, 102, 241, 0.4) !important;
+        border-radius: 8px !important;
+        color: #f8fafc !important;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif !important;
+        padding: 8px 12px !important;
+        font-size: 11px !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="graph-container"></div>
+    <script>
+      (() => {
+        let Graph = null;
+        let selectedNodeId = null;
+        let graphData = { nodes: [], links: [] };
+
+        // Highlight tracking sets
+        const highlightNodes = new Set();
+        const highlightLinks = new Set();
+        let hoveredNode = null;
+
+        const post = (name, payload) => {
+          try {
+            const handler = window.webkit?.messageHandlers?.[name];
+            if (handler) {
+              handler.postMessage(payload);
+            }
+          } catch (_) {
+            // Ignore native bridge failures
+          }
+        };
+
+        window.addEventListener("error", (event) => {
+          if (event.target?.tagName === "SCRIPT") {
+            post("graphError", "Failed to load WebGL Graph scripts.");
+          }
+        }, true);
+
+        window.onerror = (message, source, line, column) => {
+          post("graphError", [message, source, line, column].filter(Boolean).join(" @ "));
+          return false;
+        };
+
+        // Determine node size based on size parameter and type for better tap targets
+        const getNodeSizeVal = (sizeVal, type) => {
+          const val = Number(sizeVal || 15);
+          const base = Math.max(6, Math.min(22, val / 2.8));
+          if (type === "category") return base * 1.8; // Category hubs are prominent anchors
+          return base;
+        };
+
+        window.updateGraph = (payload, layoutName, initialSelectedId) => {
+          try {
+            if (typeof ForceGraph3D === "undefined") {
+              post("graphError", "3D Force Graph engine is not loaded.");
+              return;
+            }
+
+            selectedNodeId = initialSelectedId || null;
+
+            // 1. Transform Cytoscape format into 3D Force Graph format
+            const rawNodes = payload?.nodes || [];
+            const rawEdges = payload?.edges || [];
+
+            const nodes = rawNodes.map(node => {
+              const d = node.data || {};
+              const typeColors = {
+                category: d.color || "#8b5cf6",
+                topic: "#64748b",
+                person: "#3b82f6",
+                project: "#f59e0b",
+                organization: "#10b981",
+                location: "#f97316",
+                date: "#475569"
+              };
+              const color = d.color || typeColors[d.type] || "#4f46e5";
+
+              return {
+                id: d.id,
+                label: d.label || d.id,
+                fullLabel: d.full_label || d.label || d.id,
+                type: d.type || "topic",
+                sizeVal: getNodeSizeVal(d.size, d.type),
+                color: color,
+                count: d.count || 0,
+                sentiment: d.sentiment || 0,
+                categories: d.categories || "",
+                avg_ts: Number(d.avg_ts || 0.0)
+              };
+            });
+
+            const links = rawEdges.map(edge => {
+              const d = edge.data || {};
+              return {
+                id: d.id,
+                source: d.source,
+                target: d.target,
+                weight: Number(d.weight || 1)
+              };
+            });
+
+            graphData = { nodes, links };
+
+            // 2. Compute Custom Layout Positions
+            const applyLayout = (layout) => {
+              // Reset all fixed coordinates first
+              nodes.forEach(n => {
+                n.fx = undefined;
+                n.fy = undefined;
+                n.fz = undefined;
+              });
+
+              if (layout === "lanes") {
+                const categoryNodes = nodes.filter(n => n.type === "category");
+                const categoryMap = {};
+                categoryNodes.forEach((cat, idx) => {
+                  categoryMap[cat.id] = idx;
+                });
+                const numCats = Math.max(1, categoryNodes.length);
+
+                // Place category hubs in a circular ring
+                const laneRadius = 140;
+                categoryNodes.forEach((cat, idx) => {
+                  const theta = (idx / numCats) * 2 * Math.PI;
+                  cat.fx = laneRadius * Math.cos(theta);
+                  cat.fy = 40; // slightly raised
+                  cat.fz = laneRadius * Math.sin(theta);
+                  cat.x = cat.fx; cat.y = cat.fy; cat.z = cat.fz;
+                });
+
+                // Group other nodes by category
+                const laneGroups = {};
+                nodes.forEach(node => {
+                  if (node.type === "category") return;
+                  let primaryCat = "default";
+                  if (node.categories) {
+                    const cats = node.categories.split(",").map(c => c.trim()).filter(Boolean);
+                    if (cats.length > 0) {
+                      primaryCat = "cat:" + cats[0];
+                    }
+                  }
+                  if (!laneGroups[primaryCat]) {
+                    laneGroups[primaryCat] = [];
+                  }
+                  laneGroups[primaryCat].push(node);
+                });
+
+                // Arrange nodes in vertical lanes below category hubs, sorted by time
+                Object.keys(laneGroups).forEach(catId => {
+                  const catIdx = categoryMap[catId] !== undefined ? categoryMap[catId] : numCats;
+                  const theta = catIdx === numCats ? 0 : (catIdx / numCats) * 2 * Math.PI;
+                  const baseX = catIdx === numCats ? 0 : laneRadius * Math.cos(theta);
+                  const baseZ = catIdx === numCats ? 0 : laneRadius * Math.sin(theta);
+
+                  const groupNodes = laneGroups[catId];
+                  groupNodes.sort((a, b) => a.avg_ts - b.avg_ts); // older at bottom, newer at top
+
+                  groupNodes.forEach((node, idx) => {
+                    const yOffset = (idx - (groupNodes.length - 1) / 2) * 16;
+                    node.fx = baseX + Math.sin(idx) * 6;
+                    node.fy = yOffset - 30;
+                    node.fz = baseZ + Math.cos(idx) * 6;
+                    node.x = node.fx; node.y = node.fy; node.z = node.fz;
+                  });
+                });
+              } else if (layout === "breadthfirst" || layout === "levels") {
+                // Layered Hierarchy
+                const layer0 = nodes.filter(n => n.type === "category");
+                const layer1 = nodes.filter(n => n.type === "topic");
+                const layer2 = nodes.filter(n => n.type !== "category" && n.type !== "topic");
+
+                const layoutLayerCircle = (layerNodes, yLevel, radius) => {
+                  const count = Math.max(1, layerNodes.length);
+                  layerNodes.sort((a, b) => a.avg_ts - b.avg_ts);
+                  layerNodes.forEach((node, idx) => {
+                    const theta = (idx / count) * 2 * Math.PI;
+                    node.fx = radius * Math.cos(theta);
+                    node.fy = yLevel;
+                    node.fz = radius * Math.sin(theta);
+                    node.x = node.fx; node.y = node.fy; node.z = node.fz;
+                  });
+                };
+
+                layoutLayerCircle(layer0, 90, 45);    // Categories: top
+                layoutLayerCircle(layer1, 0, 110);    // Topics: middle
+                layoutLayerCircle(layer2, -90, 160);  // Entities: bottom
+              } else if (layout === "concentric" || layout === "orbit") {
+                // Concentric shells, categories inner, topics outer sorted by time
+                const sortedNodes = [...nodes].sort((a, b) => b.count - a.count);
+                const categories = sortedNodes.filter(n => n.type === "category");
+                const others = sortedNodes.filter(n => n.type !== "category");
+
+                categories.forEach((node, i) => {
+                  const theta = (i / Math.max(1, categories.length)) * 2 * Math.PI;
+                  const phi = Math.acos(-1 + (2 * i) / Math.max(1, categories.length));
+                  const r = 25;
+                  node.fx = r * Math.sin(phi) * Math.cos(theta);
+                  node.fy = r * Math.sin(phi) * Math.sin(theta);
+                  node.fz = r * Math.cos(phi);
+                  node.x = node.fx; node.y = node.fy; node.z = node.fz;
+                });
+
+                others.sort((a, b) => b.avg_ts - a.avg_ts); // newest inner, oldest outer
+                others.forEach((node, i) => {
+                  const shell = i % 3;
+                  const r = 60 + shell * 50;
+                  const countInShell = Math.ceil(others.length / 3);
+                  const indexInShell = Math.floor(i / 3);
+
+                  const theta = (indexInShell / countInShell) * 2 * Math.PI;
+                  const phi = Math.acos(-1 + (2 * indexInShell) / countInShell);
+
+                  node.fx = r * Math.sin(phi) * Math.cos(theta);
+                  node.fy = r * Math.sin(phi) * Math.sin(theta);
+                  node.fz = r * Math.cos(phi);
+                  node.x = node.fx; node.y = node.fy; node.z = node.fz;
+                });
+              } else if (layout === "circle" || layout === "timeline") {
+                // Temporal Helix Spiral (Z-Axis represents time progress)
+                const sortedNodes = [...nodes].sort((a, b) => a.avg_ts - b.avg_ts);
+                const N = sortedNodes.length;
+                sortedNodes.forEach((node, i) => {
+                  const theta = (i / N) * 2 * Math.PI * 3.5;
+                  const radius = 100 - (i / N) * 30;
+                  node.fx = radius * Math.cos(theta);
+                  node.fy = (i / N) * 240 - 120; // Vertical climb represents time progression
+                  node.fz = radius * Math.sin(theta);
+                  node.x = node.fx; node.y = node.fy; node.z = node.fz;
+                });
+              }
+            };
+
+            applyLayout(layoutName);
+
+            // 3. Initialize or Update Graph
+            if (!Graph) {
+              const container = document.getElementById("graph-container");
+              Graph = ForceGraph3D()(container)
+                .graphData(graphData)
+                .backgroundColor("#090d16")
+                .showNavInfo(false)
+                .nodeVal(node => node.sizeVal)
+                .nodeColor(node => {
+                  if (highlightNodes.size > 0 && !highlightNodes.has(node.id)) {
+                    return "rgba(40, 50, 70, 0.12)"; // Dimmed nodes
+                  }
+                  return node.color;
+                })
+                .nodeOpacity(0.95)
+                .nodeResolution(24)
+                .linkLabel(link => `${link.source.label || link.source} → ${link.target.label || link.target} (Weight: ${link.weight})`)
+                .linkWidth(link => {
+                  const baseWidth = Math.min(link.weight || 1, 15) / 3;
+                  return highlightLinks.has(link) ? baseWidth * 2.5 : baseWidth;
+                })
+                .linkColor(link => {
+                  if (highlightLinks.size > 0 && !highlightLinks.has(link)) {
+                    return "rgba(30, 40, 50, 0.04)"; // Dimmed links
+                  }
+                  return highlightLinks.has(link) ? "#fbbf24" : "rgba(148, 163, 184, 0.3)";
+                })
+                .linkDirectionalParticles(link => highlightLinks.has(link) ? 3 : 0)
+                .linkDirectionalParticleWidth(2.0)
+                .linkDirectionalParticleSpeed(0.015)
+                .nodeLabel(node => {
+                  const typeLabel = node.type.toUpperCase();
+                  const countLabel = node.count ? `<br/>Mentions: ${node.count}` : "";
+                  const sentimentLabel = node.sentiment ? `<br/>Avg Sentiment: ${node.sentiment > 0 ? '+' : ''}${node.sentiment}` : "";
+                  return `<div class="graph-tooltip"><strong>${node.fullLabel}</strong> [${typeLabel}]${countLabel}${sentimentLabel}</div>`;
+                })
+                .onNodeClick(node => {
+                  // Centered camera animation on clicked node
+                  const distance = 96;
+                  const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
+                  Graph.cameraPosition(
+                    { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio },
+                    node,
+                    1200
+                  );
+
+                  // Update selection & highlight neighbors
+                  selectedNodeId = node.id;
+                  updateHighlights(node);
+                  post("nodeTapped", node.id);
+                })
+                .onBackgroundClick(() => {
+                  selectedNodeId = null;
+                  clearHighlights();
+                  post("nodeTapped", "");
+                });
+            } else {
+              Graph.graphData(graphData);
+            }
+
+            // Adjust simulation forces based on whether physics is required
+            if (layoutName === "cose" || layoutName === "force") {
+              const linkForce = Graph.d3Force("link");
+              if (linkForce) linkForce.distance(110);
+              const chargeForce = Graph.d3Force("charge");
+              if (chargeForce) chargeForce.strength(-140);
+              Graph.d3ReheatSimulation();
+            } else {
+              const linkForce = Graph.d3Force("link");
+              if (linkForce) linkForce.distance(0);
+              const chargeForce = Graph.d3Force("charge");
+              if (chargeForce) chargeForce.strength(0);
+              Graph.cooldownTicks(0); // Lock positions instantly
+            }
+
+            // Apply highlights if a node was pre-selected
+            if (selectedNodeId) {
+              const node = graphData.nodes.find(n => n.id === selectedNodeId);
+              if (node) {
+                updateHighlights(node);
+                setTimeout(() => {
+                  const distance = 110;
+                  const distRatio = 1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
+                  Graph.cameraPosition({ x: (node.x || 1) * distRatio, y: (node.y || 1) * distRatio, z: (node.z || 1) * distRatio }, node, 800);
+                }, 400);
+              }
+            } else {
+              clearHighlights();
+            }
+
+            post("graphReady", `${nodes.length} nodes · ${links.length} connections`);
+          } catch (error) {
+            post("graphError", error?.message || "3D Graph render failed.");
+          }
+        };
+
+        const updateHighlights = (node) => {
+          highlightNodes.clear();
+          highlightLinks.clear();
+
+          if (node) {
+            highlightNodes.add(node.id);
+            graphData.links.forEach(link => {
+              const sourceId = link.source.id || link.source;
+              const targetId = link.target.id || link.target;
+              if (sourceId === node.id) {
+                highlightNodes.add(targetId);
+                highlightLinks.add(link);
+              } else if (targetId === node.id) {
+                highlightNodes.add(sourceId);
+                highlightLinks.add(link);
+              }
+            });
+          }
+
+          Graph.nodeColor(Graph.nodeColor());
+          Graph.linkColor(Graph.linkColor());
+          Graph.linkWidth(Graph.linkWidth());
+          Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
+        };
+
+        const clearHighlights = () => {
+          highlightNodes.clear();
+          highlightLinks.clear();
+          if (Graph) {
+            Graph.nodeColor(Graph.nodeColor());
+            Graph.linkColor(Graph.linkColor());
+            Graph.linkWidth(Graph.linkWidth());
+            Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
+          }
+        };
+
+        window.setSelectedNode = (nodeId) => {
+          try {
+            selectedNodeId = nodeId || null;
+            if (selectedNodeId && Graph) {
+              const node = graphData.nodes.find(n => n.id === selectedNodeId);
+              if (node) {
+                updateHighlights(node);
+                const distance = 96;
+                const distRatio = 1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
+                Graph.cameraPosition({ x: (node.x || 1) * distRatio, y: (node.y || 1) * distRatio, z: (node.z || 1) * distRatio }, node, 800);
+              }
+            } else {
+              clearHighlights();
+            }
+            post("graphReady", "selection-updated");
+          } catch (error) {
+            post("graphError", error?.message || "Failed to update 3D graph selection.");
+          }
+        };
+
+        // Resize handler
+        window.addEventListener("resize", () => {
+          if (Graph) {
+            Graph.width(window.innerWidth);
+            Graph.height(window.innerHeight);
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

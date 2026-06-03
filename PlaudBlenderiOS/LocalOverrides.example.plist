@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>piTailscaleMagicDNSURL</key>
+	<string>http://your-device.your-tailnet.ts.net:8000</string>
+	<key>piTailscaleURL</key>
+	<string>http://100.x.y.z:8000</string>
+	<key>piLanURL</key>
+	<string>http://10.x.y.z:8000</string>
+	<key>ngrokURL</key>
+	<string>https://your-ngrok-domain.ngrok-free.dev</string>
+	<key>legacyMacRecoveryHost</key>
+	<string>10.x.y.z</string>
+	<key>legacyNgrokRecoveryHost</key>
+	<string>your-ngrok-domain.ngrok-free.app</string>
+</dict>
+</plist>

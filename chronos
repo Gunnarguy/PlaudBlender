@@ -22,7 +22,11 @@ if [[ -f "$ROOT/.env" ]]; then
     set +a
 fi
 
-PYTHON="$ROOT/venv/bin/python"
+if [[ -d "$ROOT/.venv" ]]; then
+    PYTHON="$ROOT/.venv/bin/python"
+else
+    PYTHON="$ROOT/venv/bin/python"
+fi
 LOG_DIR="$ROOT/.logs"
 PID_DIR="$LOG_DIR"
 NGROK_DOMAIN="${CHRONOS_NGROK_DOMAIN:-your-ngrok-domain.ngrok-free.dev}"

@@ -2,7 +2,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_BIN="$ROOT_DIR/venv/bin/python"
+if [[ -d "$ROOT_DIR/.venv" ]]; then
+  PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
+else
+  PYTHON_BIN="$ROOT_DIR/venv/bin/python"
+fi
 
 print_usage() {
   cat <<'EOF'
