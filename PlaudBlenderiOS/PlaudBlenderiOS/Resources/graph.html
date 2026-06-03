@@ -102,7 +102,8 @@
             const rawEdges = payload?.edges || [];
 
             const nodes = rawNodes.map(node => {
-              const d = node.data || {};
+              // Support both Cytoscape-formatted and flat JSON objects
+              const d = node.data || node || {};
               const typeColors = {
                 category: d.color || "#8b5cf6",
                 topic: "#64748b",
@@ -113,23 +114,30 @@
                 date: "#475569"
               };
               const color = d.color || typeColors[d.type] || "#4f46e5";
+              
+              let cats = [];
+              if (Array.isArray(d.categories)) {
+                cats = d.categories;
+              } else if (typeof d.categories === "string") {
+                cats = d.categories.split(",").map(c => c.trim()).filter(Boolean);
+              }
 
               return {
                 id: d.id,
                 label: d.label || d.id,
-                fullLabel: d.full_label || d.label || d.id,
+                fullLabel: d.fullLabel || d.full_label || d.label || d.id,
                 type: d.type || "topic",
                 sizeVal: getNodeSizeVal(d.size, d.type),
                 color: color,
-                count: d.count || 0,
+                count: d.count || d.mentionCount || d.mention_count || 0,
                 sentiment: d.sentiment || 0,
-                categories: d.categories || "",
-                avg_ts: Number(d.avg_ts || 0.0)
+                categories: cats,
+                avg_ts: Number(d.avg_ts || d.avgTs || 0.0)
               };
             });
 
             const links = rawEdges.map(edge => {
-              const d = edge.data || {};
+              const d = edge.data || edge || {};
               return {
                 id: d.id,
                 source: d.source,
@@ -173,7 +181,9 @@
                   if (node.type === "category") return;
                   let primaryCat = "default";
                   if (node.categories) {
-                    const cats = node.categories.split(",").map(c => c.trim()).filter(Boolean);
+                    const cats = Array.isArray(node.categories)
+                      ? node.categories
+                      : node.categories.split(",").map(c => c.trim()).filter(Boolean);
                     if (cats.length > 0) {
                       primaryCat = "cat:" + cats[0];
                     }
