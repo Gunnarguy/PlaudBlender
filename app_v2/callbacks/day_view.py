@@ -195,6 +195,9 @@ def register_day_view_callbacks(app):
             if day.recording_count > 0 or day.event_count > 0 or bool(day.recordings)
         ]
 
+        # Enforce chronological ordering (newest first)
+        days.sort(key=lambda d: d.date, reverse=True)
+
         if not days:
             return [
                 html.Div("No recordings in this range", className="empty-state-text")

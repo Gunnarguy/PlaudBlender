@@ -8,11 +8,12 @@ from typing import Any, Dict, List, Optional
 # Keep this for backward compatibility if other modules import it
 GRAPH_STYLESHEET: List[Dict[str, Any]] = []
 
-def create_graph_view(graph_data=None) -> html.Div:
+def create_graph_view(graph_data=None, layout_name: str = "lanes") -> html.Div:
     """Create the knowledge graph view with a Plotly 3D force-directed graph.
 
     Args:
         graph_data: GraphData with nodes and edges lists
+        layout_name: The layout type (lanes, levels, orbit, timeline, force)
 
     Returns:
         Dash component for the graph view
@@ -24,7 +25,7 @@ def create_graph_view(graph_data=None) -> html.Div:
     if graph_data and graph_data.nodes:
         node_count = len(graph_data.nodes)
         edge_count = len(graph_data.edges)
-        fig = _build_plotly_3d_figure(graph_data)
+        fig = _build_plotly_3d_figure(graph_data, layout_name)
 
     # Count entity types for legend (optional secondary display)
     type_counts = {}
@@ -46,6 +47,28 @@ def create_graph_view(graph_data=None) -> html.Div:
                         className="view-subtitle",
                     ),
                 ],
+            ),
+            # Layout control dropdown
+            html.Div(
+                className="graph-controls",
+                style={"marginBottom": "20px", "padding": "12px", "backgroundColor": "rgba(15, 23, 42, 0.4)", "borderRadius": "12px", "border": "1px solid rgba(255,255,255,0.05)"},
+                children=[
+                    html.Span("Visualization Mode: ", style={"color": "#94a3b8", "fontWeight": "600", "marginRight": "12px"}),
+                    dcc.Dropdown(
+                        id="web-graph-layout-select",
+                        options=[
+                            {"label": "Lanes (Category Columns)", "value": "lanes"},
+                            {"label": "Levels (Hierarchical Layers)", "value": "levels"},
+                            {"label": "Orbit (Concentric Shells)", "value": "orbit"},
+                            {"label": "Timeline (Chronological Helix)", "value": "timeline"},
+                            {"label": "Force (Standard physics)", "value": "force"},
+                        ],
+                        value=layout_name,
+                        clearable=False,
+                        searchable=False,
+                        style={"width": "260px", "display": "inline-block", "verticalAlign": "middle", "color": "#0f172a"},
+                    ),
+                ]
             ),
             # Graph container
             html.Div(
@@ -106,11 +129,122 @@ def create_graph_view(graph_data=None) -> html.Div:
     )
 
 
-def _build_plotly_3d_figure(graph_data) -> go.Figure:
-    """Build a 3D Force-Directed Graph Figure using NetworkX and Plotly."""
+def _compute_layout_positions(G, node_props, layout_type="lanes"):
+    import math
+    pos = {}
+    nodes = list(G.nodes())
+
+    if layout_type == "lanes":
+        categories = [n for n in nodes if node_props.get(n, {}).get("type") == "category"]
+        others = [n for n in nodes if node_props.get(n, {}).get("type") != "category"]
+
+        num_cats = max(1, len(categories))
+        lane_radius = 2.4
+
+        category_map = {}
+        for idx, cat in enumerate(categories):
+            theta = (idx / num_cats) * 2 * math.pi
+            pos[cat] = (lane_radius * math.cos(theta), 0.5, lane_radius * math.sin(theta))
+            category_map[cat] = idx
+
+        lane_groups = {}
+        for node in others:
+            props = node_props.get(node, {})
+            cats_str = props.get("categories", "")
+            primary_cat = "default"
+            if cats_str:
+                cats_list = [c.strip() for c in cats_str.split(",") if c.strip()]
+                if cats_list:
+                    primary_cat = "cat:" + cats_list[0]
+            lane_groups.setdefault(primary_cat, []).append(node)
+
+        for cat_id, group_nodes in lane_groups.items():
+            cat_idx = category_map.get(cat_id, num_cats)
+            theta = 0.0 if cat_idx == num_cats else (cat_idx / num_cats) * 2 * math.pi
+            base_x = 0.0 if cat_idx == num_cats else lane_radius * math.cos(theta)
+            base_z = 0.0 if cat_idx == num_cats else lane_radius * math.sin(theta)
+
+            group_nodes.sort(key=lambda n: node_props.get(n, {}).get("avg_ts", 0.0))
+
+            for idx, node in enumerate(group_nodes):
+                y_offset = (idx - (len(group_nodes) - 1) / 2) * 0.14
+                pos[node] = (
+                    base_x + math.sin(idx) * 0.06,
+                    y_offset - 0.4,
+                    base_z + math.cos(idx) * 0.06
+                )
+    elif layout_type in ("levels", "breadthfirst"):
+        layer0 = [n for n in nodes if node_props.get(n, {}).get("type") == "category"]
+        layer1 = [n for n in nodes if node_props.get(n, {}).get("type") == "topic"]
+        layer2 = [n for n in nodes if node_props.get(n, {}).get("type") not in ("category", "topic")]
+
+        def layout_layer(layer_nodes, y_val, radius):
+            count = max(1, len(layer_nodes))
+            layer_nodes.sort(key=lambda n: node_props.get(n, {}).get("avg_ts", 0.0))
+            for idx, node in enumerate(layer_nodes):
+                theta = (idx / count) * 2 * math.pi
+                pos[node] = (radius * math.cos(theta), y_val, radius * math.sin(theta))
+
+        layout_layer(layer0, 1.2, 0.7)
+        layout_layer(layer1, 0.0, 1.6)
+        layout_layer(layer2, -1.2, 2.4)
+    elif layout_type in ("orbit", "concentric"):
+        sorted_nodes = sorted(nodes, key=lambda n: node_props.get(n, {}).get("count", 0), reverse=True)
+        categories = [n for n in sorted_nodes if node_props.get(n, {}).get("type") == "category"]
+        others = [n for n in sorted_nodes if node_props.get(n, {}).get("type") != "category"]
+
+        num_cats = max(1, len(categories))
+        for idx, cat in enumerate(categories):
+            theta = (idx / num_cats) * 2 * math.pi
+            phi = math.acos(-1.0 + (2.0 * idx) / num_cats)
+            r = 0.4
+            pos[cat] = (
+                r * math.sin(phi) * math.cos(theta),
+                r * math.sin(phi) * math.sin(theta),
+                r * math.cos(phi)
+            )
+
+        others.sort(key=lambda n: node_props.get(n, {}).get("avg_ts", 0.0), reverse=True)
+        for idx, node in enumerate(others):
+            shell = idx % 3
+            r = 0.9 + shell * 0.7
+            count_in_shell = math.ceil(len(others) / 3)
+            idx_in_shell = idx // 3
+
+            theta = (idx_in_shell / count_in_shell) * 2 * math.pi
+            phi = math.acos(-1.0 + (2.0 * idx_in_shell) / count_in_shell)
+            pos[node] = (
+                r * math.sin(phi) * math.cos(theta),
+                r * math.sin(phi) * math.sin(theta),
+                r * math.cos(phi)
+            )
+    elif layout_type in ("timeline", "circle"):
+        sorted_nodes = sorted(nodes, key=lambda n: node_props.get(n, {}).get("avg_ts", 0.0))
+        N = len(sorted_nodes)
+        for idx, node in enumerate(sorted_nodes):
+            theta = (idx / max(1, N)) * 2 * math.pi * 3.5
+            radius = 1.5 - (idx / max(1, N)) * 0.4
+            pos[node] = (
+                radius * math.cos(theta),
+                (idx / max(1, N)) * 3.6 - 1.8,
+                radius * math.sin(theta)
+            )
+    else:
+        import networkx as nx
+        pos = nx.spring_layout(G, dim=3, k=0.25, iterations=60, seed=42)
+
+    for n in nodes:
+        if n not in pos:
+            pos[n] = (0.0, 0.0, 0.0)
+
+    return pos
+
+
+def _build_plotly_3d_figure(graph_data, layout_name: str = "lanes") -> go.Figure:
+    """Build a 3D Graph Figure using NetworkX and Plotly."""
     # 1. Construct NetworkX graph
     G = nx.Graph()
-    
+
     # Store node properties for reference
     node_props = {}
     for node in graph_data.nodes:
@@ -123,9 +257,8 @@ def _build_plotly_3d_figure(graph_data) -> go.Figure:
         data = edge.get("data", {})
         G.add_edge(data.get("source"), data.get("target"), weight=data.get("weight", 1))
 
-    # 2. Compute 3D Spring Layout coordinates
-    # dim=3 forces 3D coordinate vectors (x, y, z)
-    pos = nx.spring_layout(G, dim=3, k=0.25, iterations=60, seed=42)
+    # 2. Compute Layout coordinates
+    pos = _compute_layout_positions(G, node_props, layout_name)
 
     # 3. Create Edge Line segments
     edge_x = []
@@ -140,7 +273,6 @@ def _build_plotly_3d_figure(graph_data) -> go.Figure:
         edge_z.extend([z0, z1, None])
 
     # 4. Group Nodes by Class for styled traces
-    # Grouping allows interactive toggling of classes in the Plotly legend
     type_groups: Dict[str, List[str]] = {}
     for node_id in G.nodes():
         props = node_props.get(node_id, {})
@@ -176,7 +308,7 @@ def _build_plotly_3d_figure(graph_data) -> go.Figure:
         y=edge_y,
         z=edge_z,
         mode="lines",
-        line=dict(color="rgba(148, 163, 184, 0.22)", width=1.5),
+        line=dict(color="rgba(148, 163, 184, 0.18)", width=1.5),
         hoverinfo="none",
         showlegend=False,
         name="Connections"
@@ -204,13 +336,17 @@ def _build_plotly_3d_figure(graph_data) -> go.Figure:
             props = node_props.get(node_id, {})
             # Determine size dynamically
             size_val = props.get("size", 20)
-            sizes.append(max(6, min(24, size_val / 2.8)))
+            base_size = max(8, min(24, size_val / 2.8))
+            if ntype == "category":
+                sizes.append(base_size * 1.5)
+            else:
+                sizes.append(base_size)
 
             # Build detailed hover text
             label = props.get("label", node_id)
             count = props.get("count", props.get("mention_count", 0))
             sentiment = props.get("sentiment", 0)
-            
+
             tooltip = f"<b>{label}</b> [{ntype.upper()}]<br/>"
             if count:
                 tooltip += f"Mentions: {count}<br/>"
@@ -218,8 +354,6 @@ def _build_plotly_3d_figure(graph_data) -> go.Figure:
                 tooltip += f"Sentiment: {'+' if sentiment > 0 else ''}{sentiment:.2f}<br/>"
             hover_texts.append(tooltip)
 
-            # Store the original Cytoscape-formatted dict in customdata
-            # this makes it accessible in Dash click callbacks!
             custom_data_list.append(props)
 
         node_trace = go.Scatter3d(

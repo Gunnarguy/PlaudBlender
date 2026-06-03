@@ -25,7 +25,7 @@ from app_v2.components import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_PREFERENCES = {
-    "auto_refresh_enabled": True,
+    "auto_refresh_enabled": False,
     "auto_refresh_seconds": 60,
     "default_view": "timeline",
 }
@@ -304,10 +304,19 @@ def _get_cached_notion_bridge_snapshot() -> dict | None:
         return None
 
 
+_notion_index_cache: dict[str, dict] | None = None
+_notion_index_cache_ts: float = 0.0
+
+
 def _build_notion_recording_index(snapshot: dict | None) -> dict[str, dict]:
     """Invert cached Notion data into recording-centric page metadata."""
+    global _notion_index_cache, _notion_index_cache_ts
     if not snapshot:
         return {}
+
+    now = time.time()
+    if _notion_index_cache is not None and (now - _notion_index_cache_ts) < 300.0:
+        return _notion_index_cache
 
     recordings = snapshot.get("recordings") or []
     match_map = snapshot.get("match_map") or {}
@@ -346,6 +355,8 @@ def _build_notion_recording_index(snapshot: dict | None) -> dict[str, dict]:
         if matched_recording_id:
             _register(str(matched_recording_id), page)
 
+    _notion_index_cache = index
+    _notion_index_cache_ts = now
     return index
 
 
@@ -3815,6 +3826,8 @@ def register_navigation_callbacks(app):
 
         _t0 = _time.perf_counter()
         triggered = ctx.triggered_id
+        if triggered == "auto-refresh":
+            return no_update, no_update, no_update, no_update
         service = None
 
         def get_service():

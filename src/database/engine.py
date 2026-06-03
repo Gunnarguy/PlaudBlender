@@ -27,7 +27,22 @@ def get_engine(database_url: Optional[str] = None) -> Engine:
         db_location = url.replace("sqlite:///", "")
         if db_location != ":memory:" and db_location:
             os.makedirs(os.path.dirname(db_location), exist_ok=True)
-    return create_engine(url, echo=False, future=True)
+    engine = create_engine(url, echo=False, future=True)
+
+    # Enable WAL mode + busy_timeout for SQLite to prevent lock contention
+    # between readers (UI) and writers (auto_sync, pipeline)
+    if engine.dialect.name == "sqlite":
+        from sqlalchemy import event
+
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragmas(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.close()
+
+    return engine
 
 
 # Default engine/session for application code

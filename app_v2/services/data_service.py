@@ -386,8 +386,11 @@ class ChronosDataService:
         self._service_init_lock = threading.Lock()
         self._events_cache: List[Event] = []
         self._last_cache_time: Optional[datetime] = None
-        self._cache_ttl_seconds = 60  # Refresh cache every minute
+        self._cache_ttl_seconds = 300  # 5 minutes — data only changes on sync
         self._cache_lock = threading.Lock()
+        self._days_cache: Optional[List[DaySummary]] = None
+        self._days_cache_time: Optional[datetime] = None
+        self._days_cache_ttl = 300  # same as events
         self._plaud_date_audit_cache: Dict[
             int, Tuple[datetime, Optional[frozenset[str]]]
         ] = {}
@@ -784,6 +787,8 @@ class ChronosDataService:
                 # Update cache
                 self._events_cache = events
                 self._last_cache_time = datetime.now()
+                self._days_cache = None
+                self._days_cache_time = None
                 _scroll_ms = (_time.perf_counter() - _scroll_t0) * 1000
 
                 xray_log(
@@ -1119,6 +1124,17 @@ class ChronosDataService:
         Returns:
             List of DaySummary sorted by date descending (newest first)
         """
+        # Fast path: serve from days cache when no date filter is applied
+        now = datetime.now()
+        if (
+            not start_date
+            and not end_date
+            and self._days_cache is not None
+            and self._days_cache_time is not None
+            and (now - self._days_cache_time).seconds < self._days_cache_ttl
+        ):
+            return self._days_cache
+
         events = self._get_all_events()
 
         # Aggregate completed recordings from Qdrant events
@@ -1276,6 +1292,12 @@ class ChronosDataService:
 
         # Sort by date descending
         result.sort(key=lambda d: d.date, reverse=True)
+
+        # Cache the full (unfiltered) result
+        if not start_date and not end_date:
+            self._days_cache = result
+            self._days_cache_time = datetime.now()
+
         if _xlog:
             _rng = f"{result[-1].date}..{result[0].date}" if result else "empty"
             _xlog(
@@ -1578,6 +1600,8 @@ class ChronosDataService:
         date_categories: Dict[str, set] = defaultdict(set)
         date_event_count: Dict[str, int] = defaultdict(int)
         keyword_sentiments: Dict[str, list] = defaultdict(list)
+        keyword_timestamps: Dict[str, list] = defaultdict(list)
+        category_timestamps: Dict[str, list] = defaultdict(list)
 
         # Normalize keywords
         def normalize(kw: str) -> str:
@@ -1605,6 +1629,7 @@ class ChronosDataService:
         for event in events:
             cat = event.category
             category_counts[cat] += 1
+            category_timestamps[cat].append(event.start_ts.timestamp())
             date_key = event.start_ts.strftime("%Y-%m-%d")
             date_categories[date_key].add(cat)
             date_event_count[date_key] += 1
@@ -1617,6 +1642,7 @@ class ChronosDataService:
                 keyword_categories[nkw].add(cat)
                 recording_keywords[event.recording_id].add(nkw)
                 keyword_sentiments[nkw].append(event.sentiment)
+                keyword_timestamps[nkw].append(event.start_ts.timestamp())
 
         # ── Filter to meaningful keywords (appear 2+ times) ──────────
         significant_keywords = {
@@ -1661,6 +1687,11 @@ class ChronosDataService:
             "planning": "#0ea5e9",
         }
         for cat, count in category_counts.items():
+            avg_ts = (
+                sum(category_timestamps[cat]) / len(category_timestamps[cat])
+                if category_timestamps[cat]
+                else 0.0
+            )
             nodes.append(
                 {
                     "data": {
@@ -1671,6 +1702,7 @@ class ChronosDataService:
                         "count": count,
                         "size": max(35, min(70, 25 + count)),
                         "color": cat_colors.get(cat, "#64748b"),
+                        "avg_ts": avg_ts,
                     },
                     "classes": "category",
                 }
@@ -1689,6 +1721,11 @@ class ChronosDataService:
                 sum(keyword_sentiments[kw]) / len(keyword_sentiments[kw])
                 if keyword_sentiments[kw]
                 else 0
+            )
+            avg_ts = (
+                sum(keyword_timestamps[kw]) / len(keyword_timestamps[kw])
+                if keyword_timestamps[kw]
+                else 0.0
             )
 
             # Determine primary type based on simple heuristics
@@ -1712,6 +1749,7 @@ class ChronosDataService:
                         "size": size,
                         "categories": ", ".join(sorted(cats)),
                         "sentiment": round(avg_sent, 2),
+                        "avg_ts": avg_ts,
                     },
                     "classes": entity_type,
                 }

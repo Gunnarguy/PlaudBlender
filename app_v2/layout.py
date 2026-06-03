@@ -19,8 +19,8 @@ def create_layout() -> html.Div:
             dcc.Store(id="days-data", data=None),
             dcc.Store(id="heatmap-scroll-target", data=None),
             dcc.Store(id="app-preferences", storage_type="local", data=None),
-            # Auto-refresh interval (every 60 seconds)
-            dcc.Interval(id="auto-refresh", interval=60000, n_intervals=0),
+            # Auto-refresh interval (every 60 seconds, disabled by default)
+            dcc.Interval(id="auto-refresh", interval=60000, n_intervals=0, disabled=True),
             # Pipeline progress polling (2s while running, self-disables when idle)
             dcc.Interval(
                 id="pipeline-progress-poll",

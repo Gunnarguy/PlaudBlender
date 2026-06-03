@@ -907,6 +907,8 @@ def create_day_view(days: List[DaySummary]) -> html.Div:
         for day in days
         if day.recording_count > 0 or day.event_count > 0 or bool(day.recordings)
     ]
+    # Enforce sorting descending by date (newest first)
+    populated_days.sort(key=lambda d: d.date, reverse=True)
 
     if not populated_days:
         return html.Div(

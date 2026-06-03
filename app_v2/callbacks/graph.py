@@ -279,3 +279,22 @@ def register_graph_callbacks(app):
         xray_log("graph", "select", f"Opening recording from knowledge graph")
 
         return recording_id
+
+    # ── Update graph layout when dropdown value changes ───────────
+    @app.callback(
+        Output("knowledge-graph", "figure"),
+        Input("web-graph-layout-select", "value"),
+        State("current-view", "data"),
+        prevent_initial_call=True,
+    )
+    def update_web_graph_layout(layout_name, current_view):
+        """Update 3D figure using selected layout."""
+        if current_view != "graph" or not layout_name:
+            raise PreventUpdate
+
+        from app_v2.services.data_service import get_data_service
+        from app_v2.components.graph import _build_plotly_3d_figure
+
+        service = get_data_service()
+        graph_data = service.get_graph_data()
+        return _build_plotly_3d_figure(graph_data, layout_name)
