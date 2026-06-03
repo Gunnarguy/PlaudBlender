@@ -1035,9 +1035,22 @@ def _build_recordings_list(
             date = getattr(rec, "date", "Unknown") or "Unknown"
         by_date.setdefault(date, []).append(rec)
 
+    def _rec_sort_key(r):
+        """Sort recordings within a date group by capture time descending."""
+        if isinstance(r, dict):
+            raw_date = r.get("date", "") or ""
+            created = r.get("created_time", "") or ""
+        else:
+            raw_date = getattr(r, "date", "") or ""
+            created = getattr(r, "created_time", "") or ""
+        # Prefer the recording date if it has a time component
+        if raw_date and "T" in raw_date:
+            return raw_date
+        return created or raw_date or ""
+
     date_groups = []
     for date in sorted(by_date.keys(), reverse=True):
-        recs = by_date[date]
+        recs = sorted(by_date[date], key=_rec_sort_key, reverse=True)
         date_groups.append(
             html.Div(
                 className="notion-date-group",

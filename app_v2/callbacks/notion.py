@@ -891,11 +891,17 @@ def register_notion_callbacks(app):
             ]
 
         def _recording_sort_key(rec):
+            """Sort key using capture date, falling back to Notion created_time."""
             raw_date = rec.get("date", "") or ""
             created_time = rec.get("created_time", "") or ""
+            # Prefer the recording date if available
             primary = raw_date or created_time
-            if raw_date and "T" not in raw_date:
-                return raw_date[:10]
+            if not primary:
+                return ""
+            # Normalize: date-only → append T00:00:00 so lexicographic
+            # comparison works consistently with full ISO datetimes
+            if primary and "T" not in primary:
+                return primary[:10] + "T00:00:00"
             return primary
 
         # Apply sort
@@ -1325,6 +1331,17 @@ def _do_full_fetch_data(force=False):
                     "properties": rec.properties,
                 }
             )
+
+        # Pre-sort by capture date descending (newest first)
+        def _sort_key(r):
+            raw_date = r.get("date", "") or ""
+            created = r.get("created_time", "") or ""
+            primary = raw_date or created
+            if primary and "T" not in primary:
+                return primary[:10] + "T00:00:00"
+            return primary or ""
+
+        recordings_data.sort(key=_sort_key, reverse=True)
 
         # Run matching + coverage + chronos IDs in parallel
         def _do_matching():
