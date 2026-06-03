@@ -1,0 +1,312 @@
+#!/usr/bin/env bash
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  Chronos — Unified launcher for PlaudBlender                    ║
+# ║                                                                  ║
+# ║  Usage:  ./chronos              Launch menu bar (starts all)     ║
+# ║          ./chronos start        Start all services (CLI)         ║
+# ║          ./chronos stop         Stop all services                ║
+# ║          ./chronos status       Show what's running              ║
+# ║          ./chronos pipeline     Run full data pipeline           ║
+# ║          ./chronos sync         Sync from Plaud only             ║
+# ║          ./chronos logs         Tail API logs                    ║
+# ║          ./chronos url          Print ngrok/Notion callback URL  ║
+# ╚══════════════════════════════════════════════════════════════════╝
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# Load environment overrides from .env if present
+if [[ -f "$ROOT/.env" ]]; then
+    set -a
+    source "$ROOT/.env" 2>/dev/null || true
+    set +a
+fi
+
+PYTHON="$ROOT/venv/bin/python"
+LOG_DIR="$ROOT/.logs"
+PID_DIR="$LOG_DIR"
+NGROK_DOMAIN="${CHRONOS_NGROK_DOMAIN:-your-ngrok-domain.ngrok-free.dev}"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+DIM='\033[2m'
+RESET='\033[0m'
+
+mkdir -p "$LOG_DIR"
+
+# ── Helpers ─────────────────────────────────────────────────
+
+_pid_of() { cat "$PID_DIR/$1.pid" 2>/dev/null || true; }
+_is_running() { [[ -n "$1" ]] && kill -0 "$1" 2>/dev/null; }
+_port_up() {
+  if command -v lsof &>/dev/null; then
+    lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  else
+    ss -tlnp 2>/dev/null | grep -q ":$1 "
+  fi
+}
+
+_ngrok_url() {
+    python3 -c "
+import urllib.request, json, sys
+try:
+    data = json.loads(urllib.request.urlopen('http://127.0.0.1:4040/api/tunnels', timeout=2).read())
+    for t in data.get('tunnels', []):
+        if t.get('proto') == 'https': print(t['public_url']); sys.exit(0)
+    if data.get('tunnels'): print(data['tunnels'][0]['public_url']); sys.exit(0)
+    sys.exit(1)
+except: sys.exit(1)
+" 2>/dev/null || true
+}
+
+_kill_port() {
+    local stale
+    if command -v lsof &>/dev/null; then
+        stale=$(lsof -ti:"$1" 2>/dev/null || true)
+    else
+        stale=$(ss -tlnp "sport = :$1" 2>/dev/null | grep -oP 'pid=\K\d+' || true)
+    fi
+    if [[ -n "$stale" ]]; then
+        kill "$stale" 2>/dev/null || true
+    fi
+}
+
+_stop_one() {
+    local name="$1" port="${2:-}"
+    local pid
+    pid=$(_pid_of "$name")
+    if _is_running "$pid"; then
+        kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PID_DIR/$name.pid"
+    [[ -n "$port" ]] && _kill_port "$port"
+}
+
+_update_env_redirect() {
+    local callback="$1/api/v1/auth/notion/callback"
+    local env_file="$ROOT/.env"
+    if grep -q "^NOTION_REDIRECT_URI=" "$env_file" 2>/dev/null; then
+        sed -i '' "s|^NOTION_REDIRECT_URI=.*|NOTION_REDIRECT_URI=${callback}|" "$env_file"
+    else
+        echo "NOTION_REDIRECT_URI=${callback}" >> "$env_file"
+    fi
+}
+
+# ── Service starters ─────────────────────────────────────────
+
+_start_qdrant() {
+    if _port_up 6333; then echo -e "  ${GREEN}✔${RESET}  Qdrant          already running"; return 0; fi
+    local qdrant_bin="$HOME/bin/qdrant"
+    if [[ ! -x "$qdrant_bin" ]]; then echo -e "  ${RED}✘${RESET}  Qdrant          binary not found at $qdrant_bin"; return 1; fi
+    local cfg="$HOME/.config/qdrant/config.yaml"
+    local args=("$qdrant_bin" "--disable-telemetry")
+    [[ -f "$cfg" ]] && args+=("--config-path" "$cfg")
+    nohup "${args[@]}" > "$LOG_DIR/qdrant.log" 2>&1 &
+    echo $! > "$PID_DIR/qdrant.pid"
+    for _ in $(seq 1 30); do _port_up 6333 && break; sleep 0.5; done
+    if _port_up 6333; then echo -e "  ${GREEN}✔${RESET}  Qdrant          port 6333"; return 0
+    else echo -e "  ${RED}✘${RESET}  Qdrant          failed to start"; return 1; fi
+}
+
+_start_ngrok() {
+    local existing
+    existing=$(_ngrok_url)
+    if [[ -n "$existing" ]]; then echo -e "  ${GREEN}✔${RESET}  ngrok           $existing"; _update_env_redirect "$existing"; return 0; fi
+    nohup ngrok http 8000 --domain="$NGROK_DOMAIN" --log stdout --log-level info > "$LOG_DIR/ngrok.log" 2>&1 &
+    echo $! > "$PID_DIR/ngrok.pid"
+    local url=""
+    for _ in $(seq 1 20); do url=$(_ngrok_url); [[ -n "$url" ]] && break; sleep 0.5; done
+    if [[ -n "$url" ]]; then _update_env_redirect "$url"; echo -e "  ${GREEN}✔${RESET}  ngrok           $url"; return 0
+    else echo -e "  ${RED}✘${RESET}  ngrok           failed to start"; return 1; fi
+}
+
+_start_api() {
+    if _port_up 8000; then echo -e "  ${GREEN}✔${RESET}  API server      port 8000"; return 0; fi
+    nohup "$PYTHON" scripts/launch_api.py --port 8000 > "$LOG_DIR/api.log" 2>&1 &
+    echo $! > "$PID_DIR/api.pid"
+    for _ in $(seq 1 20); do _port_up 8000 && break; sleep 0.5; done
+    if _port_up 8000; then echo -e "  ${GREEN}✔${RESET}  API server      port 8000"; return 0
+    else echo -e "  ${RED}✘${RESET}  API server      failed to start"; return 1; fi
+}
+
+_start_webui() {
+    if _port_up 8050; then echo -e "  ${GREEN}✔${RESET}  Web UI          port 8050"; return 0; fi
+    nohup "$PYTHON" scripts/launch_app.py > "$LOG_DIR/webui.log" 2>&1 &
+    echo $! > "$PID_DIR/webui.pid"
+    for _ in $(seq 1 40); do _port_up 8050 && break; sleep 0.5; done
+    if _port_up 8050; then echo -e "  ${GREEN}✔${RESET}  Web UI          port 8050"; return 0
+    else echo -e "  ${RED}✘${RESET}  Web UI          failed to start"; return 1; fi
+}
+
+_start_auto_sync() {
+    if _port_up 8090; then echo -e "  ${GREEN}✔${RESET}  Auto-sync       port 8090"; return 0; fi
+    nohup "$PYTHON" scripts/auto_sync.py > "$LOG_DIR/auto_sync.log" 2>&1 &
+    echo $! > "$PID_DIR/auto_sync.pid"
+    for _ in $(seq 1 20); do _port_up 8090 && break; sleep 0.5; done
+    if _port_up 8090; then echo -e "  ${GREEN}✔${RESET}  Auto-sync       port 8090"; return 0
+    else echo -e "  ${RED}✘${RESET}  Auto-sync       failed to start"; return 1; fi
+}
+
+# ── Commands ──────────────────────────────────────────────────
+
+do_menubar() {
+    echo -e "\n${BOLD}${CYAN}  Launching Chronos Menu Bar…${RESET}"
+    echo -e "  ${DIM}Services will auto-start in background.${RESET}\n"
+    exec "$PYTHON" scripts/chronos_menubar.py
+}
+
+do_start() {
+    echo ""
+    echo -e "${BOLD}${CYAN}  ╔═══════════════════════════════════════╗${RESET}"
+    echo -e "${BOLD}${CYAN}  ║      Chronos — Starting All Services  ║${RESET}"
+    echo -e "${BOLD}${CYAN}  ╚═══════════════════════════════════════╝${RESET}"
+    echo ""
+
+    cd "$ROOT"
+
+    local ok=0 fail=0
+
+    _start_qdrant    && ((ok++)) || ((fail++))
+    _start_ngrok     && ((ok++)) || ((fail++))
+    _start_api       && ((ok++)) || ((fail++))
+    _start_webui     && ((ok++)) || ((fail++))
+    _start_auto_sync && ((ok++)) || ((fail++))
+
+    echo ""
+    if [[ $fail -eq 0 ]]; then
+        echo -e "  ${GREEN}${BOLD}All 5 services running.${RESET}"
+    else
+        echo -e "  ${YELLOW}${BOLD}$ok/5 services running, $fail failed.${RESET}"
+    fi
+
+    local url
+    url=$(_ngrok_url)
+    if [[ -n "$url" ]]; then
+        echo ""
+        echo -e "  ${BOLD}Notion redirect URI:${RESET}"
+        echo -e "  ${CYAN}${url}/api/v1/auth/notion/callback${RESET}"
+    fi
+
+    echo ""
+    echo -e "  ${DIM}API:       http://localhost:8000/docs${RESET}"
+    echo -e "  ${DIM}Web UI:    http://localhost:8050${RESET}"
+    echo -e "  ${DIM}Webhook:   http://localhost:8090/health${RESET}"
+    echo -e "  ${DIM}Qdrant:    http://localhost:6333/dashboard${RESET}"
+    echo -e "  ${DIM}ngrok:     http://127.0.0.1:4040${RESET}"
+    echo -e "  ${DIM}Stop:      ./chronos stop${RESET}"
+    echo ""
+}
+
+do_stop() {
+    echo ""
+    _stop_one "webui"  8050
+    _stop_one "api"    8000
+    _stop_one "auto_sync" 8090
+    _stop_one "ngrok"  4040
+    _stop_one "qdrant" 6333
+    echo -e "  ${GREEN}✔${RESET}  All services stopped."
+    echo ""
+}
+
+do_status() {
+    echo ""
+    local running=0
+
+    if _port_up 6333;  then echo -e "  ${GREEN}●${RESET}  Qdrant          port 6333"; ((running++))
+    else                     echo -e "  ${RED}○${RESET}  Qdrant          not running"; fi
+
+    local url
+    url=$(_ngrok_url)
+    if [[ -n "$url" ]]; then echo -e "  ${GREEN}●${RESET}  ngrok           $url"; ((running++))
+    else                     echo -e "  ${RED}○${RESET}  ngrok           not running"; fi
+
+    if _port_up 8000;  then echo -e "  ${GREEN}●${RESET}  API server      port 8000"; ((running++))
+    else                     echo -e "  ${RED}○${RESET}  API server      not running"; fi
+
+    if _port_up 8050;  then echo -e "  ${GREEN}●${RESET}  Web UI          port 8050"; ((running++))
+    else                     echo -e "  ${RED}○${RESET}  Web UI          not running"; fi
+
+    if _port_up 8090;  then echo -e "  ${GREEN}●${RESET}  Auto-sync       port 8090"; ((running++))
+    else                     echo -e "  ${RED}○${RESET}  Auto-sync       not running"; fi
+
+    echo ""
+    echo -e "  ${BOLD}$running/5 services running.${RESET}"
+    echo ""
+}
+
+do_pipeline() {
+    echo -e "\n${BOLD}Running full pipeline…${RESET}\n"
+    cd "$ROOT"
+    "$PYTHON" scripts/chronos_pipeline.py --full
+}
+
+do_sync() {
+    echo -e "\n${BOLD}Syncing from Plaud…${RESET}\n"
+    cd "$ROOT"
+    "$PYTHON" scripts/chronos_pipeline.py --ingest
+}
+
+do_logs() {
+    local log="$LOG_DIR/api.log"
+    if [[ ! -f "$log" ]]; then echo "No API log yet. Start services first."; exit 1; fi
+    tail -f "$log"
+}
+
+do_url() {
+    local url
+    url=$(_ngrok_url)
+    if [[ -n "$url" ]]; then
+        echo "${url}/api/v1/auth/notion/callback"
+    else
+        echo "ngrok is not running. Start with: ./chronos start"
+        exit 1
+    fi
+}
+
+do_help() {
+    cat <<'EOF'
+
+  Chronos — PlaudBlender Unified Launcher
+  ────────────────────────────────────────
+
+  Usage:  ./chronos              Launch menu bar app (auto-starts all)
+          ./chronos start        Start all 5 services (CLI, no menu bar)
+          ./chronos stop         Stop all services
+          ./chronos status       Show what's running
+          ./chronos pipeline     Run full data pipeline
+          ./chronos sync         Ingest from Plaud only
+          ./chronos logs         Tail API server logs
+          ./chronos url          Print Notion redirect URI
+          ./chronos help         Show this help
+
+  Services:
+    Qdrant       Vector DB          port 6333
+    ngrok        HTTPS tunnel       port 4040  → public URL
+    API          FastAPI backend    port 8000
+    Web UI       Dash dashboard     port 8050
+        Auto-sync    Webhook + polling  port 8090
+
+EOF
+}
+
+# ── Dispatch ──────────────────────────────────────────────────
+
+case "${1:-menubar}" in
+    start)    do_start ;;
+    stop)     do_stop ;;
+    status)   do_status ;;
+    pipeline) do_pipeline ;;
+    sync)     do_sync ;;
+    logs)     do_logs ;;
+    url)      do_url ;;
+    help|-h|--help) do_help ;;
+    menubar)  do_menubar ;;
+    *)
+        echo "Unknown command: $1"
+        do_help
+        exit 1
+        ;;
+esac

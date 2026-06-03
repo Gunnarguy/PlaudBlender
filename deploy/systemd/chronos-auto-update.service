@@ -1,0 +1,22 @@
+[Unit]
+Description=Chronos Auto-Update From GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=your-pi-username
+WorkingDirectory=/home/your-pi-username/PlaudBlender
+Environment=HOME=/home/your-pi-username
+Environment=PATH=/home/your-pi-username/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash /home/your-pi-username/PlaudBlender/deploy/auto-update.sh
+TimeoutStartSec=900
+MemoryHigh=256M
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=80
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+StandardOutput=append:/home/your-pi-username/PlaudBlender/logs/auto_update.log
+StandardError=append:/home/your-pi-username/PlaudBlender/logs/auto_update.log

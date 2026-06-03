@@ -1,0 +1,22 @@
+[Unit]
+Description=Chronos ngrok tunnels (HTTP + SSH)
+After=network-online.target chronos-api.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=your-pi-username
+ExecStart=/usr/local/bin/ngrok start --all --config /home/your-pi-username/.config/ngrok/ngrok.yml
+Restart=always
+RestartSec=20
+Environment=HOME=/home/your-pi-username
+MemoryHigh=128M
+MemoryMax=256M
+CPUQuota=25%
+TasksMax=40
+OOMScoreAdjust=250
+
+[Install]
+WantedBy=multi-user.target

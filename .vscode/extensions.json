@@ -1,0 +1,22 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+
+    "astral-sh.ruff",
+    "ms-python.black-formatter",
+
+    "mikestead.dotenv",
+
+    "tamasfe.even-better-toml",
+    "redhat.vscode-yaml",
+
+    "esbenp.prettier-vscode",
+
+    "usernamehw.errorlens",
+    "eamodio.gitlens",
+    "alexcvzz.vscode-sqlite",
+    "yzhang.markdown-all-in-one"
+  ],
+  "unwantedRecommendations": []
+}

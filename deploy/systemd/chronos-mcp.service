@@ -1,0 +1,28 @@
+[Unit]
+Description=Chronos MCP Server (FastMCP)
+After=network-online.target chronos-qdrant.service
+Wants=chronos-qdrant.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=your-pi-username
+WorkingDirectory=/home/your-pi-username/PlaudBlender
+Environment=HOME=/home/your-pi-username
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/home/your-pi-username/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/your-pi-username/PlaudBlender/.env
+ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/mcp_server.py
+Restart=always
+RestartSec=15
+MemoryHigh=256M
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=60
+OOMScoreAdjust=250
+StandardOutput=append:/home/your-pi-username/PlaudBlender/logs/mcp.log
+StandardError=append:/home/your-pi-username/PlaudBlender/logs/mcp.log
+
+[Install]
+WantedBy=multi-user.target

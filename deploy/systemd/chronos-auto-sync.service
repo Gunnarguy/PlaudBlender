@@ -1,0 +1,28 @@
+[Unit]
+Description=Chronos Auto-Sync (Webhooks + USB)
+After=network-online.target chronos-qdrant.service
+Wants=chronos-qdrant.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=your-pi-username
+WorkingDirectory=/home/your-pi-username/PlaudBlender
+Environment=HOME=/home/your-pi-username
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/home/your-pi-username/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/your-pi-username/PlaudBlender/.env
+ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/auto_sync.py
+Restart=always
+RestartSec=15
+MemoryHigh=768M
+MemoryMax=1100M
+CPUQuota=150%
+TasksMax=120
+OOMScoreAdjust=250
+StandardOutput=append:/home/your-pi-username/PlaudBlender/logs/auto_sync.log
+StandardError=append:/home/your-pi-username/PlaudBlender/logs/auto_sync.log
+
+[Install]
+WantedBy=multi-user.target

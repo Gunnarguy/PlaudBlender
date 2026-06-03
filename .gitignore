@@ -1,0 +1,70 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+tokens.txt
+.plaud_tokens.json
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Project specific
+data/
+logs/*.log
+output/*.html
+output/*.json
+deployment.zip
+package/
+
+# Archive (historical reference, not needed in repo)
+archive/
+docs/archive/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+# Note: .vscode/ is NOT ignored - shared project config
+
+# OS
+.DS_Store
+Thumbs.db
+.certs/
+.git-corrupted/
+
+# Backup/temp files
+.git_backup/
+.run/
+*.bak
+*.bak.*
+*.pre-ultra
+GeminiEmbed2*.md
+.qdrant-initialized
+
+# Runtime logs and tokens
+.logs/
+.notion_tokens.json
+
+# Databases, logs, temp, and media files
+*.sqlite
+*.sqlite3
+*.db
+.tmp_*
+data/
+logs/
+output/
+*.mp3
+*.m4a
+*.wav
+*.aac

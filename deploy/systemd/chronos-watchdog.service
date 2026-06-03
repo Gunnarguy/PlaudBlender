@@ -1,0 +1,19 @@
+[Unit]
+Description=Chronos Health Watchdog
+After=network-online.target chronos-qdrant.service chronos-ui.service chronos-api.service chronos-auto-sync.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/your-pi-username/PlaudBlender
+Environment=HOME=/home/your-pi-username
+Environment=PATH=/home/your-pi-username/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/your-pi-username/PlaudBlender/.env
+ExecStart=/home/your-pi-username/PlaudBlender/deploy/watchdog.sh
+MemoryHigh=128M
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=40
+Nice=5
+StandardOutput=append:/home/your-pi-username/PlaudBlender/logs/watchdog.log
+StandardError=append:/home/your-pi-username/PlaudBlender/logs/watchdog.log

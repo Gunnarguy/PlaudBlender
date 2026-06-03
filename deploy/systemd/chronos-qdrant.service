@@ -1,0 +1,24 @@
+[Unit]
+Description=Chronos Qdrant Vector Database
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=your-pi-username
+WorkingDirectory=/home/your-pi-username/PlaudBlender
+ExecStart=/usr/bin/docker compose up qdrant
+ExecStop=/usr/bin/docker compose stop qdrant
+Restart=always
+RestartSec=20
+MemoryHigh=256M
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=60
+OOMScoreAdjust=300
+
+[Install]
+WantedBy=multi-user.target

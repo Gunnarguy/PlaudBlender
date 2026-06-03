@@ -1,0 +1,50 @@
+
+# Plaud API & OAuth
+requests>=2.31.0
+python-dotenv>=1.0.0
+pydantic>=2.7.0
+sqlalchemy>=2.0.0
+pytest>=7.4.0
+
+# AI Processing (Gemini)
+google-generativeai>=0.3.0
+google-genai>=1.0.0
+
+# OpenAI Responses API (for RAG / conversational queries)
+openai>=1.0.0
+
+# Notion API (for pulling recordings/transcripts from Notion)
+notion-client>=3.0.0
+
+# Vector Database
+qdrant-client>=1.12.0
+
+# Model Context Protocol server
+mcp>=0.1.0
+
+# Visualization & Graph
+networkx>=3.0
+plotly>=5.18.0
+numpy>=1.26.0
+
+# Dash UI
+dash>=2.14.0,<3.0.0
+dash-bootstrap-components>=1.5.0
+dash-cytoscape>=0.3.0
+
+# Webhook server
+flask>=3.0.0
+flask-compress>=1.14
+
+# REST API (FastAPI backend for iOS app)
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# ─────────────────────────────────────────────────────────────
+# Audio Processing (optional - install for local audio features)
+# ─────────────────────────────────────────────────────────────
+# openai-whisper>=20231117
+# soundfile>=0.12.1
+# librosa>=0.10.1
+# pydub>=0.25.1
+# Note: Whisper requires ffmpeg (brew install ffmpeg / apt install ffmpeg)

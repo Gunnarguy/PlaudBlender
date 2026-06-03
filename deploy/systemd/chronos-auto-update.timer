@@ -1,0 +1,11 @@
+[Unit]
+Description=Chronos Auto-Update Timer (poll GitHub every 10 minutes)
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=10min
+AccuracySec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

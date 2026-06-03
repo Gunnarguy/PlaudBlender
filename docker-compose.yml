@@ -1,0 +1,18 @@
+services:
+  qdrant:
+    image: qdrant/qdrant
+    container_name: qdrant
+    ports:
+      - "0.0.0.0:6333:6333"
+    volumes:
+      - ~/.qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+    mem_limit: 768m
+    memswap_limit: 1g
+    cpus: "1.25"
+    networks:
+      - plaud-network
+
+networks:
+  plaud-network:
+    driver: bridge

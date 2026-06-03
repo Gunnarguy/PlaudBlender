@@ -1,0 +1,29 @@
+[Unit]
+Description=Chronos REST API (FastAPI)
+After=network-online.target chronos-qdrant.service
+Wants=chronos-qdrant.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=your-pi-username
+WorkingDirectory=/home/your-pi-username/PlaudBlender
+Environment=HOME=/home/your-pi-username
+Environment=PYTHONUNBUFFERED=1
+Environment=CHRONOS_API_WORKERS=1
+Environment=PATH=/home/your-pi-username/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/your-pi-username/PlaudBlender/.env
+ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/launch_api.py
+Restart=always
+RestartSec=10
+MemoryHigh=512M
+MemoryMax=768M
+CPUQuota=100%
+TasksMax=80
+OOMScoreAdjust=200
+StandardOutput=append:/home/your-pi-username/PlaudBlender/logs/api.log
+StandardError=append:/home/your-pi-username/PlaudBlender/logs/api.log
+
+[Install]
+WantedBy=multi-user.target

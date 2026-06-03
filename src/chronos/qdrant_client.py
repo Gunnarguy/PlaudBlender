@@ -1,0 +1,491 @@
+"""Native Qdrant client for Chronos temporal-vector indexing.
+
+Provides a clean Qdrant-native interface with full payload filtering
+and temporal search capabilities required by the Chronos architecture.
+"""
+
+import logging
+import time as _time
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+
+from qdrant_client import QdrantClient
+from qdrant_client.models import (
+    Distance,
+    FilterSelector,
+    VectorParams,
+    PointStruct,
+    Filter,
+    FieldCondition,
+    MatchValue,
+    MatchAny,
+    Range,
+    PayloadSchemaType,
+)
+
+from src.config import get_settings
+from src.models.chronos_schemas import ChronosEvent, TemporalFilter
+
+logger = logging.getLogger(__name__)
+
+
+class ChronosQdrantClient:
+    """Native Qdrant client optimized for Chronos temporal-vector search.
+
+    Key Features:
+    - Payload indexes for day_of_week, hour_of_day, timestamp
+    - Hybrid search: semantic + temporal filters
+    - Scroll API for bulk analytics
+    - Clean, purpose-built API surface
+    """
+
+    def __init__(self, collection_name: Optional[str] = None):
+        """Initialize Qdrant client.
+
+        Args:
+            collection_name: Override default collection name from config
+        """
+        self.settings = get_settings()
+        self.collection_name = collection_name or self.settings.qdrant_collection_name
+
+        # Initialize client
+        self.client = QdrantClient(
+            url=self.settings.qdrant_url,
+            api_key=self.settings.qdrant_api_key,
+            timeout=int(self.settings.qdrant_timeout_seconds),
+        )
+
+        logger.info(
+            f"Initialized ChronosQdrantClient for collection: {self.collection_name}"
+        )
+
+    def create_collection(
+        self, vector_size: int | None = None, force_recreate: bool = False
+    ) -> None:
+        """Create Chronos collection with temporal payload indexes.
+
+        Args:
+            vector_size: Embedding dimension (default from CHRONOS_EMBEDDING_DIM config)
+            force_recreate: Delete existing collection if present
+        """
+        if vector_size is None:
+            vector_size = self.settings.chronos_embedding_dim
+        # Check if collection exists
+        collections = self.client.get_collections().collections
+        exists = any(c.name == self.collection_name for c in collections)
+
+        if exists and force_recreate:
+            logger.warning(f"Deleting existing collection: {self.collection_name}")
+            self.client.delete_collection(self.collection_name)
+            exists = False
+
+        if not exists:
+            logger.info(f"Creating collection: {self.collection_name}")
+            from app_v2.services.xray import xray_log
+            xray_log("qdrant", "create",
+                     f"Creating a brand new place to store your searchable recordings")
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(
+                    size=vector_size,
+                    distance=Distance.COSINE,
+                ),
+            )
+
+        # Create payload indexes for temporal filtering
+        logger.info("Creating payload indexes...")
+
+        self.client.create_payload_index(
+            collection_name=self.collection_name,
+            field_name="day_of_week",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+
+        self.client.create_payload_index(
+            collection_name=self.collection_name,
+            field_name="hour_of_day",
+            field_schema=PayloadSchemaType.INTEGER,
+        )
+
+        self.client.create_payload_index(
+            collection_name=self.collection_name,
+            field_name="timestamp",
+            field_schema=PayloadSchemaType.DATETIME,
+        )
+
+        self.client.create_payload_index(
+            collection_name=self.collection_name,
+            field_name="category",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+
+        logger.info("Collection and indexes created successfully")
+
+    def upsert_event(
+        self,
+        event: ChronosEvent,
+        embedding: List[float],
+    ) -> str:
+        """Upsert a single event with its embedding.
+
+        Args:
+            event: ChronosEvent with metadata
+            embedding: Vector embedding (dimensionality from config)
+
+        Returns:
+            str: Point ID (event_id)
+        """
+        point = PointStruct(
+            id=event.event_id,
+            vector=embedding,
+            payload={
+                "recording_id": event.recording_id,
+                "start_ts": event.start_ts.isoformat(),
+                "end_ts": event.end_ts.isoformat(),
+                "timestamp": event.start_ts.isoformat(),  # ISO string for display
+                "start_ts_unix": event.start_ts.timestamp(),  # Unix timestamp for filtering
+                "day_of_week": event.day_of_week.value,
+                "hour_of_day": event.hour_of_day,
+                "clean_text": event.clean_text,
+                "category": event.category.value,
+                "category_confidence": event.category_confidence,
+                "sentiment": event.sentiment,
+                "keywords": event.keywords,
+                "speaker": event.speaker.value,
+                "duration_seconds": event.duration_seconds,
+            },
+        )
+
+        self.client.upsert(
+            collection_name=self.collection_name,
+            points=[point],
+        )
+        from app_v2.services.xray import xray_log
+        xray_log("qdrant", "upsert",
+                 f"Stored one moment so you can find it later",
+                 detail=f"{event.category.value}")
+        return event.event_id
+
+    def upsert_events_batch(
+        self,
+        events: List[ChronosEvent],
+        embeddings: List[List[float]],
+        batch_size: int = 100,
+    ) -> int:
+        """Batch upsert events with embeddings.
+
+        Args:
+            events: List of ChronosEvent objects
+            embeddings: Corresponding embeddings
+            batch_size: Batch size for upserts
+
+        Returns:
+            int: Number of events upserted
+        """
+        if len(events) != len(embeddings):
+            raise ValueError("Events and embeddings must have same length")
+
+        total = 0
+        from app_v2.services.xray import xray_log
+        _upsert_t0 = _time.perf_counter()
+
+        for i in range(0, len(events), batch_size):
+            batch_events = events[i : i + batch_size]
+            batch_embeddings = embeddings[i : i + batch_size]
+
+            points = [
+                PointStruct(
+                    id=event.event_id,
+                    vector=embedding,
+                    payload={
+                        "recording_id": event.recording_id,
+                        "start_ts": event.start_ts.isoformat(),
+                        "end_ts": event.end_ts.isoformat(),
+                        "timestamp": event.start_ts.isoformat(),
+                        "start_ts_unix": event.start_ts.timestamp(),  # Unix timestamp for filtering
+                        "day_of_week": event.day_of_week.value,
+                        "hour_of_day": event.hour_of_day,
+                        "clean_text": event.clean_text,
+                        "category": event.category.value,
+                        "category_confidence": event.category_confidence,
+                        "sentiment": event.sentiment,
+                        "keywords": event.keywords,
+                        "speaker": event.speaker.value,
+                        "duration_seconds": event.duration_seconds,
+                    },
+                )
+                for event, embedding in zip(batch_events, batch_embeddings)
+            ]
+
+            self.client.upsert(
+                collection_name=self.collection_name,
+                points=points,
+            )
+
+            total += len(points)
+            _batch_ms = (_time.perf_counter() - _upsert_t0) * 1000
+            xray_log("qdrant", "upsert",
+                     f"Stored {total} of {len(events)} moments so far",
+                     duration_ms=round(_batch_ms, 1))
+            logger.info(f"Upserted batch: {total}/{len(events)} events")
+
+        _total_ms = (_time.perf_counter() - _upsert_t0) * 1000
+        xray_log("qdrant", "upsert",
+                 f"All {total} moments are now searchable!",
+                 duration_ms=round(_total_ms, 1))
+        return total
+
+    def search_hybrid(
+        self,
+        query_vector: Optional[List[float]] = None,
+        temporal_filter: Optional[TemporalFilter] = None,
+        categories: Optional[List[str]] = None,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Hybrid search: semantic similarity + temporal filters.
+
+        Args:
+            query_vector: Embedding for semantic search (optional)
+            temporal_filter: Temporal constraints (optional)
+            categories: Filter by event categories (optional)
+            limit: Max results
+
+        Returns:
+            List of dicts with event data and scores
+        """
+        # Build filter
+        must_conditions = []
+
+        if temporal_filter:
+            if temporal_filter.start_date:
+                must_conditions.append(
+                    FieldCondition(
+                        key="start_ts_unix",
+                        range=Range(
+                            gte=temporal_filter.start_date.timestamp(),
+                            lte=(
+                                temporal_filter.end_date.timestamp()
+                                if temporal_filter.end_date
+                                else None
+                            ),
+                        ),
+                    )
+                )
+
+            if temporal_filter.days_of_week:
+                must_conditions.append(
+                    FieldCondition(
+                        key="day_of_week",
+                        match=MatchAny(
+                            any=[d.value for d in temporal_filter.days_of_week]
+                        ),
+                    )
+                )
+
+            if temporal_filter.hours_of_day:
+                must_conditions.append(
+                    FieldCondition(
+                        key="hour_of_day",
+                        match=MatchAny(any=temporal_filter.hours_of_day),
+                    )
+                )
+
+        if categories:
+            must_conditions.append(
+                FieldCondition(
+                    key="category",
+                    match=MatchAny(any=categories),
+                )
+            )
+
+        query_filter = Filter(must=must_conditions) if must_conditions else None
+
+        from app_v2.services.xray import xray_log
+        xray_log("qdrant", "search",
+                 f"Looking through your recordings for matches (up to {limit})")
+        _t0 = _time.perf_counter()
+
+        # Execute search
+        if query_vector:
+            # Semantic + filter using query_points (modern API)
+            results = self.client.query_points(
+                collection_name=self.collection_name,
+                query=query_vector,
+                query_filter=query_filter,
+                limit=limit,
+            ).points
+        else:
+            # Filter-only (scroll)
+            results = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=query_filter,
+                limit=limit,
+            )[
+                0
+            ]  # scroll returns (points, next_offset)
+
+        # Format results
+        formatted = []
+        for hit in results:
+            formatted.append(
+                {
+                    "event_id": hit.id,
+                    "score": getattr(hit, "score", None),
+                    "payload": hit.payload,
+                }
+            )
+        _ms = (_time.perf_counter() - _t0) * 1000
+        xray_log("qdrant", "search",
+                 f"Found {len(formatted)} matching moments" + (f" — top result is {formatted[0]['score']:.0%} relevant" if formatted and formatted[0].get('score') else ""),
+                 duration_ms=round(_ms, 1))
+
+        return formatted
+
+    def get_events_by_day(
+        self,
+        day_of_week: str,
+        limit: int = 1000,
+    ) -> List[Dict[str, Any]]:
+        """Retrieve all events for a specific day of week.
+
+        Args:
+            day_of_week: "Monday", "Tuesday", etc.
+            limit: Max results
+
+        Returns:
+            List of event payloads
+        """
+        points, _ = self.client.scroll(
+            collection_name=self.collection_name,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="day_of_week",
+                        match=MatchValue(value=day_of_week),
+                    )
+                ]
+            ),
+            limit=limit,
+        )
+
+        return [{"event_id": p.id, "payload": p.payload} for p in points]
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get collection statistics.
+
+        Returns:
+            Dict with collection info
+        """
+        info = self.client.get_collection(self.collection_name)
+
+        def _get_attr(obj: Any, name: str, default: Any = None) -> Any:
+            if isinstance(obj, dict):
+                return obj.get(name, default)
+            return getattr(obj, name, default)
+
+        points_count = _get_attr(info, "points_count", 0)
+
+        # qdrant-client versions differ in what they expose on CollectionInfo.
+        # For single-vector collections, vectors_count is effectively points_count.
+        vectors_count = _get_attr(info, "vectors_count", None)
+        if vectors_count is None:
+            vectors_count = points_count
+
+        indexed_vectors_count = _get_attr(info, "indexed_vectors_count", None)
+        if indexed_vectors_count is None:
+            indexed_vectors_count = vectors_count
+
+        status = _get_attr(info, "status", "unknown")
+        if hasattr(status, "value"):
+            status = status.value
+
+        return {
+            "collection_name": self.collection_name,
+            "vectors_count": vectors_count,
+            "points_count": points_count,
+            "indexed_vectors_count": indexed_vectors_count,
+            "status": status,
+        }
+
+    def search(
+        self,
+        query_vector: List[float],
+        limit: int = 10,
+        query_filter: Optional[Filter] = None,
+        with_payload: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Simple semantic search (convenience wrapper).
+
+        Args:
+            query_vector: Embedding vector for similarity search
+            limit: Max results to return
+            query_filter: Optional Qdrant filter
+            with_payload: Include payload in results
+
+        Returns:
+            List of search results with id, score, and payload
+        """
+        results = self.client.query_points(
+            collection_name=self.collection_name,
+            query=query_vector,
+            query_filter=query_filter,
+            limit=limit,
+            with_payload=with_payload,
+        ).points
+
+        return [
+            {
+                "event_id": hit.id,
+                "score": hit.score,
+                "payload": hit.payload,
+            }
+            for hit in results
+        ]
+
+    def delete_by_recording_id(self, recording_id: str) -> int:
+        """Delete all events for a recording.
+
+        Args:
+            recording_id: Recording ID to delete events for
+
+        Returns:
+            Number of points deleted (estimated)
+        """
+        # Count before delete
+        count_before = self.client.count(
+            collection_name=self.collection_name,
+            count_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="recording_id",
+                        match=MatchValue(value=recording_id),
+                    )
+                ]
+            ),
+        ).count
+
+        # Delete by filter
+        self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="recording_id",
+                            match=MatchValue(value=recording_id),
+                        )
+                    ]
+                )
+            ),
+        )
+
+        logger.info(f"Deleted ~{count_before} events for recording {recording_id}")
+        return count_before
+
+    def collection_exists(self) -> bool:
+        """Check if the collection exists.
+
+        Returns:
+            True if collection exists
+        """
+        return self.client.collection_exists(self.collection_name)
