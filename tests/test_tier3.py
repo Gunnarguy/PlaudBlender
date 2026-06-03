@@ -254,6 +254,7 @@ class TestAutoSyncImport:
             return True
 
         monkeypatch.setattr(syncer, "_run_pipeline_subprocess", fake_run)
+        monkeypatch.setattr(syncer, "_defer_heavy_work_if_needed", lambda label: False)
 
         syncer._process_single("rec_123")
 
@@ -483,6 +484,7 @@ class TestChronosPipeline:
                 return None
 
         monkeypatch.setattr(sys, "argv", ["chronos_pipeline.py", "--full"])
+        monkeypatch.setattr(pipeline, "_host_pressure_reason", lambda: None)
         monkeypatch.setattr(pipeline, "init_db", lambda: None)
         monkeypatch.setattr(pipeline, "SessionLocal", lambda: DummySession())
         monkeypatch.setattr(pipeline, "pipeline_progress", Mock())
@@ -523,6 +525,7 @@ class TestChronosPipeline:
             "argv",
             ["chronos_pipeline.py", "--ingest", "--all-history"],
         )
+        monkeypatch.setattr(pipeline, "_host_pressure_reason", lambda: None)
         monkeypatch.setattr(pipeline, "init_db", lambda: None)
         monkeypatch.setattr(pipeline, "SessionLocal", lambda: DummySession())
         monkeypatch.setattr(pipeline, "pipeline_progress", Mock())
@@ -561,6 +564,7 @@ class TestChronosPipeline:
             "argv",
             ["chronos_pipeline.py", "--backfill", "--days-back", "45"],
         )
+        monkeypatch.setattr(pipeline, "_host_pressure_reason", lambda: None)
         monkeypatch.setattr(pipeline, "init_db", lambda: None)
         monkeypatch.setattr(pipeline, "SessionLocal", lambda: DummySession())
         monkeypatch.setattr(pipeline, "pipeline_progress", progress)
@@ -609,6 +613,7 @@ class TestChronosPipeline:
             "argv",
             ["chronos_pipeline.py", "--full", "--days-back", "45"],
         )
+        monkeypatch.setattr(pipeline, "_host_pressure_reason", lambda: None)
         monkeypatch.setattr(pipeline, "init_db", lambda: None)
         monkeypatch.setattr(pipeline, "SessionLocal", lambda: DummySession())
         monkeypatch.setattr(pipeline, "pipeline_progress", progress)
@@ -655,6 +660,7 @@ class TestChronosPipeline:
             "argv",
             ["chronos_pipeline.py", "--ingest", "--recording-id", "rec-direct-001"],
         )
+        monkeypatch.setattr(pipeline, "_host_pressure_reason", lambda: None)
         monkeypatch.setattr(pipeline, "init_db", lambda: None)
         monkeypatch.setattr(pipeline, "SessionLocal", lambda: DummySession())
         monkeypatch.setattr(pipeline, "pipeline_progress", Mock())
@@ -690,6 +696,7 @@ class TestChronosPipeline:
             "argv",
             ["chronos_pipeline.py", "--repair-recent", "--days-back", "45", "--limit", "7"],
         )
+        monkeypatch.setattr(pipeline, "_host_pressure_reason", lambda: None)
         monkeypatch.setattr(pipeline, "init_db", lambda: None)
         monkeypatch.setattr(pipeline, "SessionLocal", lambda: DummySession())
         monkeypatch.setattr(pipeline, "pipeline_progress", Mock())

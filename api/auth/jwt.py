@@ -39,7 +39,7 @@ def require_auth(
         if require_auth_env:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication is required, but CHRONOS_API_KEY is not configured",
+                detail="Unauthorized: Authentication is required, but CHRONOS_API_KEY is not configured",
             )
         return "dev"
 

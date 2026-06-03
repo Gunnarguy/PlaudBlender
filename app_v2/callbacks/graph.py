@@ -1,4 +1,4 @@
-"""Graph callbacks — node interaction, layout switching."""
+"""Graph callbacks — node interaction with Plotly 3D scatter plots."""
 
 from dash import Input, Output, State, callback, ctx, html, no_update, ALL
 from dash.exceptions import PreventUpdate
@@ -11,74 +11,18 @@ def register_graph_callbacks(app):
     """Register knowledge graph interaction callbacks."""
 
     @app.callback(
-        Output("knowledge-graph", "layout"),
-        Input("graph-layout-select", "value"),
-        prevent_initial_call=True,
-    )
-    def change_graph_layout(layout_name):
-        """Change the graph layout algorithm."""
-        if not layout_name:
-            raise PreventUpdate
-
-        # Tuned for a hub-spoke category graph
-        layout_configs = {
-            "cose-bilkent": {
-                "name": "cose-bilkent",
-                "animate": True,
-                "animationDuration": 500,
-                "nodeDimensionsIncludeLabels": True,
-                "nodeRepulsion": 8000,
-                "idealEdgeLength": 80,
-                "edgeElasticity": 0.45,
-                "nestingFactor": 0.1,
-                "gravity": 0.15,
-                "gravityRange": 3.8,
-                "numIter": 3000,
-                "tile": True,
-                "fit": True,
-                "padding": 50,
-            },
-            "dagre": {
-                "name": "dagre",
-                "animate": True,
-                "animationDuration": 500,
-                "rankDir": "TB",
-                "rankerFunction": "tight-tree",
-                "nodeSep": 40,
-                "rankSep": 80,
-                "fit": True,
-                "padding": 40,
-            },
-            "circle": {
-                "name": "circle",
-                "animate": True,
-                "animationDuration": 500,
-                "fit": True,
-                "padding": 40,
-            },
-            "concentric": {
-                "name": "concentric",
-                "animate": True,
-                "animationDuration": 500,
-                "fit": True,
-                "padding": 40,
-                "minNodeSpacing": 60,
-            },
-        }
-
-        from app_v2.services.xray import xray_log
-
-        xray_log("graph", "layout", f"Rearranged the knowledge map to '{layout_name}' style")
-        return layout_configs.get(layout_name, {"name": layout_name, "fit": True})
-
-    @app.callback(
         Output("graph-node-detail", "children"),
         Output("graph-clicked-keyword", "data"),
-        Input("knowledge-graph", "tapNodeData"),
+        Input("knowledge-graph", "clickData"),
         prevent_initial_call=True,
     )
-    def show_node_detail(node_data):
-        """Show detailed info when a graph node is clicked."""
+    def show_node_detail(click_data):
+        """Show detailed info when a 3D graph node is clicked."""
+        if not click_data or "points" not in click_data or not click_data["points"]:
+            raise PreventUpdate
+
+        point = click_data["points"][0]
+        node_data = point.get("customdata")
         if not node_data:
             raise PreventUpdate
 
