@@ -235,7 +235,7 @@ class PlaudAutoSync:
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5 minute timeout
+                timeout=600,  # 10 minute timeout
             )
 
             if result.returncode == 0:
@@ -249,13 +249,23 @@ class PlaudAutoSync:
 
         except subprocess.TimeoutExpired:
             job.status = "timeout"
-            job.result = "Sync timed out after 5 minutes"
+            job.result = "Sync timed out after 10 minutes"
             logger.error("Sync job timed out")
+            try:
+                from src.chronos.pipeline_progress import progress
+                progress.finish_run(error="Sync job timed out after 10 minutes")
+            except Exception as pe:
+                logger.error(f"Failed to clear pipeline progress on timeout: {pe}")
 
         except Exception as e:
             job.status = "error"
             job.result = str(e)
             logger.error(f"Sync error: {e}")
+            try:
+                from src.chronos.pipeline_progress import progress
+                progress.finish_run(error=f"Sync error: {e}")
+            except Exception as pe:
+                logger.error(f"Failed to clear pipeline progress on error: {pe}")
 
         # Add to history
         self._sync_history.append(job)

@@ -197,6 +197,11 @@ async def sync_failures(
 async def reset_stuck(svc: ChronosDataService = Depends(get_service)):
     """Reset stuck processing recordings back to pending."""
     count = svc.reset_stuck_recordings()
+    try:
+        from src.chronos.pipeline_progress import progress
+        progress.finish_run(error="Manually reset stuck pipeline")
+    except Exception as e:
+        pass
     return SuccessResponse(message=f"Reset {count} stuck recordings")
 
 
