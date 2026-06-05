@@ -127,6 +127,7 @@ PlaudBlender structures your complex memory network into legible 3D arrangements
 * **Run MCP Server**: `python -m scripts.mcp_server`
 * **Clean Database & Vectors**: `python scripts/db_cleanup.py`
 * **Diagnostics**: `python scripts/diagnose_failures.py`
+* **Audit iOS Backup Drift**: `python scripts/ios_discrepancy_audit.py --backup-ios-root ../backups/PlaudBlenderiOS.backup-before-monorepo-20260603-162251/PlaudBlenderiOS`
 
 ---
 

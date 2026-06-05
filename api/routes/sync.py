@@ -5,6 +5,7 @@ import sys
 import time
 import os
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -60,9 +61,10 @@ async def run_pipeline(body: PipelineRunRequest):
 
     current = read_progress()
     if current and current.get("status") == "running":
+        pipeline_active = _pipeline_process_active()
         started_at = float(current.get("started_at") or 0)
         age_minutes = ((time.time() - started_at) / 60) if started_at else 0
-        if age_minutes < 30:
+        if pipeline_active and age_minutes < 30:
             return PipelineRunResponse(
                 status="already_running",
                 message="Pipeline already running — watch the progress panel instead of starting another run.",
@@ -104,6 +106,33 @@ async def run_pipeline(body: PipelineRunRequest):
             )
         ),
     )
+
+
+def _pipeline_process_active() -> bool:
+    """True when another chronos pipeline process is currently alive."""
+    current_pid = os.getpid()
+    parent_pid = os.getppid()
+    proc_root = Path("/proc")
+
+    try:
+        proc_dirs = list(proc_root.iterdir())
+    except Exception:
+        # If procfs is unavailable, assume active so we avoid accidental overlap.
+        return True
+
+    for proc_dir in proc_dirs:
+        if not proc_dir.name.isdigit():
+            continue
+        pid = int(proc_dir.name)
+        if pid == current_pid or pid == parent_pid:
+            continue
+        try:
+            cmdline = (proc_dir / "cmdline").read_bytes().replace(b"\0", b" ")
+        except Exception:
+            continue
+        if b"scripts/chronos_pipeline.py" in cmdline:
+            return True
+    return False
 
 
 @router.post("/workflows/submit", response_model=SuccessResponse)

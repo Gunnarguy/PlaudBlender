@@ -755,6 +755,7 @@ class TestSync:
         running = {"status": "running", "started_at": time.time()}
         with (
             patch("api.routes.sync.read_progress", return_value=running),
+            patch("api.routes.sync._pipeline_process_active", return_value=True),
             patch("subprocess.Popen") as mock_popen,
         ):
             r = client.post("/api/v1/sync/run", json={"stage": "full"})
@@ -762,6 +763,21 @@ class TestSync:
             data = r.json()
             assert data["status"] == "already_running"
             mock_popen.assert_not_called()
+
+    def test_run_pipeline_stale_progress_without_active_process(self, client):
+        stale = {"status": "running", "started_at": time.time()}
+        with (
+            patch("api.routes.sync.read_progress", return_value=stale),
+            patch("api.routes.sync._pipeline_process_active", return_value=False),
+            patch("api.routes.sync.progress.finish_run") as mock_finish,
+            patch("subprocess.Popen") as mock_popen,
+        ):
+            r = client.post("/api/v1/sync/run", json={"stage": "full"})
+            assert r.status_code == 200
+            data = r.json()
+            assert data["status"] == "started"
+            mock_finish.assert_called_once()
+            mock_popen.assert_called_once()
 
     def test_run_pipeline_invalid_stage(self, client):
         r = client.post("/api/v1/sync/run", json={"stage": "invalid"})
