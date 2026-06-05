@@ -143,10 +143,23 @@ PlaudBlender structures your complex memory network into legible 3D arrangements
 
 ## 🍓 Raspberry Pi Headless Deployment
 
-PlaudBlender is fully optimized to run on low-resource hardware like a **Raspberry Pi**:
+PlaudBlender is fully optimized and pre-configured to run on low-resource hardware like a **Raspberry Pi**:
+* **Bootstrap Script**: Run `deploy/bootstrap-pi.sh` to install packages, setup venv, pull Qdrant, and register systemd services.
+* **Tailscale & Remote Access**: Run `deploy/pi-remote-access.sh` to install/configure Tailscale (mesh VPN) and VNC for secure, remote set-and-forget home server access.
 * **WAL Mode & Pragmas**: Configured `synchronous=NORMAL` and WAL mode in `src/database/engine.py` to prevent database locks between UI readers and background pipeline writers.
 * **Auto-Refresh Short-Circuiting**: Background Dash UI auto-refreshes bypass heavy DOM calculations and return `no_update` to prevent CPU thrashing.
 * **Auto-Update Service**: A systemd timer (`chronos-auto-update.timer`) pulls from GitHub and runs `deploy/update-pi.sh` to update when you push commits.
+
+
+---
+
+## 🦙 Local-First (Free & Offline) Mode via Ollama
+
+PlaudBlender includes native support for running completely offline and free of cloud quotas by routing AI tasks to a local **Ollama** or `llama.cpp` instance:
+* **Fully Local Processing**: Set `CHRONOS_PROCESSING_PROVIDER=local` and `CHRONOS_EMBEDDING_MODEL=nomic-embed-text` in your `.env`.
+* **Configurable Sidecar**: Enable local models for specific tasks (like classification, JSON repair, and Ask Chronos) by setting `CHRONOS_LOCAL_LLM_ENABLED=1`.
+* **Recommended Models**: We recommend `nomic-embed-text` for embeddings and a fast, lightweight model (e.g., `qwen2.5:0.5b`, `llama3.2`) for local reasoning tasks.
+* **Extensible & Customizable**: Because local routing uses standard Ollama endpoints, you can easily swap in and experiment with any other models (like larger Qwen, Llama, or Mistral weights if running on a Raspberry Pi 5 or local machine) simply by updating your `.env`.
 
 ---
 
