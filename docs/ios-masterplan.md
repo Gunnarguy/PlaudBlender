@@ -2,7 +2,7 @@
 
 > **Generated:** March 21, 2026
 > **Scope:** Full architecture plan to transform PlaudBlender/Chronos from a local Python/Dash app into a cloud-backed native SwiftUI iOS application.
-> **Philosophy:** Gunnar loves data, granularity, and depth. Never hide information. Expose metrics, scores, and latency. Progressive disclosure — simple by default, drill-down available.
+> **Philosophy:** Prioritize data, granularity, and depth. Never hide information. Expose metrics, scores, and latency. Progressive disclosure — simple by default, drill-down available.
 
 ---
 

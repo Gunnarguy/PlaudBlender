@@ -33,7 +33,7 @@ PlaudBlender transforms **Plaud voice recordings** into a **searchable knowledge
 
 ### Core Philosophy
 
-> _"Gunnar loves data, granularity, and depth—the ability to drill down and see what's happening under the hood."_
+> _"This project values data, granularity, and depth—the ability to drill down and see what's happening under the hood."_
 
 - **Expose metrics** (latency, scores) in the UI
 - **Show command previews** before running pipelines
@@ -536,7 +536,7 @@ python scripts/chronos_pipeline.py --reindex            # Re-embed all events (m
 
 ## GitHub Issues
 
-Tracked via [Issue #1: Chronos System Roadmap](https://github.com/Gunnarguy/PlaudBlender/issues/1)
+Tracked via the Chronos System Roadmap issue in this repository.
 
 | Issue | Title                       | Status    |
 | ----- | --------------------------- | --------- |

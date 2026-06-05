@@ -59,7 +59,7 @@ private func sanitizedHeaders(from headers: [AnyHashable: Any]) -> [String: Stri
 ## 5. Vulnerability Reporting Process
 
 If you discover a security vulnerability within PlaudBlenderiOS:
-1. **Reporting channel**: Contact Gunnar Hostetler directly or open a secure issue using specific GPG keys if present.
+1. **Reporting channel**: Open a private security advisory or a non-public issue with reproduction details and impact notes.
 2. **Review period**: Issues will be reviewed and mitigated within a 30-day window.
 3. **Disclosure**: Details are published alongside standard release notes on github.
 

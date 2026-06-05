@@ -1,5 +1,9 @@
 # PlaudBlender — Chronos Knowledge Timeline & 3D Graph
 
+Public-safe defaults: this repository ships with placeholder configuration only.
+Bring your own API keys, OAuth credentials, and endpoints via `.env` and local
+overrides.
+
 Transform **Plaud Note voice recordings** into a highly structured, visual local knowledge base. This repository houses the AI-powered cognitive processing pipeline, the daily timeline Web UI, a sibling iOS companion client, and Model Context Protocol (MCP) integrations.
 
 ---
@@ -59,7 +63,7 @@ PlaudBlender uses a Python virtual environment to manage dependencies. The launc
 
 ```bash
 # 1. Clone & enter repository
-git clone https://github.com/Gunnarguy/PlaudBlender.git
+git clone <your-fork-or-clone-url>
 cd PlaudBlender
 
 # 2. Initialize virtual environment and install dependencies
@@ -127,7 +131,7 @@ PlaudBlender structures your complex memory network into legible 3D arrangements
 * **Run MCP Server**: `python -m scripts.mcp_server`
 * **Clean Database & Vectors**: `python scripts/db_cleanup.py`
 * **Diagnostics**: `python scripts/diagnose_failures.py`
-* **Audit iOS Backup Drift**: `python scripts/ios_discrepancy_audit.py --backup-ios-root ../backups/PlaudBlenderiOS.backup-before-monorepo-20260603-162251/PlaudBlenderiOS`
+* **Audit iOS Backup Drift**: `python scripts/ios_discrepancy_audit.py --backup-ios-root ../backups/<your-ios-backup-folder>/PlaudBlenderiOS`
 
 ---
 

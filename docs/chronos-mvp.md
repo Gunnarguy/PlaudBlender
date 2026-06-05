@@ -335,5 +335,5 @@ Sync recordings to Notion pages:
 
 ---
 
-**Document Owner:** Gunnar Hostetler
+**Document Owner:** Maintainers
 **Last Updated:** 2026-03-18

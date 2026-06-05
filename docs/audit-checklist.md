@@ -139,7 +139,7 @@ _Comprehensive, end-to-end checklist to track UX, functionality, and platform ha
 - Global UI: panel labelframe styling for consistent cards; dashboard/transcripts/search/logs/pinecone now use coherent hero + card layouts
 
 ## User Philosophy
-_Gunnar loves data, granularity, and depth. The goal is a GUI he'll use daily—one that shows what's happening under the hood, offers contextual tooltips, and meshes Plaud recordings, Pinecone vectors, Notion pages, and future data streams into a unified knowledge hub. The MCP+Notion integration is a key enabler for linking scattered platforms into one coherent web._
+_This project values data, granularity, and depth. The goal is a GUI people can use daily: one that shows what's happening under the hood, offers contextual tooltips, and meshes Plaud recordings, vector indexes, Notion pages, and future data streams into a unified knowledge hub. The MCP + Notion integration is a key enabler for linking scattered platforms into one coherent web._
 
 ## Legend
 - [ ] Not started

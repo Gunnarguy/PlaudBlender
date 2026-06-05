@@ -624,7 +624,7 @@ class TestDashApp:
                 return {
                     "is_authenticated": True,
                     "has_credentials": True,
-                    "workspace_name": "Gunnar Workspace",
+                    "workspace_name": "Demo Workspace",
                 }
 
         class FakeConnection:

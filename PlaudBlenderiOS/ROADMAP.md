@@ -8,7 +8,7 @@ This document outlines the development phases, current implementation status, ou
 
 - **Current Version**: `0.8.0-Beta`
 - **Build Status**: Compiling and passing test suites in simulator and target devices.
-- **Target Audience**: Gunnar Hostetler (Self-hosted/Developer execution).
+- **Target Audience**: Self-hosted and developer users.
 
 ---
 

@@ -274,13 +274,13 @@ The application reads options from both compile-time configurations (Info.plist)
 - macOS Sequoia (or newer)
 - Xcode 26.3+
 - iOS 26.2+ Device or Simulator
-- Running [Chronos API Backend](https://github.com/Gunnarguy/PlaudBlender)
+- Running Chronos API backend from this monorepo
 
 ### Setup Steps
 1. Clone the repository:
    ```bash
-   git clone https://github.com/Gunnarguy/PlaudBlenderiOS.git
-   cd PlaudBlenderiOS
+    git clone <your-fork-or-clone-url>
+    cd PlaudBlender/PlaudBlenderiOS
    ```
 2. Open the Xcode Project:
    ```bash

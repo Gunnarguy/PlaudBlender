@@ -94,7 +94,7 @@ docs/                   → PROJECT_GUIDE.md, chronos-mvp.md
 
 ## User Philosophy
 
-> _"Gunnar loves data, granularity, and depth—the ability to drill down and see what's happening under the hood."_
+> _"This project values data, granularity, and depth—the ability to drill down and see what's happening under the hood."_
 
 - **Expose metrics** (latency, scores) in the UI
 - **Show command previews** before running pipelines

@@ -16,7 +16,7 @@ To set up your local development workspace, ensure you meet these targets:
 - **macOS**: Version Sequoia or newer.
 - **IDE**: Xcode 26.3+ installed.
 - **Target SDK**: iOS 26.2+ deployment target SDK.
-- **Local Server**: A running instance of the [Chronos FastAPI backend](https://github.com/Gunnarguy/PlaudBlender).
+- **Local Server**: A running instance of the Chronos FastAPI backend from this monorepo.
 
 ---
 
