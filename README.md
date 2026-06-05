@@ -134,8 +134,10 @@ PlaudBlender structures your complex memory network into legible 3D arrangements
 * **Check Service Status**: `./chronos status`
 * **Run Pipeline**: `./chronos pipeline` or `python scripts/chronos_pipeline.py --full`
 * **Sync Recordings Only**: `./chronos sync`
-* **Run MCP Server**: `python -m scripts.mcp_server`
+* **Run Chronos MCP Server**: `python -m scripts.mcp_server` (exposes your local timeline as tools to AI agents)
+* **Verify Official Plaud MCP**: `python scripts/plaud_mcp_doctor.py --status` (inspects/drives the official Plaud Node MCP server)
 * **Clean Database & Vectors**: `python scripts/db_cleanup.py`
+
 * **Diagnostics**: `python scripts/diagnose_failures.py`
 * **Audit iOS Backup Drift**: `python scripts/ios_discrepancy_audit.py --backup-ios-root ../backups/<your-ios-backup-folder>/PlaudBlenderiOS`
 
@@ -160,6 +162,52 @@ PlaudBlender includes native support for running completely offline and free of 
 * **Configurable Sidecar**: Enable local models for specific tasks (like classification, JSON repair, and Ask Chronos) by setting `CHRONOS_LOCAL_LLM_ENABLED=1`.
 * **Recommended Models**: We recommend `nomic-embed-text` for embeddings and a fast, lightweight model (e.g., `qwen2.5:0.5b`, `llama3.2`) for local reasoning tasks.
 * **Extensible & Customizable**: Because local routing uses standard Ollama endpoints, you can easily swap in and experiment with any other models (like larger Qwen, Llama, or Mistral weights if running on a Raspberry Pi 5 or local machine) simply by updating your `.env`.
+
+---
+
+## 🔌 Chronos MCP Server (Model Context Protocol)
+
+Expose your Plaud recordings and timeline memory as tools to any AI client or agent. PlaudBlender includes a standard-compliant stdio MCP server (built with `FastMCP`) that can be integrated into **any MCP host** (including custom agent scripts, command-line tools, other IDEs, or desktop clients).
+
+### Running the Server Standalone
+You can start the MCP server locally over stdio transport:
+```bash
+python -m scripts.mcp_server
+```
+
+### Integration Examples
+
+#### 1. Claude Desktop Setup
+Open your Claude Desktop config file:
+* **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+* **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+Add the following to the `mcpServers` object (adjust the command path to your virtualenv's Python, and `cwd` to your absolute repo path):
+
+```json
+{
+  "mcpServers": {
+    "chronos-mcp": {
+      "command": "/Users/your-username/Documents/GitHub/PlaudBlender/.venv/bin/python",
+      "args": ["-m", "scripts.mcp_server"],
+      "cwd": "/Users/your-username/Documents/GitHub/PlaudBlender",
+      "env": {
+        "CHRONOS_GEMINI_API_KEY": "your_gemini_api_key_here"
+      }
+    }
+  }
+}
+```
+
+#### 2. Cursor Setup
+1. Go to **Settings > Features > MCP**.
+2. Click **+ Add New MCP Server**.
+3. Configure:
+   * **Name:** `chronos`
+   * **Type:** `command`
+   * **Command:** `/path/to/PlaudBlender/.venv/bin/python -m scripts.mcp_server`
+
+Now any connected LLM can call tools like `search_events`, `get_timeline`, and `ask_chronos` to query your voice logs!
 
 ---
 

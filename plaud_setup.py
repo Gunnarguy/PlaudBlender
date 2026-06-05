@@ -186,11 +186,8 @@ def main():
         print("🎉 Setup complete! You're ready to use PlaudBlender.")
         print("="*60)
         print("\nNext steps:")
-        print("  • Run: streamlit run chronos_app.py  - Launch the Chronos UI")
-        print(
-            "  • Run: python scripts/chronos_pipeline.py --full - Full ingest → process → index pipeline"
-        )
-        print("  • Run: python verify_integration.py - Developer feature wiring smoke test")
+        print("  • Run: ./chronos start                            - Launch the Chronos Web UI & API")
+        print("  • Run: python scripts/chronos_pipeline.py --full  - Full ingest → process → index pipeline")
         print("\nFor help: python plaud_setup.py --help")
 
 if __name__ == "__main__":
