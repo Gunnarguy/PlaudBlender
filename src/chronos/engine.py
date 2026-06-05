@@ -98,6 +98,11 @@ CHRONOS_CLEAN_PROMPT = """You are an expert cognitive editor processing a voice 
    - 0.0 = neutral
    - Base this on tone, word choice, and energy level
 
+7. **KEYWORDS**
+   - Extract 3-5 high-value, specific keywords that capture the concrete essence of this event.
+   - Keywords must represent key subjects, proper nouns, projects, tools, or concrete concepts (e.g. "auth-refactor", "Stryker", "Stanford", "suture", "VNC").
+   - STRICTLY avoid generic verbs (doing, going, make, think, thank), pronouns (him, us, they), generic nouns (stuff, thing, guys, dude), or generic question/conversational words (how, what, please).
+
 **OUTPUT FORMAT:**
 
 Return a JSON object with this EXACT structure:

@@ -323,6 +323,16 @@ BROKEN_JSON:
             "about", "after", "again", "also", "because", "before", "being", "could",
             "from", "have", "into", "just", "like", "more", "really", "that", "their",
             "then", "there", "these", "they", "this", "through", "with", "would",
+            "doing", "does", "did", "done", "do", "thank", "thanks", "please", "how",
+            "what", "why", "who", "where", "when", "which", "whose", "dude", "guy",
+            "guys", "bro", "stuff", "thing", "things", "something", "anything", "nothing",
+            "someone", "anyone", "everyone", "some", "any", "all", "very", "so",
+            "here", "even", "much", "many", "most", "somehow", "anyway", "actually",
+            "basically", "him", "her", "them", "you", "my", "your", "our", "us", "will",
+            "should", "can", "want", "wanted", "take", "took", "tell", "told", "get",
+            "got", "go", "going", "make", "think", "thought", "know", "say", "said",
+            "yeah", "yes", "okay", "ok", "hey", "well", "have", "has", "had", "having",
+            "were", "was", "are", "is", "am", "been", "wasn", "weren", "isn", "aren"
         }
         words = [word.lower() for word in re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}", text)]
         counts = Counter(word for word in words if word not in stopwords)

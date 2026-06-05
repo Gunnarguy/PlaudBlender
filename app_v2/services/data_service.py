@@ -1607,23 +1607,21 @@ class ChronosDataService:
         def normalize(kw: str) -> str:
             return kw.strip().lower()
 
-        # Skip low-value keywords
+        # Skip low-value keywords, generic verbs, pronouns, fillers, and conversational tokens
         stop_keywords = {
-            "unknown",
-            "none",
-            "other",
-            "general",
-            "n/a",
-            "na",
-            "misc",
-            "the",
-            "and",
-            "for",
-            "with",
-            "that",
-            "this",
-            "from",
-            "about",
+            "unknown", "none", "other", "general", "n/a", "na", "misc", "the", "and",
+            "for", "with", "that", "this", "from", "about", "against", "doing", "does",
+            "did", "done", "do", "thank", "thanks", "please", "how", "what", "why",
+            "who", "where", "when", "which", "whose", "dude", "guy", "guys", "bro",
+            "stuff", "thing", "things", "something", "anything", "nothing", "someone",
+            "anyone", "everyone", "some", "any", "all", "very", "really", "so", "then",
+            "there", "their", "here", "also", "even", "much", "many", "more", "most",
+            "somehow", "anyway", "actually", "basically", "him", "her", "them", "they",
+            "you", "me", "my", "your", "our", "us", "we", "he", "she", "will", "would",
+            "could", "should", "can", "want", "wanted", "take", "took", "tell", "told",
+            "get", "got", "go", "going", "make", "think", "thought", "know", "say", "said",
+            "yeah", "yes", "okay", "ok", "hey", "well", "just", "like", "about", "after",
+            "again", "before", "being", "into", "through", "would", "should", "could"
         }
 
         for event in events:
