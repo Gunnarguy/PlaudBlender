@@ -727,7 +727,10 @@ class TestSync:
             assert r.json()["status"] == "running"
 
     def test_run_pipeline(self, client):
-        with patch("subprocess.Popen") as mock_popen:
+        with (
+            patch("api.routes.sync._pipeline_process_active", return_value=False),
+            patch("subprocess.Popen") as mock_popen,
+        ):
             r = client.post("/api/v1/sync/run", json={"stage": "full"})
             assert r.status_code == 200
             data = r.json()
@@ -740,7 +743,10 @@ class TestSync:
 
     @pytest.mark.parametrize("stage", ["backfill", "all_history", "full_history"])
     def test_run_pipeline_backfill_aliases(self, client, stage):
-        with patch("subprocess.Popen") as mock_popen:
+        with (
+            patch("api.routes.sync._pipeline_process_active", return_value=False),
+            patch("subprocess.Popen") as mock_popen,
+        ):
             r = client.post("/api/v1/sync/run", json={"stage": stage})
             assert r.status_code == 200
             data = r.json()
