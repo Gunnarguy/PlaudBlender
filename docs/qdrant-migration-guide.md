@@ -1,6 +1,6 @@
 # Qdrant Cloud Migration Guide for PlaudBlender
 
-> **Current stance:** Qdrant is now the default/primary vector store. Any remaining “Pinecone” mentions are for legacy compatibility only. If you see Pinecone keys/env vars, treat them as fallbacks; the live stack runs on Qdrant.
+> **Historical note:** This document contains older Pinecone-era architecture notes. The current PlaudBlender stack uses Qdrant as the primary vector database. Pinecone references below are retained only as migration history or compatibility context.
 
 > **Purpose:** Explain what migrating from Pinecone to Qdrant involves, why it may be better for PlaudBlender, and what the actual work looks like.
 

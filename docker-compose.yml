@@ -3,7 +3,7 @@ services:
     image: qdrant/qdrant
     container_name: qdrant
     ports:
-      - "0.0.0.0:6333:6333"
+      - "127.0.0.1:6333:6333" # Bind to localhost by default. Change to 0.0.0.0 only if you intentionally want LAN/public access.
     volumes:
       - ~/.qdrant_storage:/qdrant/storage
     restart: unless-stopped

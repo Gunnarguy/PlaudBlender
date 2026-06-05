@@ -2,6 +2,8 @@
 
 _Comprehensive, end-to-end checklist to track UX, functionality, and platform hardening (UI/logic/infra). Use this as the single source of truth for cleanup and future SQL integration._
 
+> **Historical note:** This document contains older Pinecone-era architecture notes. The current PlaudBlender stack uses Qdrant as the primary vector database. Pinecone references below are retained only as migration history or compatibility context.
+
 **Progress log (2025-12-06 – Infrastructure & Integration Sprint)**
 - Completed major infrastructure items:
   - ✅ **Direct Notion API Integration** (`src/notion_sync.py`):

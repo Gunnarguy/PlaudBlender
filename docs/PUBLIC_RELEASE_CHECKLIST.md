@@ -30,3 +30,19 @@ Use this checklist before posting PlaudBlender publicly.
 - [ ] Rotate any credentials that were ever copied to test files or terminals.
 - [ ] Enable secret scanning in GitHub repository settings.
 - [ ] Add branch protection for `main` with required CI checks.
+
+## 6. Narrative Consistency
+- [ ] Root README says Qdrant is the current vector store.
+- [ ] Pinecone appears only in clearly marked historical/migration contexts.
+- [ ] Notion is described as an optional bridge/import/sync layer, not stale architecture.
+- [ ] Discord quickstart exists and frames the repo as developer/power-user project.
+- [ ] GitHub repo description does not mention Pinecone.
+
+## 7. Discord Post Readiness
+- [ ] Include repo link.
+- [ ] State BYO credentials.
+- [ ] State this is not a polished consumer app.
+- [ ] Mention optional Notion bridge.
+- [ ] Mention Qdrant as current vector store.
+- [ ] Avoid implying nontechnical plug-and-play setup.
+

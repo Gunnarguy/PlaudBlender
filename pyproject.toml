@@ -1,7 +1,7 @@
 [project]
 name = "plaudblender"
 version = "0.1.0"
-description = "Transform Plaud voice recordings into a searchable, visual knowledge graph"
+description = "Plaud recordings to a local searchable knowledge timeline with Plaud API, SQLite, Qdrant, AI processing, graph visualization, MCP tools, iOS companion, and optional Notion bridge."
 readme = "README.md"
 requires-python = ">=3.11"
 

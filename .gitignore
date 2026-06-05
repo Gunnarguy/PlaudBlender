@@ -76,3 +76,7 @@ storage/
 scratch/
 scratch_out.txt
 *.log
+
+# Release and discord draft templates
+docs/DISCORD_POST.md
+docs/DISCORD_QUICKSTART.md

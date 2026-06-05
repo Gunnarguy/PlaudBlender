@@ -4,7 +4,13 @@ Public-safe defaults: this repository ships with placeholder configuration only.
 Bring your own API keys, OAuth credentials, and endpoints via `.env` and local
 overrides.
 
-Transform **Plaud Note voice recordings** into a highly structured, visual local knowledge base. This repository houses the AI-powered cognitive processing pipeline, the daily timeline Web UI, a sibling iOS companion client, and Model Context Protocol (MCP) integrations.
+> **Status:** Developer/power-user project. PlaudBlender is not a polished consumer app yet. It is an open local-first system for experimenting with Plaud recordings, semantic search, knowledge graphs, MCP tools, and personal AI memory workflows.
+>
+> **Current vector store:** Qdrant is the primary vector database. Older Pinecone references in historical docs are legacy migration history only.
+>
+> **Notion support:** Optional. Notion exists because early PlaudBlender workflows stored Plaud transcripts in Notion before Chronos became the local source-of-truth system. The Notion bridge can import, dedupe, match, and optionally sync enriched metadata back to Notion.
+
+Transform **Plaud Note voice recordings** into a structured, searchable, local-first knowledge base. PlaudBlender includes an AI-powered processing pipeline, daily timeline UI, Qdrant vector search, graph visualization, MCP integrations, optional Notion import/sync, and a sibling iOS companion client.
 
 ---
 
@@ -141,6 +147,24 @@ PlaudBlender is fully optimized to run on low-resource hardware like a **Raspber
 * **WAL Mode & Pragmas**: Configured `synchronous=NORMAL` and WAL mode in `src/database/engine.py` to prevent database locks between UI readers and background pipeline writers.
 * **Auto-Refresh Short-Circuiting**: Background Dash UI auto-refreshes bypass heavy DOM calculations and return `no_update` to prevent CPU thrashing.
 * **Auto-Update Service**: A systemd timer (`chronos-auto-update.timer`) pulls from GitHub and runs `deploy/update-pi.sh` to update when you push commits.
+
+---
+
+## Current Status
+
+PlaudBlender is active and experimental.
+
+It is suitable for:
+- builders
+- power users
+- Plaud users comfortable with local tooling
+- people experimenting with personal AI memory, semantic search, graphs, or MCP
+
+It is not yet:
+- a polished consumer app
+- a hosted service
+- a one-click installer
+- guaranteed to work with every Plaud account/workflow without configuration
 
 ---
 
