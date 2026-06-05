@@ -4755,6 +4755,9 @@ def register_navigation_callbacks(app):
         phases = data.get("phases", [])
         trigger = data.get("trigger", "")
         elapsed = data.get("elapsed_seconds", 0)
+        if status == "running" and data.get("started_at"):
+            elapsed = time.time() - data.get("started_at")
+
 
         # Phase icons
         phase_icons = {
@@ -4775,6 +4778,8 @@ def register_navigation_callbacks(app):
             step = ph.get("current_step", "")
             item = ph.get("current_item", "")
             ph_elapsed = ph.get("elapsed_seconds", 0)
+            if ph_status == "running" and ph.get("started_at"):
+                ph_elapsed = time.time() - ph.get("started_at")
             summary = ph.get("summary", "")
             error = ph.get("error", "")
 
