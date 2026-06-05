@@ -13,7 +13,7 @@ overrides.
 Transform **Plaud Note voice recordings** into a structured, searchable, local-first knowledge base. PlaudBlender includes an AI-powered processing pipeline, daily timeline UI, Qdrant vector search, graph visualization, MCP integrations, optional Notion import/sync, and a sibling iOS companion client.
 
 ### ✨ Key Capabilities (What you get)
-* **Ask Your Memory (AI RAG)**: Ask natural language questions like *"What did I do in my meeting last Thursday?"* or *"What was that API key I muttered?"* and get synthesized answers with precise timeline citations.
+* **Ask Your Memory (AI RAG)**: Ask natural language questions like *"What did I do in my meeting last Thursday?"* or *"What was that idea I brainstormed during my commute?"* and get synthesized answers with precise timeline citations.
 * **3D Knowledge Graph**: Browse your voice logs as an interactive 3D connection map (arrange by lanes, concentrics, spiral timelines, or physics forces).
 * **Observe Under the Hood**: Real-time token expense calculators, session cost stats, and a live WebSocket telemetry monitor (X-Ray).
 * **MCP Server Included**: Plug your local timeline database directly into AI tools like Cursor or Claude Desktop to let them query your memories.
@@ -69,6 +69,9 @@ Transform **Plaud Note voice recordings** into a structured, searchable, local-f
 3. **Chronos MCP Server (FastMCP)**:
    * Exposes your memory timeline as tools to Model Context Protocol (MCP) clients. Connect your Plaud logs directly into Claude Desktop or Cursor so your LLMs can query your memory database (e.g., *"What did I do in my clinical rounds last Tuesday?"*).
 
+4. **Optional Notion Bridge (Import/Sync Layer)**:
+   * Provides migration pathways and ongoing sync capabilities for Notion-based Plaud workflows, enabling import, de-duplication, and metadata synchronization back to your databases.
+
 ---
 
 ## ⚡ Quick Start: Running PlaudBlender Locally (Mac Setup)
@@ -88,13 +91,16 @@ uv pip install -r requirements.txt
 # 3. Setup environment overrides
 cp .env.example .env
 
-# 4. Perform Plaud OAuth setup
+# 4. Start Qdrant first (required for pipeline vector storage)
+docker compose up -d
+
+# 5. Perform Plaud OAuth setup
 python plaud_setup.py
 
-# 5. Initialize the database and run the pipeline
+# 6. Initialize the database and run the pipeline
 python scripts/chronos_pipeline.py --full
 
-# 6. Start the Web UI & API Stack
+# 7. Start the Web UI & API Stack
 ./chronos start
 # Or start UI directly: ./start_chronos.sh --ui-only
 # Or start API directly: ./serve.sh
