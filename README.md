@@ -1,6 +1,6 @@
-# PlaudBlender — Chronos Knowledge Timeline, 3D Graph, & Fascinaiting Ecosystem
+# PlaudBlender — Chronos Knowledge Timeline & 3D Graph
 
-Transform **Plaud Note voice recordings** into a highly structured, visual local knowledge base. This repository houses the AI-powered cognitive processing pipeline, the daily timeline Web UI, a sibling iOS companion client, Model Context Protocol (MCP) integrations, and links to your forward-facing AI portfolio platform.
+Transform **Plaud Note voice recordings** into a highly structured, visual local knowledge base. This repository houses the AI-powered cognitive processing pipeline, the daily timeline Web UI, a sibling iOS companion client, and Model Context Protocol (MCP) integrations.
 
 ---
 
@@ -51,36 +51,9 @@ Transform **Plaud Note voice recordings** into a highly structured, visual local
 3. **Chronos MCP Server (FastMCP)**:
    * Exposes your memory timeline as tools to Model Context Protocol (MCP) clients. Connect your Plaud logs directly into Claude Desktop or Cursor so your LLMs can query your memory database (e.g., *"What did I do in my clinical rounds last Tuesday?"*).
 
-4. **Fascinaiting (Static Portfolio Website)**:
-   * Located at `../Fascinaiting`, this is your public-facing portfolio showcase site that features an interactive 23-step RAG pipeline trace simulator.
-
 ---
 
-## ⚡ Quick Start: Running the Websites
-
-### 1. Running the Fascinaiting Website (`../Fascinaiting`)
-
-If you try to run the `Fascinaiting` website by double-clicking `index.html` (which opens it as a `file:///` URL), **modern web browsers will block ES modules, scripts, and local fetches** due to strict Cross-Origin Resource Sharing (CORS) security restrictions. 
-
-To run it properly, serve it with a local HTTP development server:
-
-* **Using Node (npx)**:
-  ```bash
-  cd ../Fascinaiting
-  npx serve .
-  # Open http://localhost:3000 (or the port displayed in your terminal)
-  ```
-
-* **Using Python (built-in)**:
-  ```bash
-  cd ../Fascinaiting
-  python3 -m http.server 3000
-  # Open http://localhost:3000
-  ```
-
----
-
-### 2. Running PlaudBlender Locally (Mac Setup)
+## ⚡ Quick Start: Running PlaudBlender Locally (Mac Setup)
 
 PlaudBlender uses a Python virtual environment to manage dependencies. The launcher scripts automatically detect whether you have a `.venv` (created via `uv`) or `venv` (standard virtualenv) folder.
 
