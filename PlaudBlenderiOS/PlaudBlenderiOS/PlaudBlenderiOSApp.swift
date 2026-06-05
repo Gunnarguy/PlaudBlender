@@ -13,47 +13,39 @@ private let logger = Logger(subsystem: "com.gunndamental.PlaudBlenderiOS", categ
 @main
 struct PlaudBlenderiOSApp: App {
     @State private var authManager = AuthManager()
-    @State private var apiClient: APIClient?
-    @State private var notionViewModel: NotionViewModel?
-    @State private var syncViewModel: SyncViewModel?
-    @State private var xrayViewModel: XRayViewModel?
+    @State private var apiClient: APIClient
+    @State private var notionViewModel: NotionViewModel
+    @State private var syncViewModel: SyncViewModel
+    @State private var xrayViewModel: XRayViewModel
+
+    init() {
+        let auth = AuthManager()
+        let client = APIClient(authManager: auth)
+        self._authManager = State(initialValue: auth)
+        self._apiClient = State(initialValue: client)
+        self._notionViewModel = State(initialValue: NotionViewModel(api: client))
+        self._syncViewModel = State(initialValue: SyncViewModel(api: client))
+        self._xrayViewModel = State(initialValue: XRayViewModel(api: client))
+    }
 
     var body: some Scene {
         WindowGroup {
-            if let apiClient, let notionViewModel, let syncViewModel, let xrayViewModel {
-                ContentView()
-                    .environment(apiClient)
-                    .environment(notionViewModel)
-                    .environment(syncViewModel)
-                    .environment(xrayViewModel)
-                    .environment(authManager)
-                    .task {
-                        // Connectivity check on every app foreground
-                        logger.info("🚀 App launched — checking server at \(authManager.serverURL, privacy: .public)")
-                        let ok = await apiClient.healthCheck()
-                        logger.info("🏥 Startup health: \(ok ? "CONNECTED" : "UNREACHABLE", privacy: .public)")
+            ContentView()
+                .environment(apiClient)
+                .environment(notionViewModel)
+                .environment(syncViewModel)
+                .environment(xrayViewModel)
+                .environment(authManager)
+                .task {
+                    // Connectivity check and VM bootstrapping in background asynchronously
+                    logger.info("🚀 App launched — starting background bootstrapping")
+                    Task {
+                        _ = await apiClient.bootstrapConnection()
+                        await syncViewModel.bootstrap()
+                        xrayViewModel.isPipelineActive = syncViewModel.isRunning
                         await xrayViewModel.bootstrapIfNeeded()
                     }
-            } else {
-                LoadingView(message: "Starting Chronos...")
-                    .task {
-                        guard apiClient == nil else { return }
-                        logger.info("⏳ Creating APIClient for server: \(authManager.serverURL, privacy: .public)")
-                        let client = APIClient(authManager: authManager)
-                        _ = await client.bootstrapConnection()
-                        let notion = NotionViewModel(api: client)
-                        let sync = SyncViewModel(api: client)
-                        let xray = XRayViewModel(api: client)
-                        await sync.bootstrap()
-                        xray.isPipelineActive = sync.isRunning
-                        xray.isPipelineActive = sync.isRunning
-                        await xray.bootstrapIfNeeded()
-                        notionViewModel = notion
-                        syncViewModel = sync
-                        xrayViewModel = xray
-                        apiClient = client
-                    }
-            }
+                }
         }
     }
 }

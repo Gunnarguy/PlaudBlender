@@ -17,6 +17,9 @@ from dotenv import load_dotenv
 # Load .env once at import time, override stale shell env vars
 load_dotenv(override=True)
 
+# Set native DNS resolver for gRPC/HTTP client on macOS to prevent hangs
+os.environ["GRPC_DNS_RESOLVER"] = "native"
+
 
 _OPENAI_MODEL_ALIASES = {
     "gpt-5-mini": "gpt-5.4-mini",

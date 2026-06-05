@@ -129,27 +129,27 @@ _start_ngrok() {
 
 _start_api() {
     if _port_up 8000; then echo -e "  ${GREEN}✔${RESET}  API server      port 8000"; return 0; fi
-    nohup "$PYTHON" scripts/launch_api.py --port 8000 > "$LOG_DIR/api.log" 2>&1 &
+    nohup "$PYTHON" -u scripts/launch_api.py --port 8000 > "$LOG_DIR/api.log" 2>&1 &
     echo $! > "$PID_DIR/api.pid"
-    for _ in $(seq 1 20); do _port_up 8000 && break; sleep 0.5; done
+    for _ in $(seq 1 120); do _port_up 8000 && break; sleep 0.5; done
     if _port_up 8000; then echo -e "  ${GREEN}✔${RESET}  API server      port 8000"; return 0
     else echo -e "  ${RED}✘${RESET}  API server      failed to start"; return 1; fi
 }
 
 _start_webui() {
     if _port_up 8050; then echo -e "  ${GREEN}✔${RESET}  Web UI          port 8050"; return 0; fi
-    nohup "$PYTHON" scripts/launch_app.py > "$LOG_DIR/webui.log" 2>&1 &
+    nohup "$PYTHON" -u scripts/launch_app.py > "$LOG_DIR/webui.log" 2>&1 &
     echo $! > "$PID_DIR/webui.pid"
-    for _ in $(seq 1 40); do _port_up 8050 && break; sleep 0.5; done
+    for _ in $(seq 1 180); do _port_up 8050 && break; sleep 0.5; done
     if _port_up 8050; then echo -e "  ${GREEN}✔${RESET}  Web UI          port 8050"; return 0
     else echo -e "  ${RED}✘${RESET}  Web UI          failed to start"; return 1; fi
 }
 
 _start_auto_sync() {
     if _port_up 8090; then echo -e "  ${GREEN}✔${RESET}  Auto-sync       port 8090"; return 0; fi
-    nohup "$PYTHON" scripts/auto_sync.py > "$LOG_DIR/auto_sync.log" 2>&1 &
+    nohup "$PYTHON" -u scripts/auto_sync.py > "$LOG_DIR/auto_sync.log" 2>&1 &
     echo $! > "$PID_DIR/auto_sync.pid"
-    for _ in $(seq 1 20); do _port_up 8090 && break; sleep 0.5; done
+    for _ in $(seq 1 120); do _port_up 8090 && break; sleep 0.5; done
     if _port_up 8090; then echo -e "  ${GREEN}✔${RESET}  Auto-sync       port 8090"; return 0
     else echo -e "  ${RED}✘${RESET}  Auto-sync       failed to start"; return 1; fi
 }
@@ -173,11 +173,11 @@ do_start() {
 
     local ok=0 fail=0
 
-    _start_qdrant    && ((ok++)) || ((fail++))
-    _start_ngrok     && ((ok++)) || ((fail++))
-    _start_api       && ((ok++)) || ((fail++))
-    _start_webui     && ((ok++)) || ((fail++))
-    _start_auto_sync && ((ok++)) || ((fail++))
+    if _start_qdrant; then ok=$((ok + 1)); else fail=$((fail + 1)); fi
+    if _start_ngrok; then ok=$((ok + 1)); else fail=$((fail + 1)); fi
+    if _start_api; then ok=$((ok + 1)); else fail=$((fail + 1)); fi
+    if _start_webui; then ok=$((ok + 1)); else fail=$((fail + 1)); fi
+    if _start_auto_sync; then ok=$((ok + 1)); else fail=$((fail + 1)); fi
 
     echo ""
     if [[ $fail -eq 0 ]]; then

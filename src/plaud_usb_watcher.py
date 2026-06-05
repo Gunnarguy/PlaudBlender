@@ -180,8 +180,8 @@ class PlaudUSBWatcher:
         self._on_connect_callbacks: List[DeviceCallback] = []
         self._on_disconnect_callbacks: List[DisconnectCallback] = []
 
-        # Initialize known volumes
-        self._update_known_volumes()
+        # Initialize known volumes lazily in _run_loop to avoid blocking main thread
+        pass
 
     def _update_known_volumes(self) -> None:
         """Get current list of mounted volumes."""
@@ -279,6 +279,8 @@ class PlaudUSBWatcher:
 
     def _run_loop(self) -> None:
         """Main polling loop."""
+        # Initialize known volumes on the background thread to avoid blocking Dash startup
+        self._update_known_volumes()
         logger.info(f"USB watcher started, monitoring {self.volumes_path}")
         while self._running:
             self._check_for_changes()
