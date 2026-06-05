@@ -12,6 +12,14 @@ overrides.
 
 Transform **Plaud Note voice recordings** into a structured, searchable, local-first knowledge base. PlaudBlender includes an AI-powered processing pipeline, daily timeline UI, Qdrant vector search, graph visualization, MCP integrations, optional Notion import/sync, and a sibling iOS companion client.
 
+### ✨ Key Capabilities (What you get)
+* **Ask Your Memory (AI RAG)**: Ask natural language questions like *"What did I do in my meeting last Thursday?"* or *"What was that API key I muttered?"* and get synthesized answers with precise timeline citations.
+* **3D Knowledge Graph**: Browse your voice logs as an interactive 3D connection map (arrange by lanes, concentrics, spiral timelines, or physics forces).
+* **Observe Under the Hood**: Real-time token expense calculators, session cost stats, and a live WebSocket telemetry monitor (X-Ray).
+* **MCP Server Included**: Plug your local timeline database directly into AI tools like Cursor or Claude Desktop to let them query your memories.
+* **Headless Pi Server**: Optimized to run on low-resource hardware like a Raspberry Pi and connect securely from your phone via Tailscale VPN.
+
+
 ---
 
 ## 📐 Unified Architecture Overview
