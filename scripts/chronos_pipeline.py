@@ -670,20 +670,35 @@ def run_index(
         # Text-only batch path (fast, works with embedding-001 too)
         texts = [event.clean_text for event in pydantic_events]
         batch_size = max(1, get_settings().chronos_embed_batch_size)
+        if embedder.provider == "ollama":
+            # On local CPU (Pi), sequential/large batches cause HTTP timeouts.
+            # Limit the batch slice size to local_embed_batch_size to ensure fast responses
+            # and publish granular progress updates to the UI.
+            batch_size = min(batch_size, embedder.local_embed_batch_size)
+
         embeddings = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
+            current_batch_num = i // batch_size + 1
+            total_batches = (len(texts) + batch_size - 1) // batch_size
             print_progress(
                 "Embed",
                 i,
                 len(texts),
-                f"batch {i//batch_size + 1}",
+                f"batch {current_batch_num}",
                 time.time() - embed_start,
+            )
+            pipeline_progress.update(
+                step=f"Generating embeddings: batch {current_batch_num}/{total_batches} ({i}/{len(texts)})",
+                completed=i,
+                total=len(texts),
             )
             batch_embeddings = embedder.embed_batch(
                 batch, task_type="RETRIEVAL_DOCUMENT"
             )
             embeddings.extend(batch_embeddings)
+        pipeline_progress.update(completed=len(texts), total=len(texts))
+
 
     total_embedded = len(pydantic_events)
     print_progress(

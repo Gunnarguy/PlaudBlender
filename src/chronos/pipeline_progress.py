@@ -185,8 +185,14 @@ class PipelineProgressTracker:
     # Step-level updates (within a phase)
     # ------------------------------------------------------------------
 
-    def update(self, step: str = "", item: str = "", total: int | None = None) -> None:
-        """Update current step description without advancing the counter."""
+    def update(
+        self,
+        step: str = "",
+        item: str = "",
+        total: int | None = None,
+        completed: int | None = None,
+    ) -> None:
+        """Update current step description, total, and completed count."""
         p = self._phase_map.get(self._run.current_phase)
         if not p:
             return
@@ -196,9 +202,12 @@ class PipelineProgressTracker:
             p.current_item = item
         if total is not None:
             p.total_items = total
+        if completed is not None:
+            p.completed_items = completed
         p.elapsed_seconds = time.time() - p.started_at
         self._run.elapsed_seconds = time.time() - self._run.started_at
         self._flush()
+
 
     def advance(self, item: str = "", step: str = "") -> None:
         """Increment completed_items by 1 and optionally set step/item."""

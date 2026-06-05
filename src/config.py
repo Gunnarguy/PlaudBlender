@@ -159,7 +159,7 @@ class Settings:
         "CHRONOS_LOCAL_LLM_ALLOWED_TASKS", "json_repair,entity_extract,classify,ask"
     )
     chronos_local_embed_batch_size: int = int(
-        os.getenv("CHRONOS_LOCAL_EMBED_BATCH_SIZE", "32")
+        os.getenv("CHRONOS_LOCAL_EMBED_BATCH_SIZE", "4")
     )
     chronos_local_embed_timeout_seconds: float = float(
         os.getenv("CHRONOS_LOCAL_EMBED_TIMEOUT_SECONDS", "300")
