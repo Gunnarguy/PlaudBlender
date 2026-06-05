@@ -130,6 +130,7 @@ def _meminfo_mb() -> dict[str, int]:
 
 def _pipeline_already_running() -> bool:
     current_pid = os.getpid()
+    parent_pid = os.getppid()
     proc_root = Path("/proc")
     try:
         proc_dirs = list(proc_root.iterdir())
@@ -140,7 +141,7 @@ def _pipeline_already_running() -> bool:
         if not proc_dir.name.isdigit():
             continue
         pid = int(proc_dir.name)
-        if pid == current_pid:
+        if pid == current_pid or pid == parent_pid:
             continue
         try:
             cmdline = (proc_dir / "cmdline").read_bytes().replace(b"\0", b" ")
