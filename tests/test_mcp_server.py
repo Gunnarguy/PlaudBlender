@@ -64,7 +64,7 @@ class TestTimeoutDecorator:
         async def fast_fn():
             return "ok"
 
-        result = asyncio.get_event_loop().run_until_complete(fast_fn())
+        result = asyncio.run(fast_fn())
         assert result == "ok"
 
     def test_timeout_returns_json_error(self):
@@ -76,7 +76,7 @@ class TestTimeoutDecorator:
             await asyncio.sleep(10)
             return "never"
 
-        result = asyncio.get_event_loop().run_until_complete(slow_fn())
+        result = asyncio.run(slow_fn())
         parsed = json.loads(result)
         assert "error" in parsed
         assert "timed out" in parsed["error"]
@@ -90,7 +90,7 @@ class TestTimeoutDecorator:
         async def fn():
             return "done"
 
-        result = asyncio.get_event_loop().run_until_complete(fn())
+        result = asyncio.run(fn())
         assert result == "done"
 
     def test_preserves_function_name(self):
@@ -115,7 +115,7 @@ class TestPingTool:
     def test_ping_returns_pong(self):
         from scripts.mcp_server import ping
 
-        result = asyncio.get_event_loop().run_until_complete(ping())
+        result = asyncio.run(ping())
         assert result == "pong"
 
 
@@ -130,7 +130,7 @@ class TestSearchEventsTool:
         mock_ds.search.return_value = []
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             search_events("test query")
         )
         parsed = json.loads(result)
@@ -156,7 +156,7 @@ class TestSearchEventsTool:
         mock_ds.search.return_value = [mock_result]
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             search_events("budget meeting")
         )
         parsed = json.loads(result)
@@ -174,7 +174,7 @@ class TestSearchEventsTool:
         mock_ds.search.return_value = []
         mock_get_ds.return_value = mock_ds
 
-        asyncio.get_event_loop().run_until_complete(search_events("q", limit=999))
+        asyncio.run(search_events("q", limit=999))
         mock_ds.search.assert_called_once()
         # search was called with limit=50 (clamped)
         _, kwargs = mock_ds.search.call_args
@@ -200,7 +200,7 @@ class TestSearchEventsTool:
         mock_ds.search.return_value = [mock_result]
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             search_events("q", date_from="2026-01-01")
         )
         parsed = json.loads(result)
@@ -213,7 +213,7 @@ class TestSearchEventsTool:
 
         mock_get_ds.side_effect = RuntimeError("DB gone")
 
-        result = asyncio.get_event_loop().run_until_complete(search_events("test"))
+        result = asyncio.run(search_events("test"))
         parsed = json.loads(result)
         assert "error" in parsed
         assert "DB gone" in parsed["error"]
@@ -230,7 +230,7 @@ class TestGetRecordingTool:
         mock_ds.get_recording_detail.return_value = None
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             get_recording("missing-id")
         )
         parsed = json.loads(result)
@@ -263,7 +263,7 @@ class TestGetRecordingTool:
         mock_ds.get_transcript.return_value = "Full transcript text here."
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(get_recording("rec-123"))
+        result = asyncio.run(get_recording("rec-123"))
         parsed = json.loads(result)
         assert parsed["recording_id"] == "rec-123"
         assert parsed["event_count"] == 1
@@ -290,7 +290,7 @@ class TestListRecordingsTool:
         mock_db.execute.return_value.fetchall.return_value = [mock_row]
         mock_get_db.return_value = mock_db
 
-        result = asyncio.get_event_loop().run_until_complete(list_recordings())
+        result = asyncio.run(list_recordings())
         parsed = json.loads(result)
         assert len(parsed["recordings"]) == 1
         assert parsed["recordings"][0]["recording_id"] == "rec-001"
@@ -304,7 +304,7 @@ class TestListRecordingsTool:
         mock_db.execute.return_value.fetchall.return_value = []
         mock_get_db.return_value = mock_db
 
-        result = asyncio.get_event_loop().run_until_complete(list_recordings())
+        result = asyncio.run(list_recordings())
         parsed = json.loads(result)
         assert parsed["recordings"] == []
         assert parsed["count"] == 0
@@ -333,7 +333,7 @@ class TestGetStatsTool:
         }
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(get_stats())
+        result = asyncio.run(get_stats())
         parsed = json.loads(result)
         assert parsed["events"]["total"] == 42
         assert parsed["recordings"]["completed"] == 30
@@ -351,7 +351,7 @@ class TestGetTopicsTool:
         mock_ds.get_all_topics.return_value = [("work", 30), ("meeting", 20)]
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(get_topics())
+        result = asyncio.run(get_topics())
         parsed = json.loads(result)
         assert len(parsed["topics"]) == 2
         assert parsed["topics"][0]["category"] == "work"
@@ -365,7 +365,7 @@ class TestRunPipelineTool:
     def test_invalid_stage(self, mock_run):
         from scripts.mcp_server import run_pipeline
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             run_pipeline(stage="invalid")
         )
         parsed = json.loads(result)
@@ -383,7 +383,7 @@ class TestRunPipelineTool:
             stderr="",
         )
 
-        result = asyncio.get_event_loop().run_until_complete(run_pipeline(stage="full"))
+        result = asyncio.run(run_pipeline(stage="full"))
         parsed = json.loads(result)
         assert parsed["stage"] == "full"
         assert parsed["exit_code"] == 0
@@ -399,7 +399,7 @@ class TestRunPipelineTool:
             stderr="",
         )
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             run_pipeline(stage="full_history")
         )
         parsed = json.loads(result)
@@ -414,7 +414,7 @@ class TestRunPipelineTool:
 
         mock_run.side_effect = sp.TimeoutExpired(cmd="pipeline", timeout=600)
 
-        result = asyncio.get_event_loop().run_until_complete(run_pipeline(stage="full"))
+        result = asyncio.run(run_pipeline(stage="full"))
         parsed = json.loads(result)
         assert "timed out" in parsed["error"]
 
@@ -430,7 +430,7 @@ class TestSystemStatusTool:
         mock_db.execute.return_value.scalar.return_value = 42
         mock_get_db.return_value = mock_db
 
-        result = asyncio.get_event_loop().run_until_complete(system_status())
+        result = asyncio.run(system_status())
         parsed = json.loads(result)
         assert parsed["database"]["status"] == "ok"
         assert parsed["database"]["recordings"] == 42
@@ -441,7 +441,7 @@ class TestSystemStatusTool:
 
         mock_get_db.side_effect = RuntimeError("Connection refused")
 
-        result = asyncio.get_event_loop().run_until_complete(system_status())
+        result = asyncio.run(system_status())
         parsed = json.loads(result)
         assert parsed["database"]["status"] == "error"
         assert "Connection refused" in parsed["database"]["message"]
@@ -458,7 +458,7 @@ class TestGetGraphTool:
         mock_ds.get_graph_data.return_value = None
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(get_graph())
+        result = asyncio.run(get_graph())
         parsed = json.loads(result)
         assert "No graph data available" in parsed["message"]
 
@@ -493,7 +493,7 @@ class TestGetGraphTool:
         mock_ds.get_graph_data.return_value = mock_graph
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(get_graph())
+        result = asyncio.run(get_graph())
         parsed = json.loads(result)
         assert len(parsed["nodes"]) == 2
         assert len(parsed["edges"]) == 1
@@ -524,7 +524,7 @@ class TestGetGraphTool:
         mock_ds.get_graph_data.return_value = mock_graph
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             get_graph(entity_types="person")
         )
         parsed = json.loads(result)
@@ -548,7 +548,7 @@ class TestAskChronosTool:
         mock_get_ds.return_value = mock_ds
 
         with patch("src.config.get_settings", return_value=mock_settings):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 ask_chronos("What happened today?")
             )
         parsed = json.loads(result)
@@ -560,7 +560,7 @@ class TestAskChronosTool:
 
         mock_get_ds.side_effect = RuntimeError("Service down")
 
-        result = asyncio.get_event_loop().run_until_complete(ask_chronos("anything"))
+        result = asyncio.run(ask_chronos("anything"))
         parsed = json.loads(result)
         assert "error" in parsed
 
@@ -598,7 +598,7 @@ class TestAskChronosTool:
                 "reasoning_summary": None,
             }
 
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 ask_chronos("What did I review?")
             )
 
@@ -620,7 +620,7 @@ class TestJSONContracts:
         """ping returns plain text, not JSON."""
         from scripts.mcp_server import ping
 
-        result = asyncio.get_event_loop().run_until_complete(ping())
+        result = asyncio.run(ping())
         assert result == "pong"
         with pytest.raises(json.JSONDecodeError):
             json.loads(result)
@@ -633,7 +633,7 @@ class TestJSONContracts:
         mock_ds.search.return_value = []
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(search_events("test"))
+        result = asyncio.run(search_events("test"))
         parsed = json.loads(result)
         assert isinstance(parsed, dict)
 
@@ -653,6 +653,6 @@ class TestJSONContracts:
         mock_ds.get_recording_db_stats.return_value = {}
         mock_get_ds.return_value = mock_ds
 
-        result = asyncio.get_event_loop().run_until_complete(get_stats())
+        result = asyncio.run(get_stats())
         parsed = json.loads(result)
         assert isinstance(parsed, dict)

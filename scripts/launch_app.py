@@ -1,3 +1,11 @@
+import sys
+if sys.platform in ('linux', 'darwin'):
+    try:
+        import uvloop
+        uvloop.install()
+    except ImportError:
+        pass
+
 #!/usr/bin/env python
 """Launch Chronos app v2."""
 import sys

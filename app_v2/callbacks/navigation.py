@@ -4114,7 +4114,7 @@ def register_navigation_callbacks(app):
         Output({"type": "nav-item", "view": ALL}, "className"),
         Input("current-view", "data"),
         State({"type": "nav-item", "view": ALL}, "id"),
-    )
+        prevent_initial_call=True)
     def update_nav_active(current_view, nav_ids):
         """Update active state of navigation items."""
         if not nav_ids:
@@ -4734,7 +4734,7 @@ def register_navigation_callbacks(app):
     @app.callback(
         Output("pipeline-progress-panel", "children"),
         Input("pipeline-progress-poll", "n_intervals"),
-    )
+        prevent_initial_call=True)
     def poll_pipeline_progress(n):
         """Read pipeline_progress.json and render a live progress panel."""
         from src.chronos.pipeline_progress import read_progress

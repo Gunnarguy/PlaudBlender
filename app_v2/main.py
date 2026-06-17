@@ -1,3 +1,11 @@
+import sys
+if sys.platform in ('linux', 'darwin'):
+    try:
+        import uvloop
+        uvloop.install()
+    except ImportError:
+        pass
+
 """Chronos App v2 - Recording-Centric UI
 
 Run with: python -m app_v2.main

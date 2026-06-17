@@ -43,6 +43,7 @@ def main():
         port=args.port,
         reload=args.reload,
         workers=1 if args.reload else max(1, args.workers),
+        loop="uvloop",
     )
 
 

@@ -161,7 +161,7 @@ class LocalLLMService:
                         "model": self.model,
                         "prompt": prompt,
                         "stream": False,
-                        "options": {"temperature": temperature},
+                        "options": {"temperature": temperature, "num_ctx": 2048, "num_thread": 4},
                     },
                     timeout=timeout,
                 )

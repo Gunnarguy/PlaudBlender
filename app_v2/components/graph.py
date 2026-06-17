@@ -133,6 +133,8 @@ def _compute_layout_positions(G, node_props, layout_type="lanes"):
     import math
     pos = {}
     nodes = list(G.nodes())
+    if len(nodes) > 500:
+        nodes = nodes[:500]
 
     if layout_type == "lanes":
         categories = [n for n in nodes if node_props.get(n, {}).get("type") == "category"]

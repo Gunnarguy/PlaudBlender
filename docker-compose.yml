@@ -7,7 +7,7 @@ services:
     volumes:
       - ~/.qdrant_storage:/qdrant/storage
     restart: unless-stopped
-    mem_limit: 768m
+    mem_limit: 1g
     memswap_limit: 1g
     cpus: "1.25"
     networks:

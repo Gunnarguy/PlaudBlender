@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 import logging
 import sys
 import time
+import gc
 import threading
 from pathlib import Path
 from typing import Any, Optional, cast
@@ -675,6 +676,7 @@ def run_index(
             # Limit the batch slice size to local_embed_batch_size to ensure fast responses
             # and publish granular progress updates to the UI.
             batch_size = min(batch_size, embedder.local_embed_batch_size)
+        batch_size = min(batch_size, 100)
 
         embeddings = []
         for i in range(0, len(texts), batch_size):
@@ -697,6 +699,7 @@ def run_index(
                 batch, task_type="RETRIEVAL_DOCUMENT"
             )
             embeddings.extend(batch_embeddings)
+            gc.collect()
         pipeline_progress.update(completed=len(texts), total=len(texts))
 
 
