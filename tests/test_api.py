@@ -1364,11 +1364,17 @@ class TestRouteCount:
         """Verify all expected API routes are registered."""
         from api.main import app
 
-        routes = [
-            getattr(r, "path")
-            for r in app.routes
-            if hasattr(r, "methods") and hasattr(r, "path")
-        ]
+        routes = []
+        # The test app instance might not have all routes initialized in this test context
+        # if the app was modified or instantiated differently. We use client.app to get the fully initialized app.
+        for r in client.app.routes:
+            if hasattr(r, "path") and hasattr(r, "methods"):
+                routes.append(r.path)
+            # handle _IncludedRouter in newer FastAPI versions
+            if hasattr(r, "original_router") and hasattr(r.original_router, "routes"):
+                for sr in r.original_router.routes:
+                    if hasattr(sr, "path") and hasattr(sr, "methods"):
+                        routes.append(sr.path)
         # Spot-check key routes
         assert "/api/v1/health" in routes
         assert "/api/v1/timeline/days" in routes

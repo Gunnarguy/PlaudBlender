@@ -1,3 +1,11 @@
+import sys
+if sys.platform in ('linux', 'darwin'):
+    try:
+        import uvloop
+        uvloop.install()
+    except ImportError:
+        pass
+
 """
 Chronos FastAPI Backend — Main Application
 
@@ -14,6 +22,7 @@ from contextlib import asynccontextmanager
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from src.database import init_db
 
@@ -51,6 +60,7 @@ app = FastAPI(
 # CORS — allow iOS app and local development
 # The iOS simulator can't reach localhost, so it uses the Mac's LAN IP.
 # allow_origin_regex covers any 192.168.x.x / 10.x.x.x / 172.16-31.x.x address.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

@@ -40,6 +40,9 @@ def get_engine(database_url: Optional[str] = None) -> Engine:
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA busy_timeout=5000")
             cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA mmap_size=268435456")
+            cursor.execute("PRAGMA temp_store=MEMORY")
+            cursor.execute("PRAGMA cache_size=-10000")
             cursor.close()
 
     return engine

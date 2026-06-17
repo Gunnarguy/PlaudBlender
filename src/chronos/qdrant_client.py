@@ -89,6 +89,7 @@ class ChronosQdrantClient:
                 vectors_config=VectorParams(
                     size=vector_size,
                     distance=Distance.COSINE,
+                    on_disk=True,
                 ),
             )
 

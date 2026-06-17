@@ -22,6 +22,8 @@ if [[ -f "$ROOT/.env" ]]; then
 fi
 
 API_PORT=8000
+export CHRONOS_API_WORKERS=2
+export UVLOOP_INSTALL="1"
 API_LOG="$ROOT/.logs/api.log"
 NGROK_LOG="$ROOT/.logs/ngrok.log"
 PID_DIR="$ROOT/.logs"
