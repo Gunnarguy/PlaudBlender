@@ -562,9 +562,7 @@ class ChronosDataService:
             return parsed.astimezone(timezone.utc).replace(tzinfo=None)
         return parsed
 
-    def _get_recent_plaud_recording_dates(
-        self, days_back: int
-    ) -> Optional[set[str]]:
+    def _get_recent_plaud_recording_dates(self, days_back: int) -> Optional[set[str]]:
         """Return recent Plaud recording dates keyed by actual recording start day.
 
         This is used to distinguish a genuinely empty day from a probable
@@ -572,8 +570,9 @@ class ChronosDataService:
         does not hammer Plaud while browsing.
         """
         days_back = max(1, min(days_back, _EMPTY_DAY_AUDIT_MAX_DAYS))
+
         def _read_cached_result(
-            cached_entry: Optional[Tuple[datetime, Optional[frozenset[str]]]]
+            cached_entry: Optional[Tuple[datetime, Optional[frozenset[str]]]],
         ) -> object:
             if not cached_entry:
                 return ...
@@ -692,7 +691,11 @@ class ChronosDataService:
 
         if suspected_days and _xlog:
             sample = ", ".join(suspected_days[:3])
-            extra = "" if len(suspected_days) <= 3 else f" (+{len(suspected_days) - 3} more)"
+            extra = (
+                ""
+                if len(suspected_days) <= 3
+                else f" (+{len(suspected_days) - 3} more)"
+            )
             _xlog(
                 "data",
                 "gap-audit",
@@ -1609,19 +1612,123 @@ class ChronosDataService:
 
         # Skip low-value keywords, generic verbs, pronouns, fillers, and conversational tokens
         stop_keywords = {
-            "unknown", "none", "other", "general", "n/a", "na", "misc", "the", "and",
-            "for", "with", "that", "this", "from", "about", "against", "doing", "does",
-            "did", "done", "do", "thank", "thanks", "please", "how", "what", "why",
-            "who", "where", "when", "which", "whose", "dude", "guy", "guys", "bro",
-            "stuff", "thing", "things", "something", "anything", "nothing", "someone",
-            "anyone", "everyone", "some", "any", "all", "very", "really", "so", "then",
-            "there", "their", "here", "also", "even", "much", "many", "more", "most",
-            "somehow", "anyway", "actually", "basically", "him", "her", "them", "they",
-            "you", "me", "my", "your", "our", "us", "we", "he", "she", "will", "would",
-            "could", "should", "can", "want", "wanted", "take", "took", "tell", "told",
-            "get", "got", "go", "going", "make", "think", "thought", "know", "say", "said",
-            "yeah", "yes", "okay", "ok", "hey", "well", "just", "like", "about", "after",
-            "again", "before", "being", "into", "through", "would", "should", "could"
+            "unknown",
+            "none",
+            "other",
+            "general",
+            "n/a",
+            "na",
+            "misc",
+            "the",
+            "and",
+            "for",
+            "with",
+            "that",
+            "this",
+            "from",
+            "about",
+            "against",
+            "doing",
+            "does",
+            "did",
+            "done",
+            "do",
+            "thank",
+            "thanks",
+            "please",
+            "how",
+            "what",
+            "why",
+            "who",
+            "where",
+            "when",
+            "which",
+            "whose",
+            "dude",
+            "guy",
+            "guys",
+            "bro",
+            "stuff",
+            "thing",
+            "things",
+            "something",
+            "anything",
+            "nothing",
+            "someone",
+            "anyone",
+            "everyone",
+            "some",
+            "any",
+            "all",
+            "very",
+            "really",
+            "so",
+            "then",
+            "there",
+            "their",
+            "here",
+            "also",
+            "even",
+            "much",
+            "many",
+            "more",
+            "most",
+            "somehow",
+            "anyway",
+            "actually",
+            "basically",
+            "him",
+            "her",
+            "them",
+            "they",
+            "you",
+            "me",
+            "my",
+            "your",
+            "our",
+            "us",
+            "we",
+            "he",
+            "she",
+            "will",
+            "would",
+            "could",
+            "should",
+            "can",
+            "want",
+            "wanted",
+            "take",
+            "took",
+            "tell",
+            "told",
+            "get",
+            "got",
+            "go",
+            "going",
+            "make",
+            "think",
+            "thought",
+            "know",
+            "say",
+            "said",
+            "yeah",
+            "yes",
+            "okay",
+            "ok",
+            "hey",
+            "well",
+            "just",
+            "like",
+            "about",
+            "after",
+            "again",
+            "before",
+            "being",
+            "into",
+            "through",
+            "would",
+            "should",
+            "could",
         }
 
         for event in events:
@@ -2606,32 +2713,25 @@ class ChronosDataService:
 
             db = SessionLocal()
             try:
-                recent = (
-                    db.query(_ChronosRecordingModel)
+                recent_records = (
+                    db.query(_ChronosRecordingModel, _RecordingModel)
+                    .outerjoin(
+                        _RecordingModel,
+                        _ChronosRecordingModel.recording_id == _RecordingModel.id,
+                    )
                     .filter(_ChronosRecordingModel.created_at >= cutoff)
                     .order_by(_ChronosRecordingModel.created_at.desc())
                     .all()
                 )
-                record_ids = [str(rec.recording_id) for rec in recent]
-                legacy_records = {}
-                if record_ids:
-                    legacy_records = {
-                        str(rec.id): rec
-                        for rec in db.query(_RecordingModel)
-                        .filter(_RecordingModel.id.in_(record_ids))
-                        .all()
-                    }
 
                 targets: List[Tuple[str, Dict[str, Any]]] = []
-                for rec in recent:
-                    workflow = self._get_workflow_metadata(
-                        legacy_records.get(str(rec.recording_id))
-                    )
+                for chronos_rec, legacy_rec in recent_records:
+                    workflow = self._get_workflow_metadata(legacy_rec)
                     if not workflow.get("workflow_id"):
                         continue
                     status = str(workflow.get("status") or "").upper()
                     if status in _PLAUD_WORKFLOW_ACTIVE_STATUSES:
-                        targets.append((str(rec.recording_id), workflow))
+                        targets.append((str(chronos_rec.recording_id), workflow))
                     if len(targets) >= limit:
                         break
 
