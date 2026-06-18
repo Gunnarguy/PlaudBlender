@@ -7,7 +7,7 @@ legacy Recording/Segment logic.
 
 from datetime import datetime
 from typing import Any, List, Optional
-from sqlalchemy import and_, or_
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from .models import (
