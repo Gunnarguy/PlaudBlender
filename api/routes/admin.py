@@ -169,16 +169,16 @@ async def ensure_public_stack():
 @router.post("/stack/restart-public", response_model=StackControlResponse)
 async def restart_public_stack():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    command = (
-        f"cd {ROOT} && "
-        "(sleep 1; bash ./chronos stop; bash ./chronos start) "
-        f">> {LOG_DIR / 'admin-restart.log'} 2>&1"
-    )
+    log_file_path = LOG_DIR / "admin-restart.log"
+    log_file = open(log_file_path, "a")
     subprocess.Popen(
-        ["/bin/sh", "-c", command],
+        ["bash", "-c", "sleep 1; bash ./chronos stop; bash ./chronos start"],
         cwd=str(ROOT),
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
         start_new_session=True,
     )
+    log_file.close()
     return StackControlResponse(
         action="restart-public",
         status="scheduled",
