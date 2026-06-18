@@ -555,10 +555,23 @@ class PlaudOAuthClient:
 
         class CallbackHandler(BaseHTTPRequestHandler):
             def _send_cors_headers(self):
-                """Send CORS headers to allow cross-origin requests from Plaud."""
-                self.send_header("Access-Control-Allow-Origin", "*")
+                """Send CORS headers to allow cross-origin requests from Plaud securely."""
+                origin = self.headers.get('Origin')
+                allowed_origins = [
+                    "http://localhost:8050",
+                    "https://localhost:8050",
+                    "https://app.plaud.ai",
+                    "https://platform.plaud.ai",
+                    "https://api.plaud.ai"
+                ]
+                if origin in allowed_origins:
+                    self.send_header("Access-Control-Allow-Origin", origin)
+                else:
+                    # Provide a safe default fallback, or omit. For OAuth callbacks, often omitting is safer.
+                    # Let's provide a safe fallback just in case
+                    self.send_header("Access-Control-Allow-Origin", "https://app.plaud.ai")
                 self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "*")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
             def do_OPTIONS(self):
                 """Handle CORS preflight requests."""
