@@ -17,8 +17,6 @@ from src.config import get_settings
 from src.models.chronos_schemas import (
     ChronosEvent,
     GeminiEventOutput,
-    DayOfWeek,
-    EventCategory,
 )
 
 from src.chronos.genai_helpers import (
