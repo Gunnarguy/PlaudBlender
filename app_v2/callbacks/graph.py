@@ -1,6 +1,6 @@
 """Graph callbacks — node interaction with Plotly 3D scatter plots."""
 
-from dash import Input, Output, State, callback, ctx, html, no_update, ALL
+from dash import Input, Output, State, callback, ctx, html, ALL
 from dash.exceptions import PreventUpdate
 import logging
 
