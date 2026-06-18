@@ -111,12 +111,12 @@ if "--fix" in sys.argv:
     cur.execute(
         """
         UPDATE chronos_recordings
-        SET processing_status = 'pending', error_message = NULL
+        SET error_message = NULL
         WHERE processing_status = 'failed'
         AND (transcript IS NULL OR LENGTH(transcript) < 100)
     """
     )
-    print(f"  Reset {cur.rowcount} failed recordings without transcripts to 'pending'")
+    print(f"  Cleared errors for {cur.rowcount} failed recordings without transcripts")
 
     conn.commit()
 
