@@ -1,6 +1,6 @@
 """Graph callbacks — node interaction with Plotly 3D scatter plots."""
 
-from dash import Input, Output, State, callback, ctx, html, no_update, ALL
+from dash import Input, Output, State, callback, ctx, html, ALL
 from dash.exceptions import PreventUpdate
 import logging
 
@@ -33,7 +33,12 @@ def register_graph_callbacks(app):
         # Store keyword for the Find Recordings button
         clicked_keyword = label.split(" (")[0] if " (" in label else label
         count = node_data.get("count", node_data.get("mention_count", 0))
-        xray_log("graph", "node-tap", f"You clicked on '{label}' ({node_type})", detail=f"shows up {count} times")
+        xray_log(
+            "graph",
+            "node-tap",
+            f"You clicked on '{label}' ({node_type})",
+            detail=f"shows up {count} times",
+        )
         categories = node_data.get("categories", "")
         sentiment = node_data.get("sentiment")
         related = node_data.get("related_keywords", "")
@@ -188,7 +193,10 @@ def register_graph_callbacks(app):
             )
         )
 
-        return html.Div(className="node-detail-card", children=children), clicked_keyword
+        return (
+            html.Div(className="node-detail-card", children=children),
+            clicked_keyword,
+        )
 
     # ── Find recordings containing the clicked node's keyword ─────
     @app.callback(
@@ -233,7 +241,10 @@ def register_graph_callbacks(app):
                     id={"type": "graph-rec-click", "recording_id": rid},
                     n_clicks=0,
                     children=[
-                        html.Div(className="graph-rec-title", children=ev.title[:60] or "Untitled"),
+                        html.Div(
+                            className="graph-rec-title",
+                            children=ev.title[:60] or "Untitled",
+                        ),
                         html.Div(
                             className="graph-rec-meta",
                             children=[
@@ -251,7 +262,9 @@ def register_graph_callbacks(app):
         return html.Div(
             className="graph-recordings-list",
             children=[
-                html.H5(f"Recordings with '{keyword}'", className="graph-recordings-heading"),
+                html.H5(
+                    f"Recordings with '{keyword}'", className="graph-recordings-heading"
+                ),
                 *cards,
             ],
         )
@@ -276,6 +289,7 @@ def register_graph_callbacks(app):
             raise PreventUpdate
 
         from app_v2.services.xray import xray_log
+
         xray_log("graph", "select", f"Opening recording from knowledge graph")
 
         return recording_id
