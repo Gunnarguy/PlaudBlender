@@ -1,7 +1,6 @@
 """Clean orphan Qdrant points that no longer have matching SQLite events."""
 from sqlalchemy import create_engine, text
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import ScrollRequest
 
 e = create_engine("sqlite:///data/brain.db")
 q = QdrantClient(url="http://localhost:6333")
