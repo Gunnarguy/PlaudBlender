@@ -14,7 +14,6 @@ Refs:
 - API versions: https://ai.google.dev/gemini-api/docs/api-versions
 """
 
-from __future__ import annotations
 
 import logging
 from functools import lru_cache
