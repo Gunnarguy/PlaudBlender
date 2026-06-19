@@ -350,6 +350,9 @@ class ChronosEmbeddingService:
     ) -> List[List[float]]:
         embeddings: List[List[float]] = []
         from app_v2.services.xray import xray_log
+        
+        # Override batch size to a safe maximum for free tier API limits (10 items max)
+        batch_size = min(batch_size, 10)
 
         _batch_t0 = _time.perf_counter()
         _total_batches = (len(texts) + batch_size - 1) // batch_size
@@ -365,14 +368,27 @@ class ChronosEmbeddingService:
             )
             _bt0 = _time.perf_counter()
 
-            result = self.client.models.embed_content(
-                model=self.model_name,
-                contents=batch,
-                config=types.EmbedContentConfig(
-                    task_type=task_type,
-                    output_dimensionality=self.output_dim,
-                ),
-            )
+            # Retry loop to prevent infinite hang on 429 Rate Limits
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    result = self.client.models.embed_content(
+                        model=self.model_name,
+                        contents=batch,
+                        config=types.EmbedContentConfig(
+                            task_type=task_type,
+                            output_dimensionality=self.output_dim,
+                        ),
+                    )
+                    break
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        sleep_time = 2 ** attempt
+                        logger.warning(f"Gemini embedding batch {_batch_num} failed: {e}. Retrying in {sleep_time}s...")
+                        _time.sleep(sleep_time)
+                    else:
+                        logger.error(f"Gemini embedding batch {_batch_num} failed after {max_retries} attempts.")
+                        raise
 
             batch_embeddings = getattr(result, "embeddings", None) or []
             _bt_ms = (_time.perf_counter() - _bt0) * 1000

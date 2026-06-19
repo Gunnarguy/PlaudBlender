@@ -17,6 +17,8 @@ from src.config import get_settings
 from src.models.chronos_schemas import (
     ChronosEvent,
     GeminiEventOutput,
+    DayOfWeek,
+    EventCategory,
 )
 
 from src.chronos.genai_helpers import (
@@ -91,10 +93,11 @@ CHRONOS_CLEAN_PROMPT = """You are an expert cognitive editor processing a voice 
      * 0.4-0.7 = moderate (could be another category)
      * <0.4 = low confidence (ambiguous content)
 
-6. **SENTIMENT (OPTIONAL BUT ENCOURAGED)**
+6. **SENTIMENT (REQUIRED & NEUTRAL BANNED)**
    - Assign a sentiment score from -1.0 (very negative/frustrated) to 1.0 (very positive/excited)
-   - 0.0 = neutral
-   - Base this on tone, word choice, and energy level
+   - BANNED: You MUST NOT output exactly 0.0. A neutral score of 0.0 is strictly forbidden.
+   - Even mundane or professional tasks lean slightly positive (+0.1, productive) or negative (-0.1, tedious).
+   - Base this on tone, word choice, and energy level. You must take a stance.
 
 7. **KEYWORDS**
    - Extract 3-5 high-value, specific keywords that capture the concrete essence of this event.
