@@ -18,13 +18,13 @@ Run:
     uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 """
 
-from contextlib import asynccontextmanager
-import logging
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
+from contextlib import asynccontextmanager  # noqa: E402
+import logging  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
 
-from src.database import init_db
+from src.database import init_db  # noqa: E402
 
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ app.add_middleware(
         "http://localhost:8050",
         "http://localhost:8000",
     ],
-    allow_origin_regex=r"^http://(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.).*",
+    allow_origin_regex=r"^https?://(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
