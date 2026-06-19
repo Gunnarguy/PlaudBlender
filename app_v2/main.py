@@ -14,7 +14,6 @@ Run with: python -m app_v2.main
 import logging
 import os
 import platform
-import secrets
 import shutil
 import subprocess
 import threading
