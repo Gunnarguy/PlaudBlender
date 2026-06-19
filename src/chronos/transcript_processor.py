@@ -314,6 +314,35 @@ BROKEN_JSON:
             return EventCategory.REFLECTION.value
         return EventCategory.UNKNOWN.value
 
+    def _local_sentiment_for_text(self, text: str) -> float:
+        try:
+            from src.chronos.local_llm_service import LocalLLMService
+            llm = LocalLLMService()
+            if llm.status().get("ok"):
+                prompt = f"Analyze sentiment. Reply with ONLY a single float between -1.0 (negative) and 1.0 (positive). Text: {text[:1500]}"
+                result = llm.generate(prompt, task="classify", timeout=10.0)
+                try:
+                    score = float(result.get("output", "0").strip())
+                    if score == 0.0:
+                        score = 0.05
+                    return max(-1.0, min(1.0, score))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+            
+        # Fallback keyword sentiment
+        lowered = text.lower()
+        pos = sum(lowered.count(w) for w in ["good", "great", "awesome", "happy", "love", "nice", "success"])
+        neg = sum(lowered.count(w) for w in ["bad", "terrible", "awful", "sad", "hate", "fail", "error", "suck"])
+        
+        score = 0.05
+        if pos > neg:
+            score = min(1.0, 0.1 + (pos * 0.1))
+        elif neg > pos:
+            score = max(-1.0, -0.1 - (neg * 0.1))
+        return score
+
     @staticmethod
     def _local_keywords_for_text(text: str, limit: int = 8) -> list[str]:
         import re
@@ -500,11 +529,11 @@ BROKEN_JSON:
                     clean_text=clean_text,
                     category=self._local_category_for_text(clean_text),
                     category_confidence=0.45,
-                    sentiment=0.0,
+                    sentiment=self._local_sentiment_for_text(clean_text),
                     keywords=self._local_keywords_for_text(clean_text),
                     speaker="unknown",
                     raw_transcript_snippet=chunk[:500],
-                    gemini_reasoning="local deterministic transcript chunk; no Gemini/OpenAI call",
+                    gemini_reasoning="local deterministic transcript chunk + Ollama sentiment",
                 )
             )
 
