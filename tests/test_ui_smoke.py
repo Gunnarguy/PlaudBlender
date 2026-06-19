@@ -62,6 +62,16 @@ class TestDashApp:
 
         assert layout is not None
         assert hasattr(layout, "create_layout")
+    def test_create_layout_returns_valid_div(self):
+        """Verify create_layout returns a valid dash html.Div."""
+        from app_v2.layout import create_layout
+        from dash import html
+
+        layout = create_layout()
+        assert layout is not None
+        assert isinstance(layout, html.Div)
+        assert layout.className == "chronos-app"
+
 
     def test_components_import(self):
         """Verify all component modules can be imported."""
