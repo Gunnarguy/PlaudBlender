@@ -11,7 +11,6 @@ from sqlalchemy import (
     Text,
     DateTime,
     JSON,
-    LargeBinary,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
