@@ -137,28 +137,17 @@ class NotionService:
                 result = client.search(**kwargs)
 
                 for db in result.get("results", []):
-                    title_parts = db.get("title", [])
-                    title = "".join(t.get("plain_text", "") for t in title_parts) or "Untitled"
-                    desc_parts = db.get("description", [])
-                    desc = "".join(t.get("plain_text", "") for t in desc_parts)
                     icon_data = db.get("icon")
-                    icon = ""
-                    if icon_data:
-                        if icon_data.get("type") == "emoji":
-                            icon = icon_data.get("emoji", "")
-                        else:
-                            icon = "📁"
-
-                    prop_count = len(db.get("properties", {}))
+                    icon = icon_data.get("emoji", "") if icon_data and icon_data.get("type") == "emoji" else "📁"
 
                     databases.append({
                         "id": db["id"],
-                        "title": title,
-                        "description": desc,
+                        "title": "".join(t.get("plain_text", "") for t in db.get("title", [])) or "Untitled",
+                        "description": "".join(t.get("plain_text", "") for t in db.get("description", [])),
                         "icon": icon or "📁",
                         "last_edited": db.get("last_edited_time", ""),
                         "url": db.get("url", ""),
-                        "property_count": prop_count,
+                        "property_count": len(db.get("properties", {})),
                     })
 
                 if not result.get("has_more"):
