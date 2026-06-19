@@ -566,10 +566,6 @@ class PlaudOAuthClient:
                 ]
                 if origin in allowed_origins:
                     self.send_header("Access-Control-Allow-Origin", origin)
-                else:
-                    # Provide a safe default fallback, or omit. For OAuth callbacks, often omitting is safer.
-                    # Let's provide a safe fallback just in case
-                    self.send_header("Access-Control-Allow-Origin", "https://app.plaud.ai")
                 self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
                 self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
