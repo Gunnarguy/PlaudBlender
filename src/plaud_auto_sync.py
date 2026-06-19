@@ -14,7 +14,6 @@ Usage:
     sync_service.start()
 """
 
-import os
 import logging
 import threading
 import subprocess
