@@ -211,10 +211,12 @@ final class APIClient: Sendable {
         query: [String: String] = [:],
         timeoutInterval: TimeInterval? = nil
     ) throws -> URLRequest {
-        guard var components = URLComponents(
-            url: baseURL.appendingPathComponent(path),
-            resolvingAgainstBaseURL: false
-        ) else {
+        let cleanBase = baseURL.absoluteString
+        let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        let fullURLString = cleanBase.hasSuffix("/") ? "\(cleanBase)\(cleanPath)" : "\(cleanBase)/\(cleanPath)"
+
+        guard let url = URL(string: fullURLString),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             throw APIError.invalidURL(path)
         }
         if !query.isEmpty {
@@ -356,7 +358,9 @@ final class APIClient: Sendable {
     }
 
     private func checkHealth(at serverURL: String) async -> Bool {
-        guard let url = URL(string: serverURL)?.appendingPathComponent("/api/v1/health") else {
+        let cleanBase = serverURL
+        let fullURLString = cleanBase.hasSuffix("/") ? "\(cleanBase)api/v1/health" : "\(cleanBase)/api/v1/health"
+        guard let url = URL(string: fullURLString) else {
             return false
         }
 
