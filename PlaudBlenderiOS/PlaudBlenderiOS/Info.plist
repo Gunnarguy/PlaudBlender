@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>ChronosServerURL</key>
-	<string>https://your-ngrok-domain.ngrok-free.dev</string>
+	<string>http://100.76.130.109:8000</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>PlaudBlender connects to your Chronos server on your local network or via Tailscale VPN.</string>
 	<key>NSAppTransportSecurity</key>
@@ -12,7 +12,7 @@
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
-			<key>your-pi-tailscale-ip</key>
+			<key>100.76.130.109</key>
 			<dict>
 				<key>NSExceptionAllowsInsecureHTTPLoads</key>
 				<true/>

@@ -34,7 +34,7 @@ async def get_stats(svc: ChronosDataService = Depends(get_service)):
         total_days=getattr(stats, "total_days", 0),
         total_duration_hours=getattr(stats, "total_duration_hours", 0.0),
         categories=getattr(stats, "categories", {}),
-        sentiment_avg=getattr(stats, "sentiment_avg", None),
+        sentiment_avg=getattr(stats, "avg_sentiment", None),
         top_keywords=[
             {"keyword": kw, "count": ct}
             for kw, ct in (getattr(stats, "top_keywords", None) or [])

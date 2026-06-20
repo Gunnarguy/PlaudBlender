@@ -27,11 +27,11 @@ final class AuthManager: Sendable {
     }
     /// Pi's stable Tailscale IP fallback when MagicDNS is unavailable on the client.
     private static var piTailscaleURL: String {
-        overrides["piTailscaleURL"] ?? "http://100.x.y.z:8000"
+        overrides["piTailscaleURL"] ?? "http://100.76.130.109:8000"
     }
     /// Pi's known LAN IP for fast local access on home Wi-Fi.
     private static var piLanURL: String {
-        overrides["piLanURL"] ?? "http://10.x.y.z:8000"
+        overrides["piLanURL"] ?? "http://10.0.0.170:8000"
     }
     /// Legacy Mac-local recovery URL from earlier debugging sessions.
     private static var legacyMacRecoveryHost: String {
@@ -43,7 +43,7 @@ final class AuthManager: Sendable {
     }
     /// Reserved ngrok tunnel — public fallback backend URL for the Pi API.
     private static var ngrokURL: String {
-        overrides["ngrokURL"] ?? "https://your-ngrok-domain.ngrok-free.dev"
+        overrides["ngrokURL"] ?? "https://glairy-ona-irreplaceable.ngrok-free.dev"
     }
 
     /// Default server URL — uses Info.plist value (ngrok), then falls back.

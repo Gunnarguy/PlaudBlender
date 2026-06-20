@@ -320,9 +320,15 @@ BROKEN_JSON:
             llm = LocalLLMService()
             if llm.status().get("ok"):
                 prompt = f"Analyze sentiment. Reply with ONLY a single float between -1.0 (negative) and 1.0 (positive). Text: {text[:1500]}"
-                result = llm.generate(prompt, task="classify", timeout=10.0)
+                result = llm.generate(prompt, task="classify", timeout=30.0)
                 try:
-                    score = float(result.get("output", "0").strip())
+                    import re
+                    out = result.get("output", "0")
+                    match = re.search(r'-?\d+\.?\d*', out)
+                    if match:
+                        score = float(match.group())
+                    else:
+                        score = 0.05
                     if score == 0.0:
                         score = 0.05
                     return max(-1.0, min(1.0, score))
