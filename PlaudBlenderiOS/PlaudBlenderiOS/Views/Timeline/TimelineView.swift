@@ -25,6 +25,11 @@ struct TimelineView: View {
             .navigationTitle("Timeline")
             .refreshable { await viewModel.refresh() }
             .task { await viewModel.loadDays() }
+            .onChange(of: viewModel.api.isServerReachable) { _, reachable in
+                if reachable && viewModel.days.isEmpty {
+                    Task { await viewModel.loadDays() }
+                }
+            }
             .navigationDestination(for: String.self) { recordingId in
                 RecordingDetailContainerView(recordingId: recordingId)
             }

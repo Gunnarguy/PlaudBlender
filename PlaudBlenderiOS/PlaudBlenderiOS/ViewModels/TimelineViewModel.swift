@@ -10,7 +10,7 @@ final class TimelineViewModel {
     var hasMorePages = true
     var error: String?
 
-    private let api: APIClient
+    let api: APIClient
     private let pageSize = 50
     private var nextRawOffset = 0
 
