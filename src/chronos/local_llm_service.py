@@ -5,11 +5,8 @@ observability. The service is disabled by default and every decision is visible
 through X-Ray/trace metadata.
 """
 
-from __future__ import annotations
-
 import json
 import logging
-import urllib.error
 import urllib.request
 from typing import Any, Optional
 
@@ -26,14 +23,28 @@ class LocalLLMService:
         self.settings = settings or get_settings()
         self.enabled = bool(getattr(self.settings, "chronos_local_llm_enabled", False))
         self.provider = (
-            getattr(self.settings, "chronos_local_llm_provider", "ollama") or "ollama"
-        ).strip().lower()
+            (getattr(self.settings, "chronos_local_llm_provider", "ollama") or "ollama")
+            .strip()
+            .lower()
+        )
         self.base_url = (
-            getattr(self.settings, "chronos_local_llm_base_url", "http://127.0.0.1:11434")
-            or "http://127.0.0.1:11434"
-        ).strip().rstrip("/")
-        self.model = (getattr(self.settings, "chronos_local_llm_model", "") or "").strip()
-        self.max_context = int(getattr(self.settings, "chronos_local_llm_max_context", 4096) or 4096)
+            (
+                getattr(
+                    self.settings,
+                    "chronos_local_llm_base_url",
+                    "http://127.0.0.1:11434",
+                )
+                or "http://127.0.0.1:11434"
+            )
+            .strip()
+            .rstrip("/")
+        )
+        self.model = (
+            getattr(self.settings, "chronos_local_llm_model", "") or ""
+        ).strip()
+        self.max_context = int(
+            getattr(self.settings, "chronos_local_llm_max_context", 4096) or 4096
+        )
         raw_tasks = getattr(
             self.settings,
             "chronos_local_llm_allowed_tasks",
@@ -62,7 +73,9 @@ class LocalLLMService:
             headers=headers,
             method=method,
         )
-        with urllib.request.urlopen(req, timeout=timeout) as response:  # nosec - local configurable endpoint
+        with urllib.request.urlopen(
+            req, timeout=timeout
+        ) as response:  # nosec - local configurable endpoint
             body = response.read().decode("utf-8", errors="replace")
         if not body.strip():
             return {}
@@ -86,8 +99,16 @@ class LocalLLMService:
         try:
             if self.provider == "ollama":
                 data = self._request_json("GET", "/api/tags", timeout=3.0)
-                models = [m.get("name") for m in data.get("models", []) if m.get("name")]
-                base.update({"ok": True, "models": models, "model_available": self.model in models})
+                models = [
+                    m.get("name") for m in data.get("models", []) if m.get("name")
+                ]
+                base.update(
+                    {
+                        "ok": True,
+                        "models": models,
+                        "model_available": self.model in models,
+                    }
+                )
             else:
                 # llama.cpp server usually exposes /health or OpenAI-compatible /v1/models.
                 try:
@@ -109,10 +130,18 @@ class LocalLLMService:
             return False, f"task '{normalized}' is not allowed locally"
         approx_tokens = max(1, int(len(prompt.split()) * 1.3))
         if approx_tokens > self.max_context:
-            return False, f"prompt too large for local context ({approx_tokens}>{self.max_context})"
+            return (
+                False,
+                f"prompt too large for local context ({approx_tokens}>{self.max_context})",
+            )
         status = self.status()
         if not status.get("ok"):
-            return False, status.get("error") or status.get("detail") or "local runtime unavailable"
+            return (
+                False,
+                status.get("error")
+                or status.get("detail")
+                or "local runtime unavailable",
+            )
         return True, "ok"
 
     def generate(
@@ -161,7 +190,11 @@ class LocalLLMService:
                         "model": self.model,
                         "prompt": prompt,
                         "stream": False,
-                        "options": {"temperature": temperature, "num_ctx": 2048, "num_thread": 4},
+                        "options": {
+                            "temperature": temperature,
+                            "num_ctx": 2048,
+                            "num_thread": 4,
+                        },
                     },
                     timeout=timeout,
                 )
@@ -186,8 +219,13 @@ class LocalLLMService:
             text = ""
             choices = data.get("choices") or []
             if choices:
-                text = ((choices[0].get("message") or {}).get("content") or "")
-            return {"text": text, "model": self.model, "provider": self.provider, "raw": data}
+                text = (choices[0].get("message") or {}).get("content") or ""
+            return {
+                "text": text,
+                "model": self.model,
+                "provider": self.provider,
+                "raw": data,
+            }
 
     def embed(
         self,
@@ -224,5 +262,7 @@ class LocalLLMService:
             embedding = legacy.get("embedding") or []
             embeddings = [embedding] if embedding else []
         if not embeddings:
-            raise RuntimeError(f"local embedding model {requested_model} returned no vectors")
+            raise RuntimeError(
+                f"local embedding model {requested_model} returned no vectors"
+            )
         return [list(vector) for vector in embeddings]
