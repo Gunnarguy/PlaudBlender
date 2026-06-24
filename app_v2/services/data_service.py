@@ -748,7 +748,7 @@ class ChronosDataService:
                 offset = None
                 _scroll_t0 = _time.perf_counter()
                 _scroll_pages = 0
-                xray_log("data", "cache-miss", f"Grabbing all your recordings…")
+                xray_log("data", "cache-miss", "Grabbing all your recordings…")
 
                 while True:
                     response = self._qdrant.client.scroll(
@@ -1259,7 +1259,7 @@ class ChronosDataService:
             try:
                 dt = datetime.strptime(day_key, "%Y-%m-%d")
                 date_display = dt.strftime("%A, %b %d")  # "Wednesday, Oct 29"
-            except:
+            except Exception:
                 date_display = day_key
 
             # Build one-line AI summary from pre-loaded summaries
@@ -2003,7 +2003,7 @@ class ChronosDataService:
             xray_log(
                 "search",
                 "embed",
-                f"Turned your search into numbers so the computer can match it",
+                "Turned your search into numbers so the computer can match it",
                 duration_ms=round(_embed_ms, 1),
             )
 
@@ -2583,16 +2583,25 @@ class ChronosDataService:
                     .all()
                 )
 
+                legacy_by_id: Dict[str, _RecordingModel] = {}
+                if recent:
+                    legacy_rows = (
+                        db.query(_RecordingModel)
+                        .filter(
+                            _RecordingModel.id.in_(
+                                [str(rec.recording_id) for rec in recent]
+                            )
+                        )
+                        .all()
+                    )
+                    legacy_by_id = {str(rec.id): rec for rec in legacy_rows}
+
                 candidates: List[_ChronosRecordingModel] = []
                 for rec in recent:
                     # Check new columns first, then fall back to legacy
                     workflow_status = str(rec.plaud_workflow_status or "").upper()
                     if not workflow_status:
-                        legacy = (
-                            db.query(_RecordingModel)
-                            .filter_by(id=str(rec.recording_id))
-                            .first()
-                        )
+                        legacy = legacy_by_id.get(str(rec.recording_id))
                         workflow = self._get_workflow_metadata(legacy)
                         workflow_status = str(workflow.get("status") or "").upper()
 
