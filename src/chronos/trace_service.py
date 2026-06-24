@@ -5,8 +5,6 @@ pipeline a single vocabulary for "what ran what" while also bridging every span
 back into the existing X-Ray UI stream.
 """
 
-from __future__ import annotations
-
 import contextvars
 import hashlib
 import os
@@ -264,6 +262,7 @@ def trace_span(
     except Exception as exc:
         elapsed = round(handle.elapsed_ms(), 1)
         err = str(exc)[:500]
+        exc_type = exc.__class__.__name__
 
         def _persist_error(session):
             from src.database.chronos_repository import finish_execution_span
@@ -274,7 +273,7 @@ def trace_span(
                 status="failed",
                 level="error",
                 error_message=err,
-                metadata={"exception_type": exc.__class__.__name__},
+                metadata={"exception_type": exc_type},
             )
 
         _with_session(_persist_error)
