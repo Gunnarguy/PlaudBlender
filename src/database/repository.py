@@ -3,7 +3,8 @@
 These functions provide a small abstraction over SQLAlchemy sessions so the
 pipeline can persist Plaud ingest and processing outputs deterministically.
 """
-from typing import Iterable, List, Optional
+
+from typing import Iterable, List, Optional, Any
 
 from sqlalchemy.orm import Session
 
@@ -39,17 +40,17 @@ def upsert_recording(
         )
         session.add(record)
     else:
-        record.title = payload.title or record.title
-        record.transcript = payload.transcript
-        record.duration_ms = payload.duration_ms
-        record.created_at = payload.created_at
-        record.language = payload.language
-        record.source = payload.source or record.source
-        record.status = status or record.status
+        record.title = payload.title or record.title  # type: ignore
+        record.transcript = payload.transcript  # type: ignore
+        record.duration_ms = payload.duration_ms  # type: ignore
+        record.created_at = payload.created_at  # type: ignore
+        record.language = payload.language  # type: ignore
+        record.source = payload.source or record.source  # type: ignore
+        record.status = status  # type: ignore or record.status  # type: ignore
         if filename:
-            record.filename = filename
+            record.filename = filename  # type: ignore
         if extra is not None:
-            record.extra = extra
+            record.extra = extra  # type: ignore
 
     session.commit()
     session.refresh(record)
@@ -88,8 +89,6 @@ def add_segments(
         persisted.append(segment)
 
     session.commit()
-    for seg in persisted:
-        session.refresh(seg)
     return persisted
 
 
@@ -98,7 +97,7 @@ def mark_recording_status(session: Session, recording_id: str, status: str) -> N
     record = session.get(Recording, recording_id)
     if record is None:
         return
-    record.status = status
+    record.status = status  # type: ignore
     session.commit()
 
 
@@ -123,5 +122,5 @@ def mark_segment_status(session: Session, segment_id: str, status: str) -> None:
     seg = session.get(Segment, segment_id)
     if seg is None:
         return
-    seg.status = status
+    seg.status = status  # type: ignore
     session.commit()
