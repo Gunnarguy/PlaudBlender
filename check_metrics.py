@@ -1,10 +1,9 @@
 from google.cloud import monitoring_v3
 from google.protobuf.timestamp_pb2 import Timestamp
 import time
-import os
 
 client = monitoring_v3.MetricServiceClient()
-project_name = f"projects/composed-facet-360120"
+project_name = "projects/composed-facet-360120"
 
 now = time.time()
 start = Timestamp()
