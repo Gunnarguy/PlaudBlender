@@ -30,7 +30,6 @@ from .plaud_usb_watcher import (
     PlaudUSBWatcher,
     USBPlaudDevice,
     get_usb_watcher,
-    start_watcher,
 )
 from .plaud_webhook import PlaudEvent, PlaudEventType
 from .config import get_settings
