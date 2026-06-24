@@ -16,7 +16,6 @@ Usage:
     watcher.start()
 """
 
-import os
 import time
 import logging
 import threading
@@ -68,6 +67,7 @@ class USBPlaudDevice:
     audio_file_count: int = 0
     total_audio_size_mb: float = 0.0
     recording_folders: List[str] = field(default_factory=list)
+    _cached_audio_files: List[Path] = field(default_factory=list)
 
     def __post_init__(self):
         """Scan device after initialization."""
@@ -78,6 +78,7 @@ class USBPlaudDevice:
         self.audio_file_count = 0
         self.total_audio_size_mb = 0.0
         self.recording_folders = []
+        self._cached_audio_files = []
 
         try:
             # Look for recording folders
@@ -91,6 +92,7 @@ class USBPlaudDevice:
                             audio_file.is_file()
                             and audio_file.suffix.lower() in AUDIO_EXTENSIONS
                         ):
+                            self._cached_audio_files.append(audio_file)
                             self.audio_file_count += 1
                             self.total_audio_size_mb += (
                                 audio_file.stat().st_size / 1024 / 1024
@@ -109,17 +111,9 @@ class USBPlaudDevice:
 
     def list_audio_files(self) -> List[Path]:
         """Get all audio files on the device."""
-        files = []
-        for folder_name in self.recording_folders:
-            folder_path = self.volume_path / folder_name
-            if folder_path.exists():
-                for audio_file in folder_path.rglob("*"):
-                    if (
-                        audio_file.is_file()
-                        and audio_file.suffix.lower() in AUDIO_EXTENSIONS
-                    ):
-                        files.append(audio_file)
-        return sorted(files, key=lambda f: f.stat().st_mtime, reverse=True)
+        return sorted(
+            self._cached_audio_files, key=lambda f: f.stat().st_mtime, reverse=True
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -162,10 +156,12 @@ class PlaudUSBWatcher:
         """
         if not volumes_path:
             import sys as _sys
+
             if _sys.platform == "darwin":
                 volumes_path = "/Volumes"
             else:
                 import getpass
+
                 volumes_path = f"/media/{getpass.getuser()}"
         self.volumes_path = Path(volumes_path)
         self.poll_interval = poll_interval
@@ -398,7 +394,7 @@ if __name__ == "__main__":
     watcher = PlaudUSBWatcher()
 
     def on_connect(device: USBPlaudDevice):
-        print(f"\n✅ Device Connected!")
+        print("\n✅ Device Connected!")
         print(f"   Volume: {device.volume_name}")
         print(f"   Type: {device.device_type.value}")
         print(f"   Audio files: {device.audio_file_count}")
