@@ -125,6 +125,9 @@ class KnowledgeGraph:
 
     entities: Dict[str, Entity] = field(default_factory=dict)
     relationships: List[Relationship] = field(default_factory=list)
+    _adjacency: Dict[str, List[Relationship]] = field(
+        default_factory=dict, init=False, repr=False
+    )
     document_entities: Dict[str, Set[str]] = field(
         default_factory=dict
     )  # doc_id -> entity_ids
@@ -144,15 +147,24 @@ class KnowledgeGraph:
     def add_relationship(self, rel: Relationship) -> None:
         """Add a relationship (allows duplicates, increments weight)."""
         # Check for existing relationship
-        for existing in self.relationships:
+        for existing in self._adjacency.get(rel.source_id, []):
             if (
-                existing.source_id == rel.source_id
-                and existing.target_id == rel.target_id
+                existing.target_id == rel.target_id
                 and existing.relation_type == rel.relation_type
             ):
                 existing.weight += rel.weight
                 return
         self.relationships.append(rel)
+
+        # Add to adjacency list
+        if rel.source_id not in self._adjacency:
+            self._adjacency[rel.source_id] = []
+        self._adjacency[rel.source_id].append(rel)
+
+        if rel.target_id not in self._adjacency:
+            self._adjacency[rel.target_id] = []
+        if rel.target_id != rel.source_id:  # avoid duplicating self-loops
+            self._adjacency[rel.target_id].append(rel)
 
     def link_document(self, doc_id: str, entity_ids: List[str]) -> None:
         """Link a document to its extracted entities."""
@@ -171,7 +183,7 @@ class KnowledgeGraph:
     def get_entity_neighbors(self, entity_id: str) -> List[Tuple[Entity, Relationship]]:
         """Get all entities connected to a given entity."""
         neighbors = []
-        for rel in self.relationships:
+        for rel in self._adjacency.get(entity_id, []):
             if rel.source_id == entity_id:
                 target = self.entities.get(rel.target_id)
                 if target:
@@ -268,7 +280,10 @@ Return ONLY the JSON object, no other text."""
         """
         self.settings = get_settings()
         provider = (
-            (getattr(self.settings, "chronos_processing_provider", "gemini") or "gemini")
+            (
+                getattr(self.settings, "chronos_processing_provider", "gemini")
+                or "gemini"
+            )
             .strip()
             .lower()
         )
@@ -278,9 +293,13 @@ Return ONLY the JSON object, no other text."""
 
         if llm is None:
             if self._provider == "gemini":
-                self.min_interval = max(60.0 / float(os.getenv("GEMINI_MAX_RPM", "10")), 0) + 0.5
+                self.min_interval = (
+                    max(60.0 / float(os.getenv("GEMINI_MAX_RPM", "10")), 0) + 0.5
+                )
                 if not self.settings.gemini_api_key:
-                    logger.warning("CHRONOS_GEMINI_API_KEY not set; entity extraction disabled")
+                    logger.warning(
+                        "CHRONOS_GEMINI_API_KEY not set; entity extraction disabled"
+                    )
                     self.llm = None
                 else:
                     self._gemini_client = get_genai_client()
@@ -297,7 +316,9 @@ Return ONLY the JSON object, no other text."""
                     from openai import OpenAI
 
                     self._openai_client = OpenAI(api_key=api_key)
-                    self._openai_model = os.getenv("CHRONOS_CLEANING_MODEL", "gpt-4.1-mini")
+                    self._openai_model = os.getenv(
+                        "CHRONOS_CLEANING_MODEL", "gpt-4.1-mini"
+                    )
                     self.llm = self._make_openai_wrapper()
         else:
             self.llm = llm
@@ -305,7 +326,9 @@ Return ONLY the JSON object, no other text."""
         logger.info("✅ EntityExtractor initialized")
 
     def _select_gemini_model(self) -> str:
-        configured = (getattr(self.settings, "chronos_cleaning_model", "") or "").strip()
+        configured = (
+            getattr(self.settings, "chronos_cleaning_model", "") or ""
+        ).strip()
         if configured.startswith("models/"):
             configured = configured.split("/", 1)[1]
 
@@ -338,7 +361,9 @@ Return ONLY the JSON object, no other text."""
                 return _CompletionResult(
                     text=response.choices[0].message.content or "",
                     input_tokens=getattr(usage, "prompt_tokens", 0) if usage else 0,
-                    output_tokens=getattr(usage, "completion_tokens", 0) if usage else 0,
+                    output_tokens=(
+                        getattr(usage, "completion_tokens", 0) if usage else 0
+                    ),
                 )
 
         return _OpenAIWrapper()
@@ -364,8 +389,12 @@ Return ONLY the JSON object, no other text."""
                 usage = getattr(response, "usage_metadata", None)
                 return _CompletionResult(
                     text=(getattr(response, "text", "") or ""),
-                    input_tokens=getattr(usage, "prompt_token_count", 0) if usage else 0,
-                    output_tokens=getattr(usage, "candidates_token_count", 0) if usage else 0,
+                    input_tokens=(
+                        getattr(usage, "prompt_token_count", 0) if usage else 0
+                    ),
+                    output_tokens=(
+                        getattr(usage, "candidates_token_count", 0) if usage else 0
+                    ),
                 )
 
         return _GeminiWrapper()
