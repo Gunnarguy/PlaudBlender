@@ -4,8 +4,6 @@ Keeps the OpenAI-first/Gemini-fallback behavior consistent across the Dash UI,
 REST API, and MCP tool.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any, Optional
 
@@ -77,7 +75,9 @@ class ChronosAskService:
         return f"{header}\n{text}".strip()
 
     def _select_gemini_model(self, model_override: Optional[str] = None) -> str:
-        configured = (model_override or getattr(self.settings, "chronos_analyst_model", "") or "").strip()
+        configured = (
+            model_override or getattr(self.settings, "chronos_analyst_model", "") or ""
+        ).strip()
         if configured.startswith("models/"):
             configured = configured.split("/", 1)[1]
 
@@ -152,10 +152,16 @@ Answer using only the evidence above. If the evidence is thin or missing, say so
                     "fallback_from": "openai",
                 },
                 "usage": {
-                    "input_tokens": getattr(usage, "prompt_token_count", 0) if usage else 0,
-                    "output_tokens": getattr(usage, "candidates_token_count", 0) if usage else 0,
+                    "input_tokens": (
+                        getattr(usage, "prompt_token_count", 0) if usage else 0
+                    ),
+                    "output_tokens": (
+                        getattr(usage, "candidates_token_count", 0) if usage else 0
+                    ),
                     "reasoning_tokens": 0,
-                    "total_tokens": getattr(usage, "total_token_count", 0) if usage else 0,
+                    "total_tokens": (
+                        getattr(usage, "total_token_count", 0) if usage else 0
+                    ),
                 },
             }
         except Exception as exc:
@@ -199,7 +205,9 @@ Question: {question}
 Answer:"""
             result = local.generate(prompt, task="ask", temperature=0.0, timeout=180.0)
             if result.get("skipped"):
-                return {"error": f"Local LLM skipped: {result.get('reason', 'unknown reason')}"}
+                return {
+                    "error": f"Local LLM skipped: {result.get('reason', 'unknown reason')}"
+                }
 
             answer = (result.get("text") or "").strip()
             if not answer:
@@ -207,11 +215,13 @@ Answer:"""
 
             return {
                 "answer": answer,
-                "model": result.get("model") or getattr(self.settings, "chronos_local_llm_model", "local"),
+                "model": result.get("model")
+                or getattr(self.settings, "chronos_local_llm_model", "local"),
                 "response_id": None,
                 "reasoning_summary": None,
                 "config": {
-                    "provider": result.get("provider") or getattr(self.settings, "chronos_local_llm_provider", "local"),
+                    "provider": result.get("provider")
+                    or getattr(self.settings, "chronos_local_llm_provider", "local"),
                     "local_degraded": True,
                     "evidence_blocks_used": len(blocks),
                 },
@@ -257,7 +267,9 @@ Answer:"""
             )
             if "error" not in gemini_result:
                 return gemini_result
-            if not self._openai.available or not self._allows_openai_fallback(requested_model):
+            if not self._openai.available or not self._allows_openai_fallback(
+                requested_model
+            ):
                 local_result = self._ask_with_local(
                     question,
                     context_events,
