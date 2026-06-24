@@ -1,7 +1,9 @@
 import sys
-if sys.platform in ('linux', 'darwin'):
+
+if sys.platform in ("linux", "darwin"):
     try:
         import uvloop
+
         uvloop.install()
     except ImportError:
         pass
@@ -25,7 +27,6 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
 
 from src.database import init_db  # noqa: E402
-
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +71,8 @@ app.add_middleware(
     ],
     allow_origin_regex=r"^https?://(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # ── Register routers ────────────────────────────────────────
