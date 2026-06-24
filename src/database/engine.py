@@ -6,6 +6,7 @@ project root in `data/brain.db`.
 """
 
 import os
+import re
 from typing import Generator, Optional
 
 from sqlalchemy import create_engine, text
@@ -76,12 +77,18 @@ def _ensure_sqlite_additive_schema(eng: Engine) -> None:
     """
 
     def _columns_for(table: str) -> set[str]:
+        if not re.match(r"^[a-zA-Z0-9_]+$", table):
+            raise ValueError(f"Invalid table name: {table}")
         with eng.connect() as conn:
             rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
         # PRAGMA table_info: (cid, name, type, notnull, dflt_value, pk)
         return {str(r[1]) for r in rows}
 
     def _add_column(table: str, column_sql: str) -> None:
+        if not re.match(r"^[a-zA-Z0-9_]+$", table):
+            raise ValueError(f"Invalid table name: {table}")
+        if not re.match(r"^[a-zA-Z0-9_ ]+$", column_sql):
+            raise ValueError(f"Invalid column definition: {column_sql}")
         with eng.connect() as conn:
             conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column_sql}"))
             conn.commit()
@@ -130,10 +137,12 @@ def _ensure_sqlite_additive_schema(eng: Engine) -> None:
 
         # Ensure indexes exist for frequently-queried columns
         with eng.connect() as conn:
-            conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_chronos_events_recording_id "
-                "ON chronos_events (recording_id)"
-            ))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_chronos_events_recording_id "
+                    "ON chronos_events (recording_id)"
+                )
+            )
             conn.commit()
     except Exception:
         # Never block app startup due to a best-effort migration.
