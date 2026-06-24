@@ -24,7 +24,6 @@ from src.database.chronos_repository import (
     upsert_chronos_recording,
     get_chronos_recording,
 )
-from src.models.chronos_schemas import ChronosRecording as ChronosRecordingSchema
 
 logger = logging.getLogger(__name__)
 _RECENT_WINDOW_MAX_PAGES = 12
@@ -61,7 +60,9 @@ class ChronosIngestService:
         self.last_batch_warnings = []
         self.last_batch_partial_success = False
 
-    def _remember_batch_warning(self, message: str, *, partial_success: bool = False) -> None:
+    def _remember_batch_warning(
+        self, message: str, *, partial_success: bool = False
+    ) -> None:
         text = (message or "").strip()
         if not text:
             return
@@ -310,7 +311,7 @@ class ChronosIngestService:
                 )
             else:
                 logger.debug(f"Recording {recording_id} already ingested, skipping")
-                xray_log("ingest", "skip", f"Already have this one, skipping")
+                xray_log("ingest", "skip", "Already have this one, skipping")
             return (True, None)
 
         if not download_url:
@@ -383,12 +384,18 @@ class ChronosIngestService:
             logger.error("Failed to fetch Plaud recording %s: %s", recording_id, e)
             return (False, str(e))
 
-        if not isinstance(record, dict) or str(record.get("id") or "").strip() != recording_id:
+        if (
+            not isinstance(record, dict)
+            or str(record.get("id") or "").strip() != recording_id
+        ):
             return (False, f"Plaud returned invalid data for recording {recording_id}")
 
-        created_at = self._comparison_timestamp(
-            record.get("start_at") or record.get("created_at")
-        ) or datetime.utcnow()
+        created_at = (
+            self._comparison_timestamp(
+                record.get("start_at") or record.get("created_at")
+            )
+            or datetime.utcnow()
+        )
 
         return self.ingest_recording(
             recording_id=recording_id,
@@ -429,6 +436,7 @@ class ChronosIngestService:
             Tuple[int, int]: (success_count, failure_count)
         """
         from app_v2.services.xray import xray_log
+
         self._reset_batch_state()
         logger.info(
             "Fetching recordings "
@@ -463,7 +471,9 @@ class ChronosIngestService:
         success_count = 0
         failure_count = 0
 
-        def _ingest_records(records: List[dict], *, start_index: int = 1) -> Tuple[int, int]:
+        def _ingest_records(
+            records: List[dict], *, start_index: int = 1
+        ) -> Tuple[int, int]:
             page_success = 0
             page_failure = 0
 
@@ -559,9 +569,7 @@ class ChronosIngestService:
                         if total_fetched == 0:
                             raise
 
-                        warning_message = (
-                            f"Plaud rate-limited the deep backfill after {total_fetched} recordings — keeping what we already fetched"
-                        )
+                        warning_message = f"Plaud rate-limited the deep backfill after {total_fetched} recordings — keeping what we already fetched"
 
                         logger.warning(
                             "Stopping full-history Plaud scan after %s pages (%s recordings fetched): %s",
@@ -586,14 +594,10 @@ class ChronosIngestService:
                         break
 
                     page_signature = tuple(
-                        str(rec.get("id"))
-                        for rec in page_records
-                        if rec.get("id")
+                        str(rec.get("id")) for rec in page_records if rec.get("id")
                     )
                     if page_signature and page_signature in seen_page_signatures:
-                        warning_message = (
-                            "Plaud started repeating the same page, so the deep backfill stopped before looping forever"
-                        )
+                        warning_message = "Plaud started repeating the same page, so the deep backfill stopped before looping forever"
                         logger.warning(
                             "Stopping full-history Plaud scan at page %s because the API repeated an earlier page (%s records)",
                             page,
@@ -657,10 +661,11 @@ class ChronosIngestService:
                     pages_fetched,
                     stop_reason,
                 )
-                if "repeated an earlier Plaud page" in stop_reason or "page budget" in stop_reason:
-                    warning_message = (
-                        "Plaud repeated page 1 instead of giving later results, so recent days may be incomplete"
-                    )
+                if (
+                    "repeated an earlier Plaud page" in stop_reason
+                    or "page budget" in stop_reason
+                ):
+                    warning_message = "Plaud repeated page 1 instead of giving later results, so recent days may be incomplete"
                     xray_log(
                         "ingest",
                         "plaud-api",
@@ -679,7 +684,11 @@ class ChronosIngestService:
             else:
                 # Single page fetch (most recent N only, max 20 per API)
                 page_size = min(limit, 20) if limit else 20
-                xray_log("ingest", "plaud-api", f"Asking Plaud for your newest {page_size} recordings")
+                xray_log(
+                    "ingest",
+                    "plaud-api",
+                    f"Asking Plaud for your newest {page_size} recordings",
+                )
                 recordings = self.plaud.list_recordings(page=1, page_size=page_size)
                 page_success, page_failure = _ingest_records(recordings)
                 success_count += page_success
@@ -692,21 +701,32 @@ class ChronosIngestService:
                 (
                     f"Fetched Plaud recording {recording_id} directly"
                     if recording_id
-                    else f"Plaud returned {recordings_count} recordings from your full history"
-                    if all_history
-                    else f"Plaud returned {recordings_count} recordings inside the sync window"
+                    else (
+                        f"Plaud returned {recordings_count} recordings from your full history"
+                        if all_history
+                        else f"Plaud returned {recordings_count} recordings inside the sync window"
+                    )
                 ),
                 duration_ms=round(_api_ms, 1),
             )
         except Exception as e:
-            xray_log("ingest", "plaud-api", f"Can't reach Plaud right now: {str(e)[:60]}", level="error")
+            xray_log(
+                "ingest",
+                "plaud-api",
+                f"Can't reach Plaud right now: {str(e)[:60]}",
+                level="error",
+            )
             logger.error(f"Failed to fetch from Plaud API: {e}")
             raise
 
         _batch_ms = (_time.perf_counter() - _t0) * 1000
-        xray_log("ingest", "done",
-                 f"All done — picked up {success_count} new recordings" + (f" ({failure_count} had issues)" if failure_count else ""),
-                 duration_ms=round(_batch_ms, 1))
+        xray_log(
+            "ingest",
+            "done",
+            f"All done — picked up {success_count} new recordings"
+            + (f" ({failure_count} had issues)" if failure_count else ""),
+            duration_ms=round(_batch_ms, 1),
+        )
         logger.info(
             f"Ingestion complete: {success_count} success, {failure_count} failures"
         )
