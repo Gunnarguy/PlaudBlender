@@ -16,7 +16,6 @@ Usage:
     watcher.start()
 """
 
-import os
 import time
 import logging
 import threading
@@ -162,10 +161,12 @@ class PlaudUSBWatcher:
         """
         if not volumes_path:
             import sys as _sys
+
             if _sys.platform == "darwin":
                 volumes_path = "/Volumes"
             else:
                 import getpass
+
                 volumes_path = f"/media/{getpass.getuser()}"
         self.volumes_path = Path(volumes_path)
         self.poll_interval = poll_interval
@@ -398,7 +399,7 @@ if __name__ == "__main__":
     watcher = PlaudUSBWatcher()
 
     def on_connect(device: USBPlaudDevice):
-        print(f"\n✅ Device Connected!")
+        print("\n✅ Device Connected!")
         print(f"   Volume: {device.volume_name}")
         print(f"   Type: {device.device_type.value}")
         print(f"   Audio files: {device.audio_file_count}")
