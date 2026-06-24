@@ -20,7 +20,6 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -30,7 +29,6 @@ from .plaud_usb_watcher import (
     PlaudUSBWatcher,
     USBPlaudDevice,
     get_usb_watcher,
-    start_watcher,
 )
 from .plaud_webhook import PlaudEvent, PlaudEventType
 from .config import get_settings
