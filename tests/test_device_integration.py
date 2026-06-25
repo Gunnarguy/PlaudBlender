@@ -85,10 +85,20 @@ class TestPlaudUSBWatcher:
             device_type=PlaudDeviceType.NOTE,
         )
 
+        # Mock some stats to verify serialization
+        device.audio_file_count = 5
+        device.total_audio_size_mb = 10.554
+        device.recording_folders = ["RECORD"]
+
         data = device.to_dict()
+        assert data["volume_path"] == str(Path("/Volumes/PLAUD_NOTE"))
         assert data["volume_name"] == "PLAUD_NOTE"
         assert data["device_type"] == "Note"
         assert "connected_at" in data
+        assert data["audio_file_count"] == 5
+        assert data["total_audio_size_mb"] == 10.55
+        assert data["recording_folders"] == ["RECORD"]
+        assert data["has_recordings"] is True
 
     def test_plaud_volume_detection(self):
         """Test that Plaud volume patterns are detected."""
