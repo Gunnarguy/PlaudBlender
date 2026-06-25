@@ -1,0 +1,16 @@
+[Unit]
+Description=Daily Chronos System Update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=your-pi-username
+Environment=CHRONOS_ROOT=/home/your-pi-username/PlaudBlender
+ExecStart=/home/your-pi-username/PlaudBlender/deploy/system-update.sh
+# Ensure the service itself runs with low priority
+Nice=19
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target
