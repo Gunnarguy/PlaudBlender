@@ -55,13 +55,16 @@ _FIELD_TO_ENV = {
     "chronos_notion_import_batch_size": "CHRONOS_NOTION_IMPORT_BATCH_SIZE",
     "chronos_self_heal_limit": "CHRONOS_SELF_HEAL_LIMIT",
     "chronos_embed_batch_size": "CHRONOS_EMBED_BATCH_SIZE",
+    "chronos_index_events_per_limit": "CHRONOS_INDEX_EVENTS_PER_LIMIT",
     "chronos_autosync_process_limit": "CHRONOS_AUTOSYNC_PROCESS_LIMIT",
     "chronos_autosync_index_limit": "CHRONOS_AUTOSYNC_INDEX_LIMIT",
+    "chronos_autosync_index_timeout": "CHRONOS_AUTOSYNC_INDEX_TIMEOUT",
     "chronos_autosync_graph_limit": "CHRONOS_AUTOSYNC_GRAPH_LIMIT",
     "chronos_autosync_max_load_avg": "CHRONOS_AUTOSYNC_MAX_LOAD_AVG",
     "chronos_autosync_min_available_mb": "CHRONOS_AUTOSYNC_MIN_AVAILABLE_MB",
     "chronos_autosync_max_swap_used_mb": "CHRONOS_AUTOSYNC_MAX_SWAP_USED_MB",
     "chronos_autosync_defer_seconds": "CHRONOS_AUTOSYNC_DEFER_SECONDS",
+    "chronos_stats_enable_plaud_cloud": "CHRONOS_STATS_ENABLE_PLAUD_CLOUD",
 }
 
 
@@ -151,13 +154,16 @@ async def get_server_settings():
         chronos_notion_import_batch_size=settings.chronos_notion_import_batch_size,
         chronos_self_heal_limit=settings.chronos_self_heal_limit,
         chronos_embed_batch_size=settings.chronos_embed_batch_size,
+        chronos_index_events_per_limit=settings.chronos_index_events_per_limit,
         chronos_autosync_process_limit=settings.chronos_autosync_process_limit,
         chronos_autosync_index_limit=settings.chronos_autosync_index_limit,
+        chronos_autosync_index_timeout=settings.chronos_autosync_index_timeout,
         chronos_autosync_graph_limit=settings.chronos_autosync_graph_limit,
         chronos_autosync_max_load_avg=settings.chronos_autosync_max_load_avg,
         chronos_autosync_min_available_mb=settings.chronos_autosync_min_available_mb,
         chronos_autosync_max_swap_used_mb=settings.chronos_autosync_max_swap_used_mb,
         chronos_autosync_defer_seconds=settings.chronos_autosync_defer_seconds,
+        chronos_stats_enable_plaud_cloud=settings.chronos_stats_enable_plaud_cloud,
         flags=ServerSettingsFlagsOut(
             has_gemini_api_key=bool(settings.gemini_api_key),
             has_openai_api_key=bool(getattr(settings, "openai_api_key_configured", False)),
@@ -214,6 +220,11 @@ async def update_server_settings(body: ServerSettingsUpdateRequest):
             "Embedding batch size must be at least 1",
         ),
         (
+            "chronos_index_events_per_limit",
+            0,
+            "Index events-per-limit cannot be negative",
+        ),
+        (
             "chronos_autosync_process_limit",
             1,
             "Autosync process limit must be at least 1",
@@ -222,6 +233,11 @@ async def update_server_settings(body: ServerSettingsUpdateRequest):
             "chronos_autosync_index_limit",
             1,
             "Autosync index limit must be at least 1",
+        ),
+        (
+            "chronos_autosync_index_timeout",
+            60,
+            "Autosync index timeout must be at least 60 seconds",
         ),
         (
             "chronos_autosync_graph_limit",

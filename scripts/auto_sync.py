@@ -61,6 +61,7 @@ class ChronosAutoSync:
     PROCESS_LIMIT = max(1, int(os.environ.get("CHRONOS_AUTOSYNC_PROCESS_LIMIT", 10)))
     INDEX_LIMIT = max(1, int(os.environ.get("CHRONOS_AUTOSYNC_INDEX_LIMIT", 10)))
     GRAPH_LIMIT = max(1, int(os.environ.get("CHRONOS_AUTOSYNC_GRAPH_LIMIT", 10)))
+    INDEX_TIMEOUT = max(60, int(os.environ.get("CHRONOS_AUTOSYNC_INDEX_TIMEOUT", 900)))
     MAX_LOAD_AVG = float(os.environ.get("CHRONOS_AUTOSYNC_MAX_LOAD_AVG", 3.5))
     MIN_AVAILABLE_MB = int(os.environ.get("CHRONOS_AUTOSYNC_MIN_AVAILABLE_MB", 700))
     MAX_SWAP_USED_MB = int(os.environ.get("CHRONOS_AUTOSYNC_MAX_SWAP_USED_MB", 512))
@@ -163,6 +164,28 @@ class ChronosAutoSync:
         return values
 
     @staticmethod
+    def _argv_runs_chronos_pipeline(argv: list[bytes]) -> bool:
+        """Return True only for an actual Python/script pipeline process."""
+        if not argv:
+            return False
+        argv0 = argv[0].replace(b"\\", b"/")
+        exe_name = argv0.rsplit(b"/", 1)[-1]
+        if argv0.endswith(b"/chronos_pipeline.py") or argv0 == b"chronos_pipeline.py":
+            return True
+        if not exe_name.startswith(b"python"):
+            return False
+        for arg in argv[1:]:
+            normalized = arg.replace(b"\\", b"/")
+            if (
+                normalized.endswith(b"/scripts/chronos_pipeline.py")
+                or normalized.endswith(b"/chronos_pipeline.py")
+                or normalized == b"scripts/chronos_pipeline.py"
+                or normalized == b"chronos_pipeline.py"
+            ):
+                return True
+        return False
+
+    @staticmethod
     def _pipeline_already_running() -> bool:
         current_pid = os.getpid()
         proc_root = Path("/proc")
@@ -173,10 +196,14 @@ class ChronosAutoSync:
             if pid == current_pid:
                 continue
             try:
-                cmdline = (proc_dir / "cmdline").read_bytes().replace(b"\0", b" ")
+                argv = [
+                    part
+                    for part in (proc_dir / "cmdline").read_bytes().split(b"\0")
+                    if part
+                ]
             except Exception:
                 continue
-            if b"scripts/chronos_pipeline.py" in cmdline:
+            if ChronosAutoSync._argv_runs_chronos_pipeline(argv):
                 return True
         return False
 
@@ -519,7 +546,7 @@ class ChronosAutoSync:
                     "--recording-id",
                     recording_id,
                 ],
-                timeout=300,
+                timeout=self.INDEX_TIMEOUT,
                 source="pipeline",
                 success_action="indexed",
                 success_details=recording_id,
@@ -685,7 +712,7 @@ class ChronosAutoSync:
                     "--limit",
                     str(self.index_limit),
                 ],
-                timeout=300,
+                timeout=self.INDEX_TIMEOUT,
                 source="poll",
                 success_action="index_done",
                 success_details="indexed pending events",

@@ -339,13 +339,16 @@ class ServerSettingsOut(BaseModel):
     chronos_notion_import_batch_size: int = 25
     chronos_self_heal_limit: int = 10
     chronos_embed_batch_size: int = 20
+    chronos_index_events_per_limit: int = 0
     chronos_autosync_process_limit: int = 10
     chronos_autosync_index_limit: int = 10
+    chronos_autosync_index_timeout: int = 900
     chronos_autosync_graph_limit: int = 10
     chronos_autosync_max_load_avg: float = 3.5
     chronos_autosync_min_available_mb: int = 700
     chronos_autosync_max_swap_used_mb: int = 512
     chronos_autosync_defer_seconds: int = 90
+    chronos_stats_enable_plaud_cloud: bool = False
     flags: ServerSettingsFlagsOut = Field(default_factory=ServerSettingsFlagsOut)
 
 
@@ -378,13 +381,16 @@ class ServerSettingsUpdateRequest(BaseModel):
     chronos_notion_import_batch_size: Optional[int] = None
     chronos_self_heal_limit: Optional[int] = None
     chronos_embed_batch_size: Optional[int] = None
+    chronos_index_events_per_limit: Optional[int] = None
     chronos_autosync_process_limit: Optional[int] = None
     chronos_autosync_index_limit: Optional[int] = None
+    chronos_autosync_index_timeout: Optional[int] = None
     chronos_autosync_graph_limit: Optional[int] = None
     chronos_autosync_max_load_avg: Optional[float] = None
     chronos_autosync_min_available_mb: Optional[int] = None
     chronos_autosync_max_swap_used_mb: Optional[int] = None
     chronos_autosync_defer_seconds: Optional[int] = None
+    chronos_stats_enable_plaud_cloud: Optional[bool] = None
 
 
 # ── Costs ───────────────────────────────────────────────────

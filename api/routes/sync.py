@@ -127,10 +127,36 @@ def _pipeline_process_active() -> bool:
         if pid == current_pid or pid == parent_pid:
             continue
         try:
-            cmdline = (proc_dir / "cmdline").read_bytes().replace(b"\0", b" ")
+            argv = [
+                part
+                for part in (proc_dir / "cmdline").read_bytes().split(b"\0")
+                if part
+            ]
         except Exception:
             continue
-        if b"scripts/chronos_pipeline.py" in cmdline:
+        if _argv_runs_chronos_pipeline(argv):
+            return True
+    return False
+
+
+def _argv_runs_chronos_pipeline(argv: list[bytes]) -> bool:
+    """Return True only for an actual Python/script pipeline process."""
+    if not argv:
+        return False
+    argv0 = argv[0].replace(b"\\", b"/")
+    exe_name = argv0.rsplit(b"/", 1)[-1]
+    if argv0.endswith(b"/chronos_pipeline.py") or argv0 == b"chronos_pipeline.py":
+        return True
+    if not exe_name.startswith(b"python"):
+        return False
+    for arg in argv[1:]:
+        normalized = arg.replace(b"\\", b"/")
+        if (
+            normalized.endswith(b"/scripts/chronos_pipeline.py")
+            or normalized.endswith(b"/chronos_pipeline.py")
+            or normalized == b"scripts/chronos_pipeline.py"
+            or normalized == b"chronos_pipeline.py"
+        ):
             return True
     return False
 

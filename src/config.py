@@ -176,11 +176,17 @@ class Settings:
     chronos_embed_batch_size: int = int(
         os.getenv("CHRONOS_EMBED_BATCH_SIZE", "20")
     )
+    chronos_index_events_per_limit: int = int(
+        os.getenv("CHRONOS_INDEX_EVENTS_PER_LIMIT", "0")
+    )
     chronos_autosync_process_limit: int = int(
         os.getenv("CHRONOS_AUTOSYNC_PROCESS_LIMIT", "10")
     )
     chronos_autosync_index_limit: int = int(
         os.getenv("CHRONOS_AUTOSYNC_INDEX_LIMIT", "10")
+    )
+    chronos_autosync_index_timeout: int = int(
+        os.getenv("CHRONOS_AUTOSYNC_INDEX_TIMEOUT", "900")
     )
     chronos_autosync_graph_limit: int = int(
         os.getenv("CHRONOS_AUTOSYNC_GRAPH_LIMIT", "10")
@@ -196,6 +202,9 @@ class Settings:
     )
     chronos_autosync_defer_seconds: int = int(
         os.getenv("CHRONOS_AUTOSYNC_DEFER_SECONDS", "90")
+    )
+    chronos_stats_enable_plaud_cloud: bool = _env_flag(
+        "CHRONOS_STATS_ENABLE_PLAUD_CLOUD", "0"
     )
 
     # Qdrant (primary vector store)

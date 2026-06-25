@@ -145,10 +145,41 @@ def _pipeline_already_running() -> bool:
         if pid == current_pid or pid == parent_pid:
             continue
         try:
-            cmdline = (proc_dir / "cmdline").read_bytes().replace(b"\0", b" ")
+            argv = [
+                part
+                for part in (proc_dir / "cmdline").read_bytes().split(b"\0")
+                if part
+            ]
         except Exception:
             continue
-        if b"scripts/chronos_pipeline.py" in cmdline:
+        if _argv_runs_chronos_pipeline(argv):
+            return True
+    return False
+
+
+def _argv_runs_chronos_pipeline(argv: list[bytes]) -> bool:
+    """Return True only for an actual Python/script pipeline process.
+
+    Procfs command lines from shell wrappers can contain the literal command as
+    a `-c` argument. Matching only those strings causes false "already running"
+    deferrals during manual checks.
+    """
+    if not argv:
+        return False
+    argv0 = argv[0].replace(b"\\", b"/")
+    exe_name = argv0.rsplit(b"/", 1)[-1]
+    if argv0.endswith(b"/chronos_pipeline.py") or argv0 == b"chronos_pipeline.py":
+        return True
+    if not exe_name.startswith(b"python"):
+        return False
+    for arg in argv[1:]:
+        normalized = arg.replace(b"\\", b"/")
+        if (
+            normalized.endswith(b"/scripts/chronos_pipeline.py")
+            or normalized.endswith(b"/chronos_pipeline.py")
+            or normalized == b"scripts/chronos_pipeline.py"
+            or normalized == b"chronos_pipeline.py"
+        ):
             return True
     return False
 
@@ -553,12 +584,38 @@ def run_index(
     except Exception as e:
         logger.warning(f"Collection may already exist: {e}")
 
-    # Fetch events that need indexing (those without qdrant_point_id)
+    # Fetch events that need indexing (those without qdrant_point_id).
+    #
+    # Historically `--limit N` indexed `N * 10` events to approximate
+    # "recordings" rather than raw events. That is fine for cloud embedding
+    # APIs, but on a Pi running local Ollama it routinely exceeds the
+    # auto-sync timeout before any Qdrant upsert/SQLite commit happens. In
+    # local mode, default to true event limits so each poll makes durable
+    # progress.
+    events_per_limit = 10
+    if embedder.provider == "ollama":
+        events_per_limit = 1
+    try:
+        events_per_limit = max(
+            1,
+            int(os.getenv("CHRONOS_INDEX_EVENTS_PER_LIMIT", str(events_per_limit))),
+        )
+    except ValueError:
+        events_per_limit = 1 if embedder.provider == "ollama" else 10
+
+    print(
+        "Index batch policy: "
+        f"provider={embedder.provider}, limit={limit}, "
+        f"events_per_limit={events_per_limit}, "
+        f"max_events={max(1, limit) * events_per_limit}",
+        flush=True,
+    )
+
     q = session.query(ChronosEventDB).filter(ChronosEventDB.qdrant_point_id.is_(None))
     if recording_id:
         q = q.filter(ChronosEventDB.recording_id == recording_id)
 
-    events_to_index = q.limit(limit * 10).all()  # multiple events per recording
+    events_to_index = q.limit(max(1, limit) * events_per_limit).all()
 
     if not events_to_index:
         print("✓ No events to index")

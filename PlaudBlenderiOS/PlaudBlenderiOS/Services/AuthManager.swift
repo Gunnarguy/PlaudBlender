@@ -95,14 +95,14 @@ final class AuthManager: Sendable {
         }
 
         // 3. Prefer direct Pi access over Tailscale before public tunneling.
-        candidates.append(Self.piTailscaleMagicDNSURL)
+        if !Self.piTailscaleMagicDNSURL.contains("your-device.") {
+            candidates.append(Self.piTailscaleMagicDNSURL)
+        }
         candidates.append(Self.piTailscaleURL)
-
-        // 4. Public Pi API tunnel (works when Tailscale is unavailable and ngrok quota permits)
-        candidates.append(Self.ngrokURL)
-
-        // 5. Pi's LAN IP (faster when on home Wi-Fi)
         candidates.append(Self.piLanURL)
+
+        // 4. Public Pi API tunnel (works when direct access is unavailable and ngrok quota permits)
+        candidates.append(Self.ngrokURL)
 
         var seen = Set<String>()
         return candidates.filter { seen.insert($0).inserted }

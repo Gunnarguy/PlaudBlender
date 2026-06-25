@@ -337,24 +337,78 @@ final class APIClient: Sendable {
         }
     }
 
-    /// Retries the request on timeout up to 2 times with delays of 0.4 s and 1.0 s.
-    /// All other errors (HTTP, cancelled, decoding) are surfaced immediately.
+    /// Retries GET requests on transient failures and can rebase them to a
+    /// reachable fallback server if the configured endpoint is unavailable.
     private func executeWithRetry<T: Decodable>(_ request: URLRequest) async throws -> T {
         let retryDelays: [TimeInterval] = [0.4, 1.0]
         var lastError: Error?
+        var currentRequest = request
+        var didBootstrapFallback = false
+
         for attempt in 0...(retryDelays.count) {
             do {
-                return try await execute(request)
-            } catch let urlError as URLError where urlError.code == .timedOut && attempt < retryDelays.count {
+                return try await execute(currentRequest)
+            } catch let urlError as URLError {
                 lastError = urlError
-                let delay = retryDelays[attempt]
-                logger.warning("⏱ Timeout \(request.url?.path(percentEncoded: false) ?? "?", privacy: .public) — retry \(attempt + 1) in \(delay, format: .fixed(precision: 1))s")
-                try await Task.sleep(for: .seconds(delay))
+                if urlError.code == .timedOut && attempt < retryDelays.count {
+                    let delay = retryDelays[attempt]
+                    logger.warning("⏱ Timeout \(currentRequest.url?.path(percentEncoded: false) ?? "?", privacy: .public) — retry \(attempt + 1) in \(delay, format: .fixed(precision: 1))s")
+                    try await Task.sleep(for: .seconds(delay))
+                    continue
+                }
+
+                if shouldBootstrapFallback(after: urlError), !didBootstrapFallback {
+                    let previousServerURL = activeServerURL
+                    logger.warning("🔁 GET failed against \(previousServerURL, privacy: .public); probing fallback servers")
+                    if await bootstrapConnection(),
+                       activeServerURL != previousServerURL,
+                       let fallbackRequest = rebasedRequest(currentRequest, to: activeServerURL) {
+                        currentRequest = fallbackRequest
+                        didBootstrapFallback = true
+                        continue
+                    }
+                }
+
+                throw urlError
             } catch {
                 throw error
             }
         }
         throw lastError ?? APIError.invalidResponse
+    }
+
+    private func shouldBootstrapFallback(after error: URLError) -> Bool {
+        switch error.code {
+        case .cannotConnectToHost,
+             .cannotFindHost,
+             .dnsLookupFailed,
+             .notConnectedToInternet,
+             .timedOut,
+             .dataNotAllowed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func rebasedRequest(_ request: URLRequest, to serverURL: String) -> URLRequest? {
+        guard let originalURL = request.url,
+              let originalComponents = URLComponents(url: originalURL, resolvingAgainstBaseURL: false),
+              var targetComponents = URLComponents(string: serverURL) else {
+            return nil
+        }
+
+        targetComponents.path = originalComponents.path
+        targetComponents.percentEncodedQuery = originalComponents.percentEncodedQuery
+        targetComponents.fragment = nil
+
+        guard let fallbackURL = targetComponents.url else {
+            return nil
+        }
+
+        var fallbackRequest = request
+        fallbackRequest.url = fallbackURL
+        return fallbackRequest
     }
 
     private func checkHealth(at serverURL: String) async -> Bool {

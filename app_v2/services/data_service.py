@@ -7,6 +7,7 @@ and provides day-level summaries for the UI.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ _EMPTY_DAY_AUDIT_TTL_SECONDS = 600
 _EMPTY_DAY_AUDIT_FAILURE_TTL_SECONDS = 1800
 _EMPTY_DAY_AUDIT_MAX_DAYS = 45
 _EMPTY_DAY_AUDIT_MAX_PAGES = 12
+_PLAUD_CLOUD_STATS_ENABLED = os.getenv("CHRONOS_STATS_ENABLE_PLAUD_CLOUD", "0") == "1"
 
 
 def _utc_naive_to_local_date_key(value: datetime) -> str:
@@ -2189,16 +2191,22 @@ class ChronosDataService:
         except Exception as e:
             logger.debug("Pipeline rate calculation failed: %s", e)
 
-        # Plaud cloud stats (non-blocking)
+        # Plaud cloud stats (non-blocking, opt-in).
+        #
+        # Plaud's files endpoint has a small page size. Fetching aggregate
+        # cloud stats paginates the whole library and has caused repeated 429s
+        # from normal dashboard refreshes. FastAPI StatsOut does not expose
+        # this field, so keep it disabled unless explicitly needed.
         plaud_stats = None
-        try:
-            from src.plaud_client import PlaudClient
+        if _PLAUD_CLOUD_STATS_ENABLED:
+            try:
+                from src.plaud_client import PlaudClient
 
-            plaud = PlaudClient()
-            if plaud.oauth.is_authenticated:
-                plaud_stats = plaud.get_recording_stats()
-        except Exception as e:
-            logger.debug(f"Could not fetch Plaud cloud stats: {e}")
+                plaud = PlaudClient()
+                if plaud.oauth.is_authenticated:
+                    plaud_stats = plaud.get_recording_stats()
+            except Exception as e:
+                logger.debug(f"Could not fetch Plaud cloud stats: {e}")
 
         _elapsed = (_time.perf_counter() - _t0) * 1000
         _xlog(
