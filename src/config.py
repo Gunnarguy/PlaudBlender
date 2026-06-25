@@ -164,6 +164,7 @@ class Settings:
     chronos_local_embed_timeout_seconds: float = float(
         os.getenv("CHRONOS_LOCAL_EMBED_TIMEOUT_SECONDS", "300")
     )
+    chronos_ollama_keep_alive: str = os.getenv("CHRONOS_OLLAMA_KEEP_ALIVE", "0s").strip()
     chronos_poll_interval: int = int(os.getenv("CHRONOS_POLL_INTERVAL", "1800"))
     chronos_enable_notion_import: bool = _env_flag(
         "CHRONOS_ENABLE_NOTION_IMPORT", "1"

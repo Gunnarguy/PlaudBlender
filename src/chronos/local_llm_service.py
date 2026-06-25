@@ -45,6 +45,9 @@ class LocalLLMService:
         self.max_context = int(
             getattr(self.settings, "chronos_local_llm_max_context", 4096) or 4096
         )
+        self.keep_alive = (
+            getattr(self.settings, "chronos_ollama_keep_alive", "0s") or "0s"
+        ).strip()
         raw_tasks = getattr(
             self.settings,
             "chronos_local_llm_allowed_tasks",
@@ -190,6 +193,7 @@ class LocalLLMService:
                         "model": self.model,
                         "prompt": prompt,
                         "stream": False,
+                        "keep_alive": self.keep_alive,
                         "options": {
                             "temperature": temperature,
                             "num_ctx": 2048,
@@ -248,7 +252,11 @@ class LocalLLMService:
         data = self._request_json(
             "POST",
             "/api/embed",
-            payload={"model": requested_model, "input": payload_input},
+            payload={
+                "model": requested_model,
+                "input": payload_input,
+                "keep_alive": self.keep_alive,
+            },
             timeout=timeout,
         )
         embeddings = data.get("embeddings") or []
@@ -256,7 +264,11 @@ class LocalLLMService:
             legacy = self._request_json(
                 "POST",
                 "/api/embeddings",
-                payload={"model": requested_model, "prompt": inputs},
+                payload={
+                    "model": requested_model,
+                    "prompt": inputs,
+                    "keep_alive": self.keep_alive,
+                },
                 timeout=timeout,
             )
             embedding = legacy.get("embedding") or []
