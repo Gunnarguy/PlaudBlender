@@ -318,9 +318,7 @@ def _ensure_table() -> None:
             from sqlalchemy import text
 
             with engine.connect() as conn:
-                conn.execute(
-                    text(
-                        """
+                conn.execute(text("""
                     CREATE TABLE IF NOT EXISTS api_usage_log (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         timestamp TEXT NOT NULL,
@@ -332,25 +330,15 @@ def _ensure_table() -> None:
                         recording_id TEXT,
                         extra TEXT
                     )
-                """
-                    )
-                )
-                conn.execute(
-                    text(
-                        """
+                """))
+                conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS idx_usage_timestamp
                     ON api_usage_log(timestamp)
-                """
-                    )
-                )
-                conn.execute(
-                    text(
-                        """
+                """))
+                conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS idx_usage_model
                     ON api_usage_log(model)
-                """
-                    )
-                )
+                """))
                 conn.commit()
             _db_initialized = True
         except Exception as e:
@@ -368,13 +356,11 @@ def _persist(rec: UsageRecord, recording_id: Optional[str] = None) -> None:
         ts = datetime.fromtimestamp(rec.timestamp, tz=timezone.utc).isoformat()
         with engine.connect() as conn:
             conn.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO api_usage_log
                         (timestamp, model, call_type, input_tokens, output_tokens, cost_usd, recording_id)
                     VALUES (:ts, :model, :call_type, :inp, :out, :cost, :rid)
-                """
-                ),
+                """),
                 {
                     "ts": ts,
                     "model": rec.model,
@@ -449,18 +435,66 @@ def track_usage(
 
 def get_session_cost() -> dict:
     """Get session-level cost summary (since app start)."""
-    inp, out = _ledger.total_tokens()
-    return {
-        "total_cost_usd": round(_ledger.total_cost(), 4),
-        "total_input_tokens": inp,
-        "total_output_tokens": out,
-        "total_calls": len(_ledger.records),
-        "by_model": _ledger.by_model(),
-        "by_type": _ledger.by_type(),
-        "recent": _ledger.recent(20),
-        "session_start": _ledger.start_time,
-        "session_minutes": round((time.time() - _ledger.start_time) / 60, 1),
-    }
+    with _ledger.lock:
+        total_inp = 0
+        total_out = 0
+        total_cost = 0.0
+        by_model = {}
+        by_type = {}
+
+        for r in _ledger.records:
+            rinp = r.input_tokens
+            rout = r.output_tokens
+            rcost = r.cost_usd
+
+            total_inp += rinp
+            total_out += rout
+            total_cost += rcost
+
+            rmod = r.model
+            m = by_model.get(rmod)
+            if m is None:
+                m = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+                by_model[rmod] = m
+            m["calls"] += 1
+            m["input_tokens"] += rinp
+            m["output_tokens"] += rout
+            m["cost_usd"] += rcost
+
+            rtype = r.call_type
+            t = by_type.get(rtype)
+            if t is None:
+                t = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+                by_type[rtype] = t
+            t["calls"] += 1
+            t["input_tokens"] += rinp
+            t["output_tokens"] += rout
+            t["cost_usd"] += rcost
+
+        now = time.time()
+        recent = [
+            {
+                "model": r.model,
+                "type": r.call_type,
+                "input_tokens": r.input_tokens,
+                "output_tokens": r.output_tokens,
+                "cost_usd": round(r.cost_usd, 6),
+                "ago_s": round(now - r.timestamp, 1),
+            }
+            for r in reversed(_ledger.records[-20:])
+        ]
+
+        return {
+            "total_cost_usd": round(total_cost, 4),
+            "total_input_tokens": total_inp,
+            "total_output_tokens": total_out,
+            "total_calls": len(_ledger.records),
+            "by_model": by_model,
+            "by_type": by_type,
+            "recent": recent,
+            "session_start": _ledger.start_time,
+            "session_minutes": round((now - _ledger.start_time) / 60, 1),
+        }
 
 
 def get_cost_summary(days: int = 30) -> dict:
@@ -478,7 +512,7 @@ def get_cost_summary(days: int = 30) -> dict:
         from sqlalchemy import text
 
         cutoff = datetime.now(tz=timezone.utc)
-        cutoff_str = cutoff.replace(
+        cutoff.replace(
             day=max(1, cutoff.day),
             hour=0,
             minute=0,
@@ -489,8 +523,7 @@ def get_cost_summary(days: int = 30) -> dict:
         with engine.connect() as conn:
             # Total by model
             rows = conn.execute(
-                text(
-                    """
+                text("""
                 SELECT model,
                        COUNT(*) as calls,
                        SUM(input_tokens) as inp,
@@ -499,8 +532,7 @@ def get_cost_summary(days: int = 30) -> dict:
                 WHERE timestamp >= date('now', :offset)
                 GROUP BY model
                 ORDER BY SUM(input_tokens + output_tokens) DESC
-            """
-                ),
+            """),
                 {"offset": f"-{days} days"},
             ).fetchall()
 
@@ -533,8 +565,7 @@ def get_cost_summary(days: int = 30) -> dict:
 
             # By day
             day_rows = conn.execute(
-                text(
-                    """
+                text("""
                 SELECT date(timestamp) as day,
                        model,
                        COUNT(*) as calls,
@@ -544,8 +575,7 @@ def get_cost_summary(days: int = 30) -> dict:
                 WHERE timestamp >= date('now', :offset)
                 GROUP BY date(timestamp), model
                 ORDER BY day DESC
-            """
-                ),
+            """),
                 {"offset": f"-{days} days"},
             ).fetchall()
 
