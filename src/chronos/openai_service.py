@@ -4,7 +4,6 @@ Uses the OpenAI Responses API (not Chat Completions) for rich,
 context-aware answers backed by Chronos event data.
 """
 
-import json
 import logging
 import time
 from typing import Any, Callable, List, Optional, TypeVar
@@ -27,12 +26,8 @@ class _OpenAIEventOutput(BaseModel):
     it requires ``additionalProperties: false`` on every object.
     """
 
-    events: List[ChronosEvent] = Field(
-        ..., description="Array of reconstructed events"
-    )
-    total_events: int = Field(
-        0, ge=0, description="Total events extracted"
-    )
+    events: List[ChronosEvent] = Field(..., description="Array of reconstructed events")
+    total_events: int = Field(0, ge=0, description="Total events extracted")
 
 
 class OpenAIResponseService:
@@ -138,7 +133,9 @@ class OpenAIResponseService:
             try:
                 return func()
             except Exception as exc:
-                is_retryable = bool(retryable_errors) and isinstance(exc, retryable_errors)
+                is_retryable = bool(retryable_errors) and isinstance(
+                    exc, retryable_errors
+                )
                 if not is_retryable or attempt >= cls._MAX_RETRY_ATTEMPTS:
                     raise
 
@@ -252,7 +249,9 @@ class OpenAIResponseService:
                 "max_output_tokens": 32768,
             }
 
-            if self._temperature is not None and self._supports_temperature(request_model):
+            if self._temperature is not None and self._supports_temperature(
+                request_model
+            ):
                 kwargs["temperature"] = self._temperature
 
             response = self._call_with_retry(
@@ -273,7 +272,9 @@ class OpenAIResponseService:
                 if not raw_text.strip():
                     incomplete_reason = self._incomplete_reason(response)
                     if incomplete_reason:
-                        return {"error": self._format_incomplete_response_error(response)}
+                        return {
+                            "error": self._format_incomplete_response_error(response)
+                        }
                     return {"error": "OpenAI returned no structured output"}
                 try:
                     parsed = _OpenAIEventOutput.model_validate_json(raw_text)
@@ -307,8 +308,7 @@ class OpenAIResponseService:
                     f"OpenAI extracted {result_output.total_events} events",
                     duration_ms=round(_elapsed, 1),
                     detail=(
-                        f"model={response.model} in={input_tokens} "
-                        f"out={output_tokens}"
+                        f"model={response.model} in={input_tokens} out={output_tokens}"
                     ),
                 )
 
@@ -456,7 +456,9 @@ Question: {question}"""
 
             valid_reasoning = {"none", "low", "medium", "high", "xhigh"}
             effective_reasoning = (
-                reasoning if reasoning in valid_reasoning else self._DEFAULT_REASONING_EFFORT
+                reasoning
+                if reasoning in valid_reasoning
+                else self._DEFAULT_REASONING_EFFORT
             )
             reasoning_config: dict[str, Any] = {}
             if effective_reasoning:
@@ -532,7 +534,7 @@ Question: {question}"""
                 xray_log(
                     "search",
                     "ai-answer",
-                    f"GPT answered in {_elapsed/1000:.1f}s — {_inp_tok}+{_out_tok} tokens",
+                    f"GPT answered in {_elapsed / 1000:.1f}s — {_inp_tok}+{_out_tok} tokens",
                     duration_ms=round(_elapsed, 1),
                     detail=(
                         f"model={response.model} in={_inp_tok} out={_out_tok} "
