@@ -24,7 +24,6 @@ from queue import Queue
 from flask import Flask, request, jsonify
 
 from .plaud_webhook import (
-    PlaudWebhookHandler,
     PlaudEvent,
     PlaudEventType,
     get_webhook_handler,
@@ -33,6 +32,7 @@ from .config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
 
 @dataclass
 class EventLogEntry:
@@ -51,6 +51,7 @@ class EventLogEntry:
             "processed": self.processed,
             "data": self.event.data,
         }
+
 
 class PlaudWebhookServer:
     """
@@ -340,11 +341,13 @@ class PlaudWebhookServer:
                 return self.event_queue.get(timeout=timeout)
             else:
                 return self.event_queue.get_nowait()
-        except:
+        except Exception:
             return None
+
 
 # Singleton instance
 _webhook_server: Optional[PlaudWebhookServer] = None
+
 
 def get_webhook_server() -> PlaudWebhookServer:
     """Get the singleton webhook server instance."""
@@ -352,6 +355,7 @@ def get_webhook_server() -> PlaudWebhookServer:
     if _webhook_server is None:
         _webhook_server = PlaudWebhookServer()
     return _webhook_server
+
 
 def start_webhook_server(port: int = 8090) -> PlaudWebhookServer:
     """
@@ -369,6 +373,7 @@ def start_webhook_server(port: int = 8090) -> PlaudWebhookServer:
     if not _webhook_server.is_running:
         _webhook_server.start()
     return _webhook_server
+
 
 if __name__ == "__main__":
     import sys
