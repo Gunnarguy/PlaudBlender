@@ -7,16 +7,10 @@ like "What happens on Mondays?" and "What do I think about on Thursdays?"
 import logging
 from typing import List, Dict, Any
 from collections import Counter
-from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from src.database.chronos_repository import (
-    get_chronos_events_by_day,
-    get_chronos_events_by_date_range,
-)
 from src.chronos.qdrant_client import ChronosQdrantClient
-from src.chronos.embedding_service import ChronosEmbeddingService
 
 logger = logging.getLogger(__name__)
 
