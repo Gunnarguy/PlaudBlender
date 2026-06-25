@@ -1,7 +1,9 @@
 import sys
-if sys.platform in ('linux', 'darwin'):
+
+if sys.platform in ("linux", "darwin"):
     try:
         import uvloop
+
         uvloop.install()
     except ImportError:
         pass
@@ -70,8 +72,16 @@ app.add_middleware(
     ],
     allow_origin_regex=r"^https?://(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "ngrok-skip-browser-warning",
+        "X-Request-ID",
+    ],
 )
 
 # ── Register routers ────────────────────────────────────────
