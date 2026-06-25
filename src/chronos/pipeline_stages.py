@@ -1,7 +1,5 @@
 """Shared pipeline stage constants and alias normalization."""
 
-from __future__ import annotations
-
 CANONICAL_PIPELINE_STAGES: tuple[str, ...] = (
     "full",
     "backfill",
