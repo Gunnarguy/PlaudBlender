@@ -77,7 +77,9 @@ def _ensure_sqlite_additive_schema(eng: Engine) -> None:
 
     def _columns_for(table: str) -> set[str]:
         with eng.connect() as conn:
-            rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+            rows = conn.execute(
+                text("SELECT * FROM pragma_table_info(:table)"), {"table": table}
+            ).fetchall()
         # PRAGMA table_info: (cid, name, type, notnull, dflt_value, pk)
         return {str(r[1]) for r in rows}
 
@@ -130,10 +132,12 @@ def _ensure_sqlite_additive_schema(eng: Engine) -> None:
 
         # Ensure indexes exist for frequently-queried columns
         with eng.connect() as conn:
-            conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_chronos_events_recording_id "
-                "ON chronos_events (recording_id)"
-            ))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_chronos_events_recording_id "
+                    "ON chronos_events (recording_id)"
+                )
+            )
             conn.commit()
     except Exception:
         # Never block app startup due to a best-effort migration.

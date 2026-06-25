@@ -10,7 +10,6 @@ Usage:
 The migration is idempotent - it will skip if already migrated.
 """
 
-import os
 import sys
 import sqlite3
 from pathlib import Path
@@ -37,8 +36,8 @@ def get_database_path() -> Path:
 
 def column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     """Check if a column exists in a table."""
-    cursor = conn.execute(f"PRAGMA table_info({table})")
-    columns = [row[1] for row in cursor.fetchall()]
+    cursor = conn.execute("SELECT name FROM pragma_table_info(?)", (table,))
+    columns = [row[0] for row in cursor.fetchall()]
     return column in columns
 
 
@@ -86,7 +85,7 @@ def migrate_rename_vector_id():
             # so we need to recreate the table
 
             # Get existing column info
-            cursor = conn.execute("PRAGMA table_info(segments)")
+            cursor = conn.execute("SELECT * FROM pragma_table_info(?)", ("segments",))
             columns_info = cursor.fetchall()
 
             # Build new column definitions, replacing pinecone_id with vector_id
