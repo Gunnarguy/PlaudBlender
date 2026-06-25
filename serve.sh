@@ -21,6 +21,8 @@ if [[ -f "$ROOT/.env" ]]; then
     set +a
 fi
 
+QDRANT_REMOTE_URL="${QDRANT_REMOTE_URL:-http://100.76.130.109:6333}"
+
 API_PORT=8000
 export CHRONOS_API_WORKERS=2
 export UVLOOP_INSTALL="1"
@@ -90,6 +92,15 @@ _update_env_redirect() {
     fi
 }
 
+_probe_qdrant() {
+    # Check if remote Qdrant is online and reachable
+    if curl -s -m 1.5 "${QDRANT_REMOTE_URL}/v1/health" >/dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # ── commands ─────────────────────────────────────────────────
 
 do_start() {
@@ -135,6 +146,38 @@ do_start() {
     _update_env_redirect "$ngrok_url"
     echo -e "  ${GREEN}✔  .env${RESET}  →  NOTION_REDIRECT_URI updated"
 
+    # Dynamic Qdrant Database Routing & Fallback
+    echo -e "  ${DIM}Checking connection to Remote Qdrant (${QDRANT_REMOTE_URL})…${RESET}"
+    if _probe_qdrant; then
+        echo -e "  ${GREEN}✔  Remote Qdrant is ONLINE! Connecting directly…${RESET}"
+        export QDRANT_URL="${QDRANT_REMOTE_URL}"
+        echo "0" > "$PID_DIR/docker_auto_started"
+    else
+        echo -e "  ${YELLOW}⚠  Raspberry Pi Qdrant is OFFLINE. Activating local Docker fallback…${RESET}"
+        export QDRANT_URL="http://127.0.0.1:6333"
+        
+        # Ensure Docker Desktop is running
+        if ! docker info >/dev/null 2>&1; then
+            echo -e "  ${DIM}Starting Docker Desktop in background…${RESET}"
+            open -a Docker
+            echo "0" > "$PID_DIR/docker_auto_started"
+            for i in {1..20}; do
+                if docker info >/dev/null 2>&1; then
+                    echo -e "  ${GREEN}✔  Docker Desktop is ready.${RESET}"
+                    echo "1" > "$PID_DIR/docker_auto_started"
+                    break
+                fi
+                sleep 1.5
+            done
+        else
+            echo "0" > "$PID_DIR/docker_auto_started"
+        fi
+        
+        # Run docker compose
+        echo -e "  ${DIM}Starting local Qdrant container…${RESET}"
+        docker compose up -d >/dev/null 2>&1 || true
+    fi
+
     # 3. Start the API server
     echo -e "  ${DIM}Starting API server on port $API_PORT…${RESET}"
     cd "$ROOT"
@@ -173,6 +216,17 @@ do_start() {
 do_stop() {
     echo ""
     local stopped=0
+
+    # Auto-stop local Docker container if it was started by this session
+    local auto_started
+    auto_started=$(cat "$PID_DIR/docker_auto_started" 2>/dev/null || echo "0")
+    if [[ "$auto_started" == "1" ]]; then
+        echo -e "  ${DIM}Stopping local Qdrant container…${RESET}"
+        docker compose down >/dev/null 2>&1 || true
+        echo -e "  ${GREEN}✔${RESET}  Local Qdrant container cleaned up and stopped."
+        stopped=1
+    fi
+    rm -f "$PID_DIR/docker_auto_started"
 
     if _is_running "$(_api_pid)"; then
         kill "$(_api_pid)" 2>/dev/null

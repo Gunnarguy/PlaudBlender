@@ -47,7 +47,57 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
   exit 1
 fi
 
+# Load environment overrides from .env if present
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a
+  source "$ROOT_DIR/.env" 2>/dev/null || true
+  set +a
+fi
+
+QDRANT_REMOTE_URL="${QDRANT_REMOTE_URL:-http://100.76.130.109:6333}"
+
 cd "$ROOT_DIR"
+
+_probe_qdrant() {
+  if curl -s -m 1.5 "${QDRANT_REMOTE_URL}/v1/health" >/dev/null 2>&1; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+echo "Checking connection to Remote Qdrant (${QDRANT_REMOTE_URL})..."
+if _probe_qdrant; then
+  echo "✔ Remote Qdrant is ONLINE! Connecting directly..."
+  export QDRANT_URL="${QDRANT_REMOTE_URL}"
+else
+  echo "⚠ Raspberry Pi Qdrant is OFFLINE. Activating local Docker fallback..."
+  export QDRANT_URL="http://127.0.0.1:6333"
+  
+  DOCKER_AUTO_STARTED=0
+  if ! docker info >/dev/null 2>&1; then
+    echo "Starting Docker Desktop in background..."
+    open -a Docker
+    for i in {1..20}; do
+      if docker info >/dev/null 2>&1; then
+        echo "✔ Docker Desktop is ready."
+        DOCKER_AUTO_STARTED=1
+        break
+      fi
+      sleep 1.5
+    done
+  fi
+  
+  echo "Starting local Qdrant container..."
+  docker compose up -d >/dev/null 2>&1 || true
+  
+  cleanup_docker() {
+    echo ""
+    echo "Cleaning up local fallback resources..."
+    docker compose down >/dev/null 2>&1 || true
+  fi
+  trap cleanup_docker EXIT
+fi
 
 if [[ "$run_pipeline" -eq 1 ]]; then
   echo "Running full Chronos pipeline..."
@@ -62,5 +112,5 @@ if [[ "$run_ui" -eq 1 ]]; then
   fi
 
   echo "Starting Chronos UI at http://localhost:8050"
-  exec "$PYTHON_BIN" scripts/launch_app.py
+  "$PYTHON_BIN" scripts/launch_app.py
 fi
