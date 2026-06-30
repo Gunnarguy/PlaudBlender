@@ -37,6 +37,7 @@ docs/archive/
 *.swp
 *.swo
 *~
+.gemini/
 # Note: .vscode/ is NOT ignored - shared project config
 
 # OS
