@@ -1,0 +1,5 @@
+🎯 **What:** The codebase previously contained a "Fail Open" JWT Authentication Default vulnerability. Specifically, if `CHRONOS_API_KEY` was missing from the environment configuration, the `require_auth` function bypassed authentication by default (treating it as an unauthenticated "dev" mode). Furthermore, the `_websocket_auth_ok` check in `xray.py` similarly permitted all websocket connections when `CHRONOS_API_KEY` was missing.
+
+⚠️ **Risk:** If left unfixed, an unconfigured or improperly configured production environment missing `CHRONOS_API_KEY` would silently fall back to "dev mode", thereby exposing sensitive API endpoints and WebSocket channels to the public internet without requiring any authorization credentials.
+
+🛡️ **Solution:** Modified `require_auth` in `api/auth/jwt.py` and `_websocket_auth_ok` in `api/routes/xray.py` to fail closed. Now, if `CHRONOS_API_KEY` is empty or missing, requests will be correctly rejected with a `401 Unauthorized` response (or a closed websocket connection). Tests were additionally updated to reflect this behavior.

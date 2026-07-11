@@ -28,20 +28,16 @@ def require_auth(
 ) -> str:
     """Validate the Bearer token. Returns the token string.
 
-    If CHRONOS_API_KEY is unset (dev mode), all requests are allowed
-    unless CHRONOS_REQUIRE_AUTH=1 is configured.
+    Requests require a valid Bearer token matching CHRONOS_API_KEY.
     """
     api_key = _get_api_key()
-    require_auth_env = os.getenv("CHRONOS_REQUIRE_AUTH", "") == "1"
 
-    # Dev mode: no key configured → skip auth (unless forced by CHRONOS_REQUIRE_AUTH=1)
+    # Fail closed: if no key is configured, reject all requests.
     if not api_key:
-        if require_auth_env:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Unauthorized: Authentication is required, but CHRONOS_API_KEY is not configured",
-            )
-        return "dev"
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Server is improperly configured (missing CHRONOS_API_KEY)",
+        )
 
     if credentials is None:
         raise HTTPException(

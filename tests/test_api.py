@@ -278,20 +278,22 @@ def mock_svc():
 
 @pytest.fixture()
 def client(mock_svc):
-    """Create TestClient with mocked dependencies and no auth."""
+    """Create TestClient with mocked dependencies and standard auth headers."""
     # Clear the lru_cache before importing the app
     from api.dependencies import get_service
 
     get_service.cache_clear()
 
-    # Patch environment so auth is disabled (dev mode)
-    with patch.dict(os.environ, {"CHRONOS_API_KEY": ""}, clear=False):
+    # Patch environment with a valid API key
+    with patch.dict(os.environ, {"CHRONOS_API_KEY": "test-secret-key"}, clear=False):
         # Override the get_service dependency
         from api.main import app
         from api.dependencies import get_service as gs
 
         app.dependency_overrides[gs] = lambda: mock_svc
-        yield TestClient(app, raise_server_exceptions=False)
+        client = TestClient(app, raise_server_exceptions=False)
+        client.headers.update({"Authorization": "Bearer test-secret-key"})
+        yield client
         app.dependency_overrides.clear()
 
 
@@ -397,9 +399,10 @@ class TestAuthEnforcement:
         assert r.status_code == 200
 
     def test_dev_mode_no_auth_required(self, client):
-        """When CHRONOS_API_KEY is empty, no auth needed."""
-        r = client.get("/api/v1/timeline/days")
-        assert r.status_code == 200
+        """When CHRONOS_API_KEY is empty, request is rejected to fail securely."""
+        with patch.dict("os.environ", {"CHRONOS_API_KEY": ""}, clear=False):
+            r = client.get("/api/v1/timeline/days")
+            assert r.status_code == 401
 
     def test_require_auth_missing_key_public_mode(self, client):
         """When CHRONOS_REQUIRE_AUTH=1 and CHRONOS_API_KEY is empty, request is rejected."""
@@ -836,6 +839,10 @@ class TestSettings:
             chronos_autosync_min_available_mb=500,
             chronos_autosync_max_swap_used_mb=256,
             chronos_autosync_defer_seconds=60,
+            chronos_index_events_per_limit=10,
+            chronos_autosync_index_timeout=3600,
+            chronos_autosync_graph_timeout=3600,
+            chronos_stats_enable_plaud_cloud=True,
             gemini_api_key="test-gemini",
             openai_api_key_configured=False,
             qdrant_api_key=None,

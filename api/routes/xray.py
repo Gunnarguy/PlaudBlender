@@ -262,7 +262,7 @@ def _ws_event_matches(
 async def _websocket_auth_ok(websocket: WebSocket) -> bool:
     api_key = os.getenv("CHRONOS_API_KEY", "")
     if not api_key:
-        return True
+        return False
 
     token = websocket.query_params.get("token") or ""
     auth = websocket.headers.get("authorization", "")
