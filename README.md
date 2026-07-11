@@ -238,6 +238,23 @@ Now any connected LLM can call tools like `search_events`, `get_timeline`, and `
 
 ---
 
+## 🔑 Key Configuration Variables
+
+PlaudBlender parses environment configuration from `.env` in the root directory. The following settings customize API keys, default models, and authentication:
+
+| Variable | Description | Default / Fallback |
+| :--- | :--- | :--- |
+| `CHRONOS_GEMINI_API_KEY` | Dedicated Gemini API Key. | None (Required for Gemini features) |
+| `CHRONOS_ALLOW_SHARED_GEMINI_KEY` | Set to `1` to share global `GEMINI_API_KEY` across projects. | `0` |
+| `OPENAI_API_KEY` | OpenAI API Key. Presence auto-activates OpenAI model integrations. | None |
+| `CHRONOS_API_KEY` | Secret token for client JWT auth. Omit to run key-less on trusted networks. | None |
+| `CHRONOS_PROCESSING_PROVIDER` | Selection of AI reasoning engine (`gemini` or `local`). | `gemini` |
+| `CHRONOS_CLEANING_MODEL` | Model used for transcribing and structural timeline cleaning. | `gemini-3.5-flash` |
+| `CHRONOS_ANALYST_MODEL` | Model used for building graph RAG entities and timeline analysis. | `gpt-5.6-terra` |
+| `CHRONOS_LOCAL_LLM_ENABLED` | Set to `1` to route supported tasks locally via Ollama. | `0` |
+
+---
+
 ## Current Status
 
 PlaudBlender is active and experimental.
