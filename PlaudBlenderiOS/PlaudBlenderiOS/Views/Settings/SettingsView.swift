@@ -232,7 +232,26 @@ struct SettingsView: View {
 
                     Section("OpenAI Controls") {
                         Toggle("Enable OpenAI Integration", isOn: $viewModel.chronosOpenAIEnabled)
-                        Text("Hard kill switch: a stored OpenAI API key is inert unless opted in.")
+                        
+                        if viewModel.hasOpenAIAPIKey {
+                            HStack {
+                                Image(systemName: "checkmark.shield.fill")
+                                    .foregroundStyle(.green)
+                                Text("Server API Key Detected & Ready")
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                            }
+                        } else {
+                            HStack {
+                                Image(systemName: "exclamationmark.shield.fill")
+                                    .foregroundStyle(.orange)
+                                Text("No Server API Key Configured")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        
+                        Text("When enabled, you can select standard OpenAI models (like GPT-5.6 Luna/Terra) or write in custom identifiers.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -245,6 +264,10 @@ struct SettingsView: View {
                             configField("Model Name", text: $viewModel.chronosLocalLLMModel)
                             configField("Max Context", text: $viewModel.chronosLocalLLMMaxContext, keyboard: .numberPad)
                             configField("Allowed Tasks", text: $viewModel.chronosLocalLLMAllowedTasks)
+                        } else {
+                            Text("Ollama is currently inactive. Pipeline runs will default to remote frontier APIs.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                     }
 

@@ -54,8 +54,7 @@ def _openai_key_configured() -> bool:
 
 
 def _resolve_openai_api_key() -> Optional[str]:
-    if not _env_flag("CHRONOS_OPENAI_ENABLED", "0"):
-        return None
+    # We resolve the key directly if configured, bypassing forced toggle checking on load.
     key = (os.getenv("OPENAI_API_KEY") or "").strip()
     return key or None
 
@@ -268,7 +267,10 @@ class Settings:
     # Reasoning effort (GPT-5 family): none (default), low, medium, high, xhigh
     # ─────────────────────────────────────────────────────────────────────────
     # Hard kill switch: a stored OPENAI_API_KEY is inert unless this is opted in.
-    chronos_openai_enabled: bool = _env_flag("CHRONOS_OPENAI_ENABLED", "0")
+    chronos_openai_enabled: bool = (
+        os.getenv("CHRONOS_OPENAI_ENABLED", "1" if _openai_key_configured() else "0")
+        == "1"
+    )
     openai_api_key_configured: bool = _openai_key_configured()
     openai_api_key: Optional[str] = _resolve_openai_api_key()
     openai_model: str = normalize_openai_model_name(
