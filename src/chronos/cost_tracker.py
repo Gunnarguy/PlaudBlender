@@ -496,7 +496,106 @@ def track_usage(
 
 
 def get_session_cost() -> dict:
-    """Get session-level cost summary (since app start)."""
+    """Get session-level cost summary (today's cumulative costs from SQLite)."""
+    try:
+        _ensure_table()
+        from src.database.engine import engine
+        from sqlalchemy import text
+
+        # Query all records from today (since start of day)
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("""
+                SELECT timestamp, model, call_type, input_tokens, output_tokens, cost_usd
+                FROM api_usage_log
+                WHERE timestamp >= date('now', 'start of day')
+                ORDER BY timestamp ASC
+            """)
+            ).fetchall()
+
+            total_inp = 0
+            total_out = 0
+            total_cost = 0.0
+            by_model = {}
+            by_type = {}
+            
+            records_count = len(rows)
+            for r in rows:
+                # r: (timestamp, model, call_type, input_tokens, output_tokens, cost_usd)
+                ts_str, model, call_type, rinp, rout, rcost = r
+                rinp = rinp or 0
+                rout = rout or 0
+                rcost = rcost or 0.0
+                model_id = normalize_model_name(model)
+
+                total_inp += rinp
+                total_out += rout
+                total_cost += rcost
+
+                m = by_model.get(model_id)
+                if m is None:
+                    m = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+                    by_model[model_id] = m
+                m["calls"] += 1
+                m["input_tokens"] += rinp
+                m["output_tokens"] += rout
+                m["cost_usd"] += rcost
+
+                t = by_type.get(call_type)
+                if t is None:
+                    t = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+                    by_type[call_type] = t
+                t["calls"] += 1
+                t["input_tokens"] += rinp
+                t["output_tokens"] += rout
+                t["cost_usd"] += rcost
+
+            now = time.time()
+            recent = []
+            for r in reversed(rows[-20:]):
+                ts_str, model, call_type, rinp, rout, rcost = r
+                rinp = rinp or 0
+                rout = rout or 0
+                rcost = rcost or 0.0
+                model_id = normalize_model_name(model)
+                
+                try:
+                    dt = datetime.fromisoformat(ts_str)
+                    r_ts = dt.timestamp()
+                except Exception:
+                    r_ts = now
+
+                recent.append({
+                    "model": model_id,
+                    "type": call_type,
+                    "input_tokens": rinp,
+                    "output_tokens": rout,
+                    "cost_usd": round(rcost, 6),
+                    "ago_s": round(now - r_ts, 1)
+                })
+
+            session_start = _ledger.start_time
+            if rows:
+                try:
+                    dt = datetime.fromisoformat(rows[0][0])
+                    session_start = dt.timestamp()
+                except Exception:
+                    pass
+
+            return {
+                "total_cost_usd": round(total_cost, 4),
+                "total_input_tokens": total_inp,
+                "total_output_tokens": total_out,
+                "total_calls": records_count,
+                "by_model": by_model,
+                "by_type": by_type,
+                "recent": recent,
+                "session_start": session_start,
+                "session_minutes": round((now - session_start) / 60, 1),
+            }
+    except Exception as e:
+        logger.warning(f"Failed to query session costs: {e}")
+
     with _ledger.lock:
         total_inp = 0
         total_out = 0
