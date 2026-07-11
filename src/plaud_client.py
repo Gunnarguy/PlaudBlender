@@ -862,14 +862,31 @@ class PlaudClient:
         return None
 
 
+import threading
+
+_client_lock = threading.Lock()
+_client_instance = None
+
+
 def get_client() -> PlaudClient:
     """
-    Convenience function to get an authenticated Plaud client.
-
-    Returns:
-        Authenticated PlaudClient instance
+    Get or create the global thread-safe PlaudClient instance.
     """
-    return PlaudClient()
+    global _client_instance
+    if _client_instance is None:
+        with _client_lock:
+            if _client_instance is None:
+                _client_instance = PlaudClient()
+    return _client_instance
+
+
+def reset_client() -> None:
+    """
+    Invalidate and reset the global PlaudClient instance.
+    """
+    global _client_instance
+    with _client_lock:
+        _client_instance = None
 
 
 if __name__ == "__main__":
