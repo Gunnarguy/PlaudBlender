@@ -40,6 +40,91 @@ def _run_status_command(args: list[str], timeout: int = 3) -> subprocess.Complet
     )
 
 
+async def _run_chronos_async(
+    args: list[str], timeout: int = 90
+) -> StackControlResponse:
+    import asyncio
+    import os
+    import signal
+
+    cmd = ["bash", str(CHRONOS_SCRIPT), *args]
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=str(ROOT),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        preexec_fn=os.setsid,
+    )
+
+    stdout_chunks = []
+    stderr_chunks = []
+    max_output_bytes = 100 * 1024  # 100 KB limit
+    bytes_read = 0
+
+    async def read_stream(stream, chunks):
+        nonlocal bytes_read
+        try:
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                if bytes_read < max_output_bytes:
+                    chunks.append(line)
+                    bytes_read += len(line)
+                else:
+                    chunks.append(b"\n[OUTPUT TRUNCATED: Exceeded 100 KB limit]\n")
+                    break
+        except Exception:
+            pass
+
+    read_tasks = [
+        asyncio.create_task(read_stream(process.stdout, stdout_chunks)),
+        asyncio.create_task(read_stream(process.stderr, stderr_chunks)),
+    ]
+
+    try:
+        await asyncio.wait_for(process.wait(), timeout=timeout)
+        await asyncio.gather(*read_tasks)
+    except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        await process.wait()
+        for task in read_tasks:
+            task.cancel()
+        status = "failed"
+        message = "Command timed out" if isinstance(exc, asyncio.TimeoutError) else "Command cancelled"
+        output = b"".join(stdout_chunks + stderr_chunks).decode("utf-8", errors="replace")
+        return StackControlResponse(
+            action=" ".join(args),
+            status=status,
+            message=message,
+            output=output or "No output",
+        )
+
+    stdout = b"".join(stdout_chunks).decode("utf-8", errors="replace")
+    stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
+    output = ((stdout or "") + ("\n" + stderr if stderr else "")).strip()
+    status = "ok" if process.returncode == 0 else "failed"
+    return StackControlResponse(
+        action=" ".join(args),
+        status=status,
+        message=f"Command exited with code {process.returncode}",
+        output=output or "No output",
+    )
+
+
+async def _get_public_url_async() -> str | None:
+    response = await _run_chronos_async(["url"], timeout=10)
+    if response.status != "ok":
+        return None
+    output = (response.output or "").strip()
+    if output.startswith("http"):
+        return output.rsplit("/api/v1/auth/notion/callback", 1)[0]
+    return None
+
+
 def _run_chronos(args: list[str], timeout: int = 90) -> StackControlResponse:
     cmd = ["bash", str(CHRONOS_SCRIPT), *args]
     result = subprocess.run(
@@ -153,16 +238,16 @@ def _backup_info(path: Path, message: str = "") -> BackupInfoOut:
 
 @router.post("/stack/status", response_model=StackControlResponse)
 async def stack_status():
-    response = _run_chronos(["status"], timeout=15)
-    response.public_url = _get_public_url()
+    response = await _run_chronos_async(["status"], timeout=15)
+    response.public_url = await _get_public_url_async()
     return response
 
 
 @router.post("/stack/ensure-public", response_model=StackControlResponse)
 async def ensure_public_stack():
-    response = _run_chronos(["start"], timeout=45)
+    response = await _run_chronos_async(["start"], timeout=45)
     response.action = "ensure-public"
-    response.public_url = _get_public_url()
+    response.public_url = await _get_public_url_async()
     return response
 
 
