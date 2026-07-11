@@ -43,11 +43,24 @@ def merge_preferences(preferences):
 
     seconds = merged.get("auto_refresh_seconds", 60)
     try:
-        seconds = int(seconds)
+        if isinstance(seconds, float):
+            import math
+            if math.isnan(seconds):
+                seconds = 60
+            else:
+                seconds = int(seconds)
+        else:
+            seconds = int(seconds)
     except (TypeError, ValueError):
         seconds = 60
     merged["auto_refresh_seconds"] = max(15, min(300, seconds))
-    merged["auto_refresh_enabled"] = bool(merged.get("auto_refresh_enabled", True))
+
+    enabled = merged.get("auto_refresh_enabled", True)
+    if isinstance(enabled, str):
+        enabled = enabled.lower() in ("true", "1", "yes", "on")
+    else:
+        enabled = bool(enabled)
+    merged["auto_refresh_enabled"] = enabled
 
     default_view = str(merged.get("default_view", "timeline"))
     allowed_views = {
