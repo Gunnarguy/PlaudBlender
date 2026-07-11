@@ -485,7 +485,7 @@ def import_notion_recording(
         # Step 1: Get the page data (use prefetched when available)
         page = prefetched
         if not page:
-            xray_log("data", "notion-import", f"Pulling page from Notion...")
+            xray_log("data", "notion-import", "Pulling page from Notion...")
             recordings = svc.fetch_recordings(limit=1000, raise_on_error=True)
             for r in recordings:
                 if r.page_id == page_id:
@@ -1356,11 +1356,18 @@ def get_coverage_calendar(
 
     # Get Chronos recording dates
     chronos_dates: Dict[str, int] = {}
-    for rec in session.query(ChronosRecording).all():
-        if rec.created_at:
-            d = rec.created_at.strftime("%Y-%m-%d") if isinstance(rec.created_at, datetime) else str(rec.created_at)[:10]
-            if rec.source != "notion":
-                chronos_dates[d] = chronos_dates.get(d, 0) + 1
+    from sqlalchemy import String as SQLString, cast, func
+    date_expr = func.substr(cast(ChronosRecording.created_at, SQLString), 1, 10)
+    query_res = session.query(
+        date_expr,
+        func.count(ChronosRecording.recording_id)
+    ).filter(
+        ChronosRecording.source != "notion",
+        ChronosRecording.created_at.is_not(None)
+    ).group_by(
+        date_expr
+    ).all()
+    chronos_dates = {d: count for d, count in query_res if d}
 
     # Get Notion recording dates (use pre-fetched if available)
     notion_dates: Dict[str, int] = {}

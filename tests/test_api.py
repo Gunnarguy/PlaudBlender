@@ -9,8 +9,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -801,7 +800,8 @@ class TestSync:
 
 class TestSettings:
     def test_get_settings_exposes_autosync_controls(self, authed_client):
-        fake_settings = SimpleNamespace(
+        from src.config import Settings
+        fake_settings = Settings(
             chronos_processing_provider="gemini",
             chronos_cleaning_model="gemini-2.5-flash",
             chronos_analyst_model="gemini-2.5-flash",
@@ -1012,7 +1012,7 @@ class TestXRay:
             assert r.status_code == 200
 
     def test_clear(self, client):
-        with patch("app_v2.services.xray.clear_events") as mock_clear:
+        with patch("app_v2.services.xray.clear_events"):
             r = client.post("/api/v1/xray/clear")
             assert r.status_code == 200
             assert r.json()["success"] is True
@@ -1242,7 +1242,7 @@ class TestAuthEndpoints:
             "source": "web",
             "return_to": "https://dash.example/system?tab=notion",
         }
-        with patch("src.notion_oauth.NotionOAuthClient") as MockNotion:
+        with patch("src.notion_oauth.NotionOAuthClient"):
             r = client.get(
                 "/api/v1/auth/notion/callback",
                 params={"code": "code123", "state": "nonce-state"},
@@ -1293,7 +1293,7 @@ class TestNotion:
             assert r.status_code == 200
 
     def test_select_database(self, client):
-        with patch("api.routes.notion._get_notion_service") as mock_ns:
+        with patch("api.routes.notion._get_notion_service"):
             r = client.post(
                 "/api/v1/notion/databases/select", json={"db_id": "db-uuid"}
             )
@@ -1362,7 +1362,6 @@ class TestNotion:
 class TestRouteCount:
     def test_all_routes_registered(self, client):
         """Verify all expected API routes are registered."""
-        from api.main import app
 
         routes = []
         # The test app instance might not have all routes initialized in this test context
