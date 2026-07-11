@@ -274,7 +274,7 @@ class Settings:
     openai_api_key_configured: bool = _openai_key_configured()
     openai_api_key: Optional[str] = _resolve_openai_api_key()
     openai_model: str = normalize_openai_model_name(
-        os.getenv("OPENAI_MODEL", "gpt-5.5")
+        os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
     )
     openai_temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
 
