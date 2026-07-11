@@ -180,9 +180,10 @@ def normalize_model_name(model: str) -> str:
 
 
 def _gemini_pricing_tier() -> str:
-    """Return the configured Gemini billing tier for cost estimation."""
-    tier = (getattr(get_settings(), "gemini_billing_tier", "paid") or "paid").lower()
-    return "free" if tier == "free" else "paid"
+    """Return the configured Gemini billing tier for cost estimation.
+    Always estimate using 'paid' rates to show actual real-world API costs.
+    """
+    return "paid"
 
 
 def get_pricing(model: str) -> dict:
