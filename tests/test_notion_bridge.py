@@ -159,3 +159,14 @@ def test_get_import_progress_pauses_legacy_running_file_without_pid(monkeypatch)
         == "Import progress came from an older worker and is no longer active"
     )
     assert saved["status"] == "paused"
+
+def test_match_notion_to_chronos_empty_lists():
+    from src.chronos.notion_bridge import match_notion_to_chronos
+    from unittest.mock import Mock
+
+    session = Mock()
+    session.query().all.return_value = []
+
+    matches = match_notion_to_chronos([], session)
+
+    assert matches == {}
