@@ -98,6 +98,8 @@ def process_pending_recordings(
     """
 
     cfg = cfg or ChunkingConfig()
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be >= 0")
     pending = get_pending_recordings(session, status="raw")
     if limit is not None:
         pending = pending[:limit]

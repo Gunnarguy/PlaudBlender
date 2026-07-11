@@ -1,3 +1,4 @@
+import pytest
 from datetime import datetime
 
 from sqlalchemy import create_engine
@@ -37,5 +38,14 @@ def test_process_pending_creates_segments_and_updates_status():
         assert summary["recordings_processed"] == 1
         # Expect ceil(120 / (50-10)) chunks = ~3
         assert summary["segments_created"] >= 2
+    finally:
+        session.close()
+
+
+def test_process_pending_invalid_limit():
+    session = make_session()
+    try:
+        with pytest.raises(ValueError, match="limit must be >= 0"):
+            process_pending_recordings(session, limit=-1)
     finally:
         session.close()
