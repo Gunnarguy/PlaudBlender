@@ -98,6 +98,27 @@ _GEMINI_PRICING: dict[str, dict] = {
 }
 
 _OPENAI_PRICING: dict[str, dict] = {
+    "gpt-5.6-sol": {
+        "provider": "openai",
+        "input_per_mtok": 5.00,
+        "output_per_mtok": 30.00,
+        "tier": "paid",
+        "label": "GPT-5.6 Sol",
+    },
+    "gpt-5.6-terra": {
+        "provider": "openai",
+        "input_per_mtok": 2.50,
+        "output_per_mtok": 15.00,
+        "tier": "paid",
+        "label": "GPT-5.6 Terra",
+    },
+    "gpt-5.6-luna": {
+        "provider": "openai",
+        "input_per_mtok": 1.00,
+        "output_per_mtok": 6.00,
+        "tier": "paid",
+        "label": "GPT-5.6 Luna",
+    },
     "gpt-5.5": {
         "provider": "openai",
         "input_per_mtok": 5.00,
