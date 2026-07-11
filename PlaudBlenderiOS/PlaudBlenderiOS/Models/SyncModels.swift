@@ -104,6 +104,18 @@ struct PipelinePhase: Codable, Sendable, Identifiable {
     }
 }
 
+struct ActivatedModelCost: Codable, Sendable, Identifiable {
+    let model: String
+    let costUsd: Double
+
+    var id: String { model }
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case costUsd = "cost_usd"
+    }
+}
+
 /// Pipeline progress from `/api/sync/status`.
 struct PipelineStatus: Codable, Sendable {
     let status: String
@@ -118,6 +130,8 @@ struct PipelineStatus: Codable, Sendable {
     let detail: String?
     let warning: String?
     let warnings: [String]?
+    let accumulatedCostUsd: Double?
+    let activatedModels: [ActivatedModelCost]?
     let phases: [PipelinePhase]
 
     var running: Bool {
@@ -139,6 +153,8 @@ struct PipelineStatus: Codable, Sendable {
         case ageSeconds = "age_seconds"
         case syncMode = "sync_mode"
         case partialSuccess = "partial_success"
+        case accumulatedCostUsd = "accumulated_cost_usd"
+        case activatedModels = "activated_models"
     }
 
     var reliabilityMessages: [String] {

@@ -702,6 +702,37 @@ struct SyncDashboardView: View {
                     .padding(.horizontal, 14)
                     .padding(.bottom, 14)
                 }
+
+                if let status = viewModel.pipelineStatus, let models = status.activatedModels, !models.isEmpty {
+                    Divider()
+                        .padding(.horizontal, 14)
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Activated Models")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(models) { item in
+                                    HStack(spacing: 4) {
+                                        Text(item.model)
+                                            .font(.caption2.weight(.medium))
+                                        Text(String(format: "($%.4f)", item.costUsd))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.primary.opacity(0.05))
+                                    .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 14)
+                }
             }
         }
         .background(.regularMaterial)

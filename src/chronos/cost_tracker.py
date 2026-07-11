@@ -376,7 +376,7 @@ def _ensure_table() -> None:
             _db_initialized = True  # Don't retry
 
 
-def _persist(rec: UsageRecord, recording_id: Optional[str] = None) -> None:
+def _persist(rec: UsageRecord, recording_id: Optional[str] = None, run_id: Optional[str] = None) -> None:
     """Write a usage record to SQLite (fire-and-forget)."""
     try:
         _ensure_table()
@@ -388,8 +388,8 @@ def _persist(rec: UsageRecord, recording_id: Optional[str] = None) -> None:
             conn.execute(
                 text("""
                     INSERT INTO api_usage_log
-                        (timestamp, model, call_type, input_tokens, output_tokens, cost_usd, recording_id)
-                    VALUES (:ts, :model, :call_type, :inp, :out, :cost, :rid)
+                        (timestamp, model, call_type, input_tokens, output_tokens, cost_usd, recording_id, extra)
+                    VALUES (:ts, :model, :call_type, :inp, :out, :cost, :rid, :run_id)
                 """),
                 {
                     "ts": ts,
@@ -399,6 +399,7 @@ def _persist(rec: UsageRecord, recording_id: Optional[str] = None) -> None:
                     "out": rec.output_tokens,
                     "cost": rec.cost_usd,
                     "rid": recording_id,
+                    "run_id": run_id,
                 },
             )
             conn.commit()
@@ -442,8 +443,17 @@ def track_usage(
     )
     _ledger.add(rec)
 
+    # Resolve run ID
+    run_id = os.environ.get("CHRONOS_TRACE_RUN_ID")
+    if not run_id:
+        try:
+            from src.chronos.trace_service import current_run_id
+            run_id = current_run_id()
+        except Exception:
+            pass
+
     # Persist in background to avoid blocking the caller
-    t = threading.Thread(target=_persist, args=(rec, recording_id), daemon=True)
+    t = threading.Thread(target=_persist, args=(rec, recording_id, run_id), daemon=True)
     t.start()
 
     # X-ray telemetry
@@ -697,3 +707,40 @@ def get_model_pricing_table() -> list[dict]:
             }
         )
     return rows
+
+
+def get_run_cost_details(run_id: str) -> dict:
+    """Return total cost and list of models used for a given run_id from SQLite."""
+    try:
+        _ensure_table()
+        from src.database.engine import engine
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("""
+                    SELECT model, SUM(cost_usd) as cost
+                    FROM api_usage_log
+                    WHERE extra = :run_id
+                    GROUP BY model
+                    ORDER BY SUM(cost_usd) DESC
+                """),
+                {"run_id": run_id}
+            ).fetchall()
+
+            total_cost = 0.0
+            models = []
+            for r in rows:
+                m_name = r[0]
+                m_cost = r[1] or 0.0
+                total_cost += m_cost
+                models.append({
+                    "model": m_name,
+                    "cost_usd": round(m_cost, 6)
+                })
+            return {
+                "total_cost": round(total_cost, 6),
+                "models": models
+            }
+    except Exception as e:
+        logger.debug(f"Failed to get run cost details: {e}")
+        return {"total_cost": 0.0, "models": []}

@@ -316,6 +316,22 @@ def read_progress() -> dict[str, Any] | None:
         # Add a computed "age" so the UI can decide whether data is stale
         if data.get("started_at"):
             data["age_seconds"] = round(time.time() - data["started_at"], 1)
+
+        # Supplement with real-time cost and active models telemetry
+        run_id = data.get("run_id")
+        if run_id:
+            try:
+                from src.chronos.cost_tracker import get_run_cost_details
+                details = get_run_cost_details(run_id)
+                data["accumulated_cost_usd"] = details.get("total_cost", 0.0)
+                data["activated_models"] = details.get("models", [])
+            except Exception:
+                data["accumulated_cost_usd"] = 0.0
+                data["activated_models"] = []
+        else:
+            data["accumulated_cost_usd"] = 0.0
+            data["activated_models"] = []
+
         return data
     except (json.JSONDecodeError, OSError):
         return None

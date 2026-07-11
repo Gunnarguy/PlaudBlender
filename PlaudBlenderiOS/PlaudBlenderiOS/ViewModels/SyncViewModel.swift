@@ -124,6 +124,10 @@ final class SyncViewModel {
             entries.append(("Trigger", trigger.capitalized))
         }
 
+        if let cost = status.accumulatedCostUsd {
+            entries.append(("Accumulated Cost", String(format: "$%.4f", cost)))
+        }
+
         return entries
     }
 

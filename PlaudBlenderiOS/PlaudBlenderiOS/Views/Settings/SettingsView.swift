@@ -17,6 +17,30 @@ struct SettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Bindable var viewModel: SettingsViewModel
 
+    private let standardProviders = ["gemini", "openai"]
+    private let standardModels = [
+        "gemini-3.5-flash",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-3-flash-preview",
+        "gemini-3.1-pro-preview",
+        "gpt-5.4-mini",
+        "gpt-5.4",
+        "gpt-5.4-pro",
+        "gpt-5.5",
+        "gpt-5.5-pro"
+    ]
+    private let standardEmbeddingModels = [
+        "gemini-embedding-2",
+        "gemini-embedding-2-preview",
+        "gemini-embedding-001",
+        "text-embedding-3-small",
+        "text-embedding-3-large"
+    ]
+    private let standardThinkingLevels = ["minimal", "low", "medium", "high"]
+
     var body: some View {
         NavigationStack {
             Form {
@@ -195,13 +219,13 @@ struct SettingsView: View {
 
                     if viewModel.supportsServerSettingsEndpoint {
                         Section("Models") {
-                    configField("Processing Provider", text: $viewModel.processingProvider)
-                    configField("Cleaning Model", text: $viewModel.cleaningModel)
-                    configField("Analyst Model", text: $viewModel.analystModel)
-                    configField("Embedding Model", text: $viewModel.embeddingModel)
-                    configField("OpenAI Model", text: $viewModel.openAIModel)
-                    configField("Thinking Level", text: $viewModel.thinkingLevel)
-                    }
+                            ModelSelectorView(title: "Processing Provider", selection: $viewModel.processingProvider, options: standardProviders)
+                            ModelSelectorView(title: "Cleaning Model", selection: $viewModel.cleaningModel, options: standardModels)
+                            ModelSelectorView(title: "Analyst Model", selection: $viewModel.analystModel, options: standardModels)
+                            ModelSelectorView(title: "Embedding Model", selection: $viewModel.embeddingModel, options: standardEmbeddingModels)
+                            ModelSelectorView(title: "OpenAI Model", selection: $viewModel.openAIModel, options: standardModels)
+                            ModelSelectorView(title: "Thinking Level", selection: $viewModel.thinkingLevel, options: standardThinkingLevels)
+                        }
 
                     Section("OpenAI Controls") {
                         Toggle("Enable OpenAI Integration", isOn: $viewModel.chronosOpenAIEnabled)
