@@ -79,6 +79,13 @@ def cleanup_sqlite():
         else:
             print("  ✓ No empty records found.")
 
+        # 4. Clean up orphaned spans & events (foreign key violations)
+        print("Pruning database foreign key orphans...")
+        res_spans = db.execute(text("DELETE FROM chronos_execution_spans WHERE run_id NOT IN (SELECT run_id FROM chronos_execution_runs)"))
+        res_events = db.execute(text("DELETE FROM chronos_events WHERE recording_id NOT IN (SELECT recording_id FROM chronos_recordings)"))
+        db.commit()
+        print("  ✓ Database foreign key orphans pruned.")
+
     except Exception as e:
         print(f"❌ Error during database transaction: {e}")
         db.rollback()

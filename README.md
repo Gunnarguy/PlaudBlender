@@ -124,6 +124,7 @@ To keep your workspace clean and fast, use the unified cleanup utility. This rem
 2. **Purges Failed Runs**: Deletes any recordings with a `failed` processing status (cascading automatically to remove orphaned events).
 3. **Vacuums SQLite**: Executes `VACUUM` on SQLite to reclaim unused disk storage space and rebuild the database file.
 4. **Purges Vector Orphans**: Queries Qdrant and deletes orphaned points that no longer have corresponding entries in SQLite.
+5. **Prunes Foreign Key Orphans**: Deletes orphaned execution spans and events to guarantee 100% database foreign key integrity.
 
 ---
 
