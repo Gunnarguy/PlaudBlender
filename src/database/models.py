@@ -161,7 +161,10 @@ class ChronosEvent(Base):
 
     event_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     recording_id = Column(
-        String, ForeignKey("chronos_recordings.recording_id"), nullable=False, index=True
+        String,
+        ForeignKey("chronos_recordings.recording_id"),
+        nullable=False,
+        index=True,
     )
 
     # Temporal indexing (mandatory)
@@ -249,7 +252,9 @@ class ChronosExecutionRun(Base):
     __tablename__ = "chronos_execution_runs"
 
     run_id = Column(String, primary_key=True, default=lambda: uuid.uuid4().hex[:12])
-    trigger = Column(String, nullable=True)  # manual | scheduled | webhook | ios | dash | cli
+    trigger = Column(
+        String, nullable=True
+    )  # manual | scheduled | webhook | ios | dash | cli
     source = Column(String, nullable=True)  # sync | search | recording | system
     status = Column(String, default="running", nullable=False)
     title = Column(String, nullable=True)
@@ -300,9 +305,13 @@ class ChronosExecutionSpan(Base):
         index=True,
     )
 
-    stage = Column(String, nullable=True)  # ingest | process | embed | index | graph | ask
+    stage = Column(
+        String, nullable=True
+    )  # ingest | process | embed | index | graph | ask
     operation = Column(String, nullable=False)
-    source = Column(String, nullable=True)  # xray source: gemini | openai | qdrant | local
+    source = Column(
+        String, nullable=True
+    )  # xray source: gemini | openai | qdrant | local
     provider = Column(String, nullable=True)  # gemini | openai | local | qdrant | plaud
     model = Column(String, nullable=True)
     status = Column(String, default="running", nullable=False)
@@ -348,11 +357,22 @@ class ChronosWebhookEvent(Base):
     payload = Column(JSON, nullable=False)
     headers = Column(JSON, nullable=True)
     # Optional link to a recording if the event references one
-    recording_id = Column(String, ForeignKey("chronos_recordings.recording_id"), nullable=True)
+    recording_id = Column(
+        String, ForeignKey("chronos_recordings.recording_id"), nullable=True
+    )
 
     received_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    processed = Column(String, default="new", nullable=False)  # new | processed | failed
+    processed = Column(
+        String, default="new", nullable=False
+    )  # new | processed | failed
     processed_at = Column(DateTime, nullable=True)
 
     def __repr__(self) -> str:
         return f"ChronosWebhookEvent(id={self.event_id}, type={self.event_type}, received_at={self.received_at})"
+
+
+class NotionMatchOverride(Base):
+    __tablename__ = "notion_match_overrides"
+
+    notion_page_id = Column(String, primary_key=True)
+    chronos_recording_id = Column(String, nullable=False)

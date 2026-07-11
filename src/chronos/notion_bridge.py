@@ -10,6 +10,8 @@ Chronos citizens — searchable, graphable, analyzable.
 """
 
 import hashlib
+import json
+import os
 import logging
 import time as _time
 import uuid
@@ -485,7 +487,7 @@ def import_notion_recording(
         # Step 1: Get the page data (use prefetched when available)
         page = prefetched
         if not page:
-            xray_log("data", "notion-import", f"Pulling page from Notion...")
+            xray_log("data", "notion-import", "Pulling page from Notion...")
             recordings = svc.fetch_recordings(limit=1000, raise_on_error=True)
             for r in recordings:
                 if r.page_id == page_id:
@@ -671,8 +673,6 @@ def import_notion_recording(
 
 # ── Batch Progress Persistence ────────────────────────────────
 
-import json
-import os
 
 _PROGRESS_FILE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
@@ -688,18 +688,18 @@ _MATCH_OVERRIDE_FILE = os.path.join(
 
 def get_manual_notion_match_overrides() -> Dict[str, str]:
     """Load persisted manual Notion → Chronos match overrides."""
+    from src.database.engine import SessionLocal
+    from src.database.models import NotionMatchOverride
+
+    db = SessionLocal()
     try:
-        with open(_MATCH_OVERRIDE_FILE, "r") as file:
-            data = json.load(file)
-            return data if isinstance(data, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        overrides = db.query(NotionMatchOverride).all()
+        return {o.notion_page_id: o.chronos_recording_id for o in overrides}
+    finally:
+        db.close()
 
 
-def _save_manual_notion_match_overrides(overrides: Dict[str, str]) -> None:
-    os.makedirs(os.path.dirname(_MATCH_OVERRIDE_FILE), exist_ok=True)
-    with open(_MATCH_OVERRIDE_FILE, "w") as file:
-        json.dump(overrides, file, indent=2, sort_keys=True)
+
 
 
 def set_manual_notion_match_override(
@@ -722,10 +722,20 @@ def set_manual_notion_match_override(
     if not exists:
         return False, f"Chronos recording {recording_id} was not found"
 
-    overrides = get_manual_notion_match_overrides()
-    overrides[page_id] = recording_id
-    _save_manual_notion_match_overrides(overrides)
-    return True, f"Override saved for {page_id}"
+    from src.database.models import NotionMatchOverride
+
+    try:
+        override = session.query(NotionMatchOverride).filter_by(notion_page_id=page_id).first()
+        if override:
+            override.chronos_recording_id = recording_id
+        else:
+            override = NotionMatchOverride(notion_page_id=page_id, chronos_recording_id=recording_id)
+            session.add(override)
+        session.commit()
+        return True, "Match overridden successfully"
+    except Exception as e:
+        session.rollback()
+        return False, str(e)
 
 
 def clear_manual_notion_match_override(page_id: str) -> Tuple[bool, str]:
@@ -734,13 +744,23 @@ def clear_manual_notion_match_override(page_id: str) -> Tuple[bool, str]:
     if not page_id:
         return False, "page_id is required"
 
-    overrides = get_manual_notion_match_overrides()
-    if page_id not in overrides:
-        return False, f"No override exists for {page_id}"
+    from src.database.engine import SessionLocal
+    from src.database.models import NotionMatchOverride
 
-    overrides.pop(page_id, None)
-    _save_manual_notion_match_overrides(overrides)
-    return True, f"Override cleared for {page_id}"
+    session = SessionLocal()
+    try:
+        override = session.query(NotionMatchOverride).filter_by(notion_page_id=page_id).first()
+        if not override:
+            return False, f"No override exists for {page_id}"
+
+        session.delete(override)
+        session.commit()
+        return True, f"Override cleared for {page_id}"
+    except Exception as e:
+        session.rollback()
+        return False, str(e)
+    finally:
+        session.close()
 
 
 def _load_progress() -> Dict:
