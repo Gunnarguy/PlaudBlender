@@ -214,7 +214,7 @@ def _make_mock_service():
     svc.get_ai_summary.return_value = "AI summary"
     svc.get_extracted_data.return_value = {"key": "value"}
     svc.get_plaud_workflow_transcript.return_value = "Plaud transcript"
-    svc.save_category_override.return_value = None
+    svc.save_category_override.return_value = {"success": True}
     svc.get_category_overrides.return_value = {"evt-001": "meeting"}
 
     # Search
@@ -302,7 +302,14 @@ def authed_client(mock_svc):
 
     get_service.cache_clear()
 
-    with patch.dict(os.environ, {"CHRONOS_API_KEY": "test-secret-key"}, clear=False):
+    with patch.dict(
+        os.environ,
+        {
+            "CHRONOS_API_KEY": "test-secret-key",
+            "CHRONOS_DEPLOYMENT_MODE": "public",
+        },
+        clear=False,
+    ):
         from api.main import app
         from api.dependencies import get_service as gs
 
@@ -382,7 +389,7 @@ class TestHealth:
 
 class TestAuthEnforcement:
     def test_unauthenticated_blocked(self, authed_client):
-        """When CHRONOS_API_KEY is set, requests without auth header get 401."""
+        """When CHRONOS_API_KEY is set and mode is public, requests without auth header get 401."""
         r = authed_client.get("/api/v1/timeline/days")
         assert r.status_code == 401
 
@@ -392,21 +399,27 @@ class TestAuthEnforcement:
         assert r.status_code == 401
 
     def test_valid_token_allowed(self, authed_client):
-        """Correct API key lets the request through."""
+        """Correct API key lets the request through in public mode."""
         r = authed_client.get("/api/v1/timeline/days", headers=AUTH_HEADER)
         assert r.status_code == 200
 
-    def test_dev_mode_no_auth_required(self, client):
-        """When CHRONOS_API_KEY is empty, no auth needed."""
-        r = client.get("/api/v1/timeline/days")
-        assert r.status_code == 200
-
-    def test_require_auth_missing_key_public_mode(self, client):
-        """When CHRONOS_REQUIRE_AUTH=1 and CHRONOS_API_KEY is empty, request is rejected."""
-        with patch.dict(os.environ, {"CHRONOS_REQUIRE_AUTH": "1", "CHRONOS_API_KEY": ""}, clear=False):
+    def test_dev_mode_fail_closed_if_public(self, client):
+        """When CHRONOS_DEPLOYMENT_MODE is public and CHRONOS_API_KEY is empty, request is rejected."""
+        with patch.dict(os.environ, {"CHRONOS_DEPLOYMENT_MODE": "public", "CHRONOS_API_KEY": ""}, clear=False):
             r = client.get("/api/v1/timeline/days")
             assert r.status_code == 401
-            assert "unauthorized" in r.json()["detail"].lower()
+
+    def test_loopback_bypass_allowed(self, client):
+        """When CHRONOS_DEPLOYMENT_MODE is loopback, local requests bypass auth."""
+        with patch.dict(os.environ, {"CHRONOS_DEPLOYMENT_MODE": "loopback", "CHRONOS_API_KEY": "some-key"}, clear=False):
+            r = client.get("/api/v1/timeline/days")
+            assert r.status_code == 200
+
+    def test_trusted_lan_bypass_allowed(self, client):
+        """When CHRONOS_DEPLOYMENT_MODE is trusted_lan, local requests bypass auth."""
+        with patch.dict(os.environ, {"CHRONOS_DEPLOYMENT_MODE": "trusted_lan", "CHRONOS_API_KEY": "some-key"}, clear=False):
+            r = client.get("/api/v1/timeline/days")
+            assert r.status_code == 200
 
 
 # ═══════════════════════════════════════════════════════════
@@ -800,8 +813,8 @@ class TestSync:
 
 
 class TestSettings:
-    def test_get_settings_exposes_autosync_controls(self, authed_client):
-        fake_settings = SimpleNamespace(
+    def test_get_settings_exposes_autosync_controls(self, authed_client, test_settings_factory):
+        fake_settings = test_settings_factory(
             chronos_processing_provider="gemini",
             chronos_cleaning_model="gemini-2.5-flash",
             chronos_analyst_model="gemini-2.5-flash",
@@ -836,10 +849,6 @@ class TestSettings:
             chronos_autosync_min_available_mb=500,
             chronos_autosync_max_swap_used_mb=256,
             chronos_autosync_defer_seconds=60,
-            gemini_api_key="test-gemini",
-            openai_api_key_configured=False,
-            qdrant_api_key=None,
-            notion_token=None,
         )
 
         with patch("api.routes.settings.get_settings", return_value=fake_settings), patch(

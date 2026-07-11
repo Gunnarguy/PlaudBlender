@@ -145,17 +145,12 @@ def _register_auth_routes(server):
     def _cors_response(body, status=200, content_type="text/html"):
         """Wrap a response with CORS headers for Plaud OAuth XHR callbacks."""
         resp = make_response(body, status)
-        # Plaud's OAuth page may send Origin: null (sandboxed redirect) or
-        # its own domain.  We must reflect the request Origin so the browser
-        # accepts the XHR response.
+        # Plaud's OAuth page may send its own domain.
+        # We must reflect the request Origin strictly if it matches Plaud's domains.
         origin = request.headers.get("Origin", "")
-        allowed = {"https://app.plaud.ai", "https://resource.plaud.ai", "null"}
+        allowed = {"https://app.plaud.ai", "https://resource.plaud.ai"}
         if origin in allowed:
             resp.headers["Access-Control-Allow-Origin"] = origin
-        else:
-            # Fallback — allow any origin for this one endpoint since
-            # only a valid state+code can trigger token exchange.
-            resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "*"
         if content_type:

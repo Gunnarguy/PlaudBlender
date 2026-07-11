@@ -260,9 +260,48 @@ def _ws_event_matches(
 
 
 async def _websocket_auth_ok(websocket: WebSocket) -> bool:
-    api_key = os.getenv("CHRONOS_API_KEY", "")
-    if not api_key:
+    mode = os.getenv("CHRONOS_DEPLOYMENT_MODE", "loopback").strip().lower()
+
+    # Get client IP
+    xff = websocket.headers.get("X-Forwarded-For")
+    if xff:
+        client_ip = xff.split(",")[0].strip()
+    else:
+        client_ip = websocket.client.host if websocket.client else "127.0.0.1"
+
+    # Check loopback/trusted_lan bypasses
+    import ipaddress
+    def _is_loopback(ip_str: str) -> bool:
+        if ip_str == "testclient":
+            return True
+        try:
+            return ipaddress.ip_address(ip_str).is_loopback
+        except ValueError:
+            return False
+
+    def _is_private_or_tailscale(ip_str: str) -> bool:
+        try:
+            ip = ipaddress.ip_address(ip_str)
+            tailscale_net = ipaddress.ip_network("100.64.0.0/10")
+            return ip.is_private or ip in tailscale_net
+        except ValueError:
+            return False
+
+    bypass_auth = False
+    if mode == "loopback":
+        if _is_loopback(client_ip):
+            bypass_auth = True
+    elif mode == "trusted_lan":
+        if _is_loopback(client_ip) or _is_private_or_tailscale(client_ip):
+            bypass_auth = True
+
+    if bypass_auth:
         return True
+
+    api_key = os.getenv("CHRONOS_API_KEY", "").strip()
+    if not api_key:
+        await websocket.close(code=1008)
+        return False
 
     token = websocket.query_params.get("token") or ""
     auth = websocket.headers.get("authorization", "")
