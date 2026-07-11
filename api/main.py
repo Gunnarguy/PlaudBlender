@@ -36,19 +36,28 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
     init_db()
-    try:
-        from src.plaud_oauth import PlaudOAuthClient
+    
+    async def plaud_warmup():
+        try:
+            import asyncio
+            from src.plaud_oauth import PlaudOAuthClient
 
-        status = PlaudOAuthClient().token_status_with_recovery(attempt_recovery=True)
-        if status.get("is_authenticated"):
-            logger.info("Plaud auth is ready")
-        else:
-            logger.warning(
-                "Plaud auth not connected on startup (has_refresh_token=%s)",
-                status.get("has_refresh_token"),
+            status = await asyncio.to_thread(
+                PlaudOAuthClient().token_status_with_recovery, 
+                attempt_recovery=True
             )
-    except Exception as exc:  # pragma: no cover - startup should stay resilient
-        logger.warning("Plaud auth warmup failed: %s", exc)
+            if status.get("is_authenticated"):
+                logger.info("Plaud auth is ready")
+            else:
+                logger.warning(
+                    "Plaud auth not connected on startup (has_refresh_token=%s)",
+                    status.get("has_refresh_token"),
+                )
+        except Exception as exc:
+            logger.warning("Plaud auth warmup failed: %s", exc)
+
+    import asyncio
+    asyncio.create_task(plaud_warmup())
     yield
 
 

@@ -27,7 +27,7 @@ struct PlaudStatusValidationCache: Sendable {
     mutating func load(
         forceRefresh: Bool = false,
         now: Date = Date(),
-        fetch: () async throws -> TokenStatus
+        fetch: @Sendable () async throws -> TokenStatus
     ) async throws -> PlaudStatusValidationResult {
         if !forceRefresh, let cachedValidation = cachedValidationResult(now: now) {
             return cachedValidation

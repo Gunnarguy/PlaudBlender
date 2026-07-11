@@ -101,11 +101,13 @@ final class SettingsViewModel: NSObject {
         var validation = plaudStatusValidation
 
         do {
+            let api = self.api
             let result = try await validation.load(
                 forceRefresh: forceRefresh,
                 now: now
-            ) {
-                try await api.get("/api/auth/plaud/status")
+            ) { @Sendable in
+                let status: TokenStatus = try await api.get("/api/auth/plaud/status")
+                return status
             }
             plaudStatusValidation = validation
             applyPlaudStatusValidation(result)
