@@ -44,6 +44,7 @@ def get_engine(database_url: Optional[str] = None) -> Engine:
             cursor.execute("PRAGMA mmap_size=268435456")
             cursor.execute("PRAGMA temp_store=MEMORY")
             cursor.execute("PRAGMA cache_size=-10000")
+            cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
 
     return engine
