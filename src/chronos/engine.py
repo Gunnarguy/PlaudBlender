@@ -461,8 +461,13 @@ def validate_event_quality(events: List[ChronosEvent], duration_seconds: int) ->
         logger.warning("No events extracted")
         return False
 
-    # Heuristic: expect at least 1 event per 10 minutes
-    expected_min = duration_seconds // 600
+    if duration_seconds <= 0:
+        logger.warning(f"Invalid duration: {duration_seconds}s. Expected positive value.")
+        # If duration is 0 or negative, skip the event count check but still check empty events
+        expected_min = 0
+    else:
+        # Heuristic: expect at least 1 event per 10 minutes
+        expected_min = duration_seconds // 600
     if len(events) < expected_min:
         logger.warning(f"Too few events: {len(events)} (expected >= {expected_min})")
         return False
