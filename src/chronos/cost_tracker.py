@@ -11,6 +11,7 @@ Usage:
     session = get_session_cost()       # since app start
 """
 
+import os
 import threading
 import time
 from dataclasses import dataclass, field
