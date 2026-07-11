@@ -116,9 +116,16 @@ class ChronosRecording(Base):
     # Processing workflow
     processing_status = Column(
         String, default="pending", nullable=False
-    )  # pending | processing | completed | failed
+    )  # raw | pending | processing | completed | failed | deferred | cancelled
     error_message = Column(Text, nullable=True)
     processed_at = Column(DateTime, nullable=True)
+
+    # Lease-based processing locks & heartbeats
+    processing_started_at = Column(DateTime, nullable=True)
+    heartbeat_at = Column(DateTime, nullable=True)
+    lease_expires_at = Column(DateTime, nullable=True)
+    worker_id = Column(String, nullable=True)
+    attempt_count = Column(Integer, default=0, nullable=False)
 
     # Plaud AI Summary (fetched from Plaud cloud after workflow processing)
     plaud_ai_summary = Column(Text, nullable=True)
@@ -356,3 +363,13 @@ class ChronosWebhookEvent(Base):
 
     def __repr__(self) -> str:
         return f"ChronosWebhookEvent(id={self.event_id}, type={self.event_type}, received_at={self.received_at})"
+
+
+class NotionMatchOverride(Base):
+    """Persisted manual overrides mapping Notion page UUIDs to Chronos recording IDs."""
+
+    __tablename__ = "notion_match_overrides"
+
+    notion_page_id = Column(String, primary_key=True)
+    chronos_recording_id = Column(String, nullable=False)
+

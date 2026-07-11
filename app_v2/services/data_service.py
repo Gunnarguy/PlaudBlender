@@ -2878,32 +2878,62 @@ class ChronosDataService:
     ) -> int:
         """Reset obviously stale processing rows back to pending.
 
-        These rows happen when a pipeline process is interrupted after marking a
-        recording as processing but before writing a terminal state.
+        A stale-job policy uses dedicated timestamps (lease_expires_at, heartbeat_at)
+        and updates only if the record is still in 'processing' status.
         """
         try:
             db = SessionLocal()
             try:
-                cutoff = datetime.utcnow() - timedelta(minutes=stale_after_minutes)
+                now = datetime.utcnow()
+                cutoff = now - timedelta(minutes=stale_after_minutes)
+
+                # Reset rows where lease has expired OR heartbeat is older than cutoff
+                # OR (if lease/heartbeat aren't set) created_at is older than cutoff.
                 stale_rows = (
                     db.query(_ChronosRecordingModel)
                     .filter(
                         _ChronosRecordingModel.processing_status == "processing",
-                        _ChronosRecordingModel.created_at < cutoff,
-                        _ChronosRecordingModel.processed_at.is_(None),
+                        (
+                            (_ChronosRecordingModel.lease_expires_at < now) |
+                            (_ChronosRecordingModel.heartbeat_at < cutoff) |
+                            (
+                                _ChronosRecordingModel.lease_expires_at.is_(None) &
+                                _ChronosRecordingModel.heartbeat_at.is_(None) &
+                                (_ChronosRecordingModel.created_at < cutoff)
+                            )
+                        )
                     )
                     .all()
                 )
+
+                updated_count = 0
                 for rec in stale_rows:
-                    rec.processing_status = "pending"
-                    rec.error_message = None
-                if stale_rows:
+                    # Double-check state and conditionally update (lease-safe check)
+                    res = (
+                        db.query(_ChronosRecordingModel)
+                        .filter(
+                            _ChronosRecordingModel.recording_id == rec.recording_id,
+                            _ChronosRecordingModel.processing_status == "processing",
+                        )
+                        .update(
+                            {
+                                "processing_status": "pending",
+                                "error_message": None,
+                                "lease_expires_at": None,
+                                "heartbeat_at": None,
+                            },
+                            synchronize_session=False,
+                        )
+                    )
+                    updated_count += res
+
+                if updated_count > 0:
                     db.commit()
                     logger.warning(
                         "Auto-reset %s stale processing recording(s) to pending",
-                        len(stale_rows),
+                        updated_count,
                     )
-                return len(stale_rows)
+                return updated_count
             finally:
                 db.close()
         except Exception as e:
@@ -3021,15 +3051,21 @@ class ChronosDataService:
             try:
                 reset_count = 0
 
-                processing_rows = (
+                # Clear processing rows with a single bulk update
+                updated_processing = (
                     db.query(_ChronosRecordingModel)
                     .filter(_ChronosRecordingModel.processing_status == "processing")
-                    .all()
+                    .update(
+                        {
+                            "processing_status": "pending",
+                            "error_message": None,
+                            "lease_expires_at": None,
+                            "heartbeat_at": None,
+                        },
+                        synchronize_session=False,
+                    )
                 )
-                for rec in processing_rows:
-                    rec.processing_status = "pending"
-                    rec.error_message = None
-                    reset_count += 1
+                reset_count += updated_processing
 
                 failed_rows = (
                     db.query(_ChronosRecordingModel)
@@ -3040,11 +3076,28 @@ class ChronosDataService:
                     bucket, _reason = self._classify_sync_failure(rec)
                     if bucket != "actionable":
                         continue
-                    rec.processing_status = "pending"
-                    rec.error_message = None
-                    reset_count += 1
 
-                db.commit()
+                    # Conditionally reset only if it is still failed
+                    res = (
+                        db.query(_ChronosRecordingModel)
+                        .filter(
+                            _ChronosRecordingModel.recording_id == rec.recording_id,
+                            _ChronosRecordingModel.processing_status == "failed",
+                        )
+                        .update(
+                            {
+                                "processing_status": "pending",
+                                "error_message": None,
+                                "lease_expires_at": None,
+                                "heartbeat_at": None,
+                            },
+                            synchronize_session=False,
+                        )
+                    )
+                    reset_count += res
+
+                if reset_count > 0:
+                    db.commit()
                 return reset_count
             finally:
                 db.close()
@@ -3052,39 +3105,77 @@ class ChronosDataService:
             logger.error(f"Error resetting recordings: {e}")
             return 0
 
-    def save_category_override(self, event_qdrant_id: str, new_category: str) -> bool:
-        """Save a user category override for an event.
+    def save_category_override(
+        self, event_qdrant_ids: str | Iterable[str], new_category: str
+    ) -> dict:
+        """Save a user category override for one or more events.
 
-        Finds the ChronosEvent by its qdrant_point_id and sets user_category_override.
+        Finds the ChronosEvents by their qdrant_point_ids (or event_ids) and sets user_category_override.
+        Returns a granular dictionary response containing success state, updated counts, and lock metrics.
         """
+        from collections.abc import Iterable
+        result = {
+            "success": False,
+            "updated_count": 0,
+            "missing_ids": [],
+            "errors": [],
+            "lock_encountered": False
+        }
         try:
             from src.database.models import ChronosEvent
 
             db = SessionLocal()
             try:
-                evt = (
+                if isinstance(event_qdrant_ids, str):
+                    event_ids = [event_qdrant_ids]
+                else:
+                    event_ids = list(event_qdrant_ids)
+
+                if not event_ids:
+                    result["success"] = True
+                    return result
+
+                evts = (
                     db.query(ChronosEvent)
-                    .filter_by(qdrant_point_id=event_qdrant_id)
-                    .first()
+                    .filter(ChronosEvent.qdrant_point_id.in_(event_ids))
+                    .all()
                 )
-                if not evt:
-                    evt = (
+
+                found_ids = {e.qdrant_point_id for e in evts if e.qdrant_point_id}
+                missing_ids = [eid for eid in event_ids if eid not in found_ids]
+
+                if missing_ids:
+                    fallback_evts = (
                         db.query(ChronosEvent)
-                        .filter_by(event_id=event_qdrant_id)
-                        .first()
+                        .filter(ChronosEvent.event_id.in_(missing_ids))
+                        .all()
                     )
-                if evt:
-                    setattr(evt, "user_category_override", new_category)
+                    evts.extend(fallback_evts)
+                    found_ids.update({e.event_id for e in fallback_evts if e.event_id})
+
+                if evts:
+                    for evt in evts:
+                        setattr(evt, "user_category_override", new_category)
                     db.commit()
                     # Invalidate cache so next load reflects the change
                     self._get_all_events(force_refresh=True)
-                    return True
-                logger.warning(f"No event found with qdrant_point_id={event_qdrant_id}")
+                    result["updated_count"] = len(evts)
+
+                result["missing_ids"] = [eid for eid in event_ids if eid not in found_ids]
+                result["success"] = len(result["missing_ids"]) == 0
+                return result
+            except Exception as db_exc:
+                db.rollback()
+                err_msg = str(db_exc)
+                result["errors"].append(err_msg)
+                if "locked" in err_msg.lower() or "busy" in err_msg.lower():
+                    result["lock_encountered"] = True
+                return result
             finally:
                 db.close()
         except Exception as e:
-            logger.error(f"Error saving category override: {e}")
-        return False
+            result["errors"].append(str(e))
+            return result
 
     def get_upload_candidates(self) -> List[Dict[str, Any]]:
         """Return local upload candidates without blocking on Plaud cloud scans."""

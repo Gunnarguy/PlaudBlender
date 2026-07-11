@@ -5,7 +5,7 @@ ChronosProcessingJob tables. Keeps Chronos data access isolated from
 legacy Recording/Segment logic.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, List, Optional
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -131,21 +131,33 @@ def mark_chronos_recording_status(
     recording_id: str,
     status: str,
     error_message: Optional[str] = None,
+    worker_id: Optional[str] = None,
 ) -> None:
-    """Update processing status for a recording.
+    """Update processing status for a recording with lease support.
 
     Args:
         session: SQLAlchemy session
         recording_id: Recording to update
-        status: New status (pending | processing | completed | failed)
+        status: New status (pending | processing | completed | failed | cancelled)
         error_message: Error details if status is failed
+        worker_id: ID of the active worker node/thread acquiring the lease
     """
     rec = session.query(ChronosRecording).filter_by(recording_id=recording_id).first()
     if rec:
         rec.processing_status = status
         rec.error_message = error_message
-        if status == "completed":
-            rec.processed_at = datetime.utcnow()
+        now = datetime.utcnow()
+        if status == "processing":
+            rec.processing_started_at = now
+            rec.heartbeat_at = now
+            rec.lease_expires_at = now + timedelta(minutes=15)
+            if worker_id:
+                rec.worker_id = worker_id
+            rec.attempt_count = (rec.attempt_count or 0) + 1
+        elif status in ("completed", "failed", "cancelled"):
+            rec.processed_at = now
+            rec.lease_expires_at = None
+            rec.heartbeat_at = None
         session.commit()
 
 
