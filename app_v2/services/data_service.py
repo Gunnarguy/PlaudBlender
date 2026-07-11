@@ -2884,26 +2884,32 @@ class ChronosDataService:
         try:
             db = SessionLocal()
             try:
-                cutoff = datetime.utcnow() - timedelta(minutes=stale_after_minutes)
-                stale_rows = (
+                cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+                    minutes=stale_after_minutes
+                )
+                updated_count = (
                     db.query(_ChronosRecordingModel)
                     .filter(
                         _ChronosRecordingModel.processing_status == "processing",
                         _ChronosRecordingModel.created_at < cutoff,
                         _ChronosRecordingModel.processed_at.is_(None),
                     )
-                    .all()
+                    .update(
+                        {
+                            _ChronosRecordingModel.processing_status: "pending",
+                            _ChronosRecordingModel.error_message: None,
+                        },
+                        synchronize_session=False,
+                    )
                 )
-                for rec in stale_rows:
-                    rec.processing_status = "pending"
-                    rec.error_message = None
-                if stale_rows:
+
+                if updated_count > 0:
                     db.commit()
                     logger.warning(
                         "Auto-reset %s stale processing recording(s) to pending",
-                        len(stale_rows),
+                        updated_count,
                     )
-                return len(stale_rows)
+                return updated_count
             finally:
                 db.close()
         except Exception as e:
