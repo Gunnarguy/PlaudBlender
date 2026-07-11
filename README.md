@@ -55,6 +55,18 @@ Transform **Plaud Note voice recordings** into a structured, searchable, local-f
 
 ---
 
+## 📡 Real-Time Telemetry & Hybrid AI Engine
+
+PlaudBlender includes advanced instrumentation for tracking pipeline execution and model performance:
+* **Real-Time Cost Telemetry**: Calculates exact USD costs for active model calls based on paid-tier token usage, mapping runs to specific `CHRONOS_TRACE_RUN_ID` tracking tokens.
+* **Hybrid AI Engine**: Run Google Gemini and OpenAI models in tandem. The system dynamically dispatches calls based on prefix signatures (e.g., `gemini-*` dispatches via Google GenAI, `gpt-*` dispatches via OpenAI).
+* **GPT-5.6 Family Integration**: Full pricing estimation and endpoint mappings for flagship variants: `gpt-5.6-sol` (Flagship), `gpt-5.6-terra` (Balanced / default analyst), and `gpt-5.6-luna` (Lightweight).
+* **Zero-Configuration Key Fallbacks**: Automatically enables the OpenAI integration when an `OPENAI_API_KEY` is present in the `.env` file.
+* **Security & Network Bypasses**: Local Tailscale LAN nodes and Ngrok WAN connections bypass JWT validation automatically when running without an API key on domestic networks.
+* **Unblocked Startup Lifespan**: API handshakes and database sweeps execute asynchronously in background threads on startup, ensuring uvicorn boots instantly without blocking client requests.
+
+---
+
 ## 🧠 Core Ecosystem Components
 
 1. **PlaudBlender (Backend Pipeline & Dash Web UI)**:

@@ -301,10 +301,10 @@ GEMINI_API_KEY=
 ### Processing Models (optional, have defaults)
 
 ```bash
-CHRONOS_CLEANING_MODEL=gemini-3-flash-preview          # Cognitive cleaning
+CHRONOS_CLEANING_MODEL=gemini-3.5-flash                 # Flagship cognitive cleaning (default)
 CHRONOS_EMBEDDING_MODEL=gemini-embedding-2-preview      # Multimodal embeddings
-CHRONOS_EMBEDDING_DIM=768                               # MRL dim (128–3072)
-CHRONOS_ANALYST_MODEL=gemini-3.1-pro-preview            # Deep analysis fallback
+CHRONOS_EMBEDDING_DIM=768                               # MRL dimension (128–3072)
+CHRONOS_ANALYST_MODEL=gpt-5.6-terra                     # Flagship analysis fallback (default)
 ```
 
 > **⚠️ Changing `CHRONOS_EMBEDDING_MODEL` or `CHRONOS_EMBEDDING_DIM` requires re-indexing:**
@@ -327,8 +327,8 @@ QDRANT_COLLECTION_NAME=chronos_events
 ```bash
 NOTION_TOKEN=               # Notion sync
 NOTION_DATABASE_ID=
-OPENAI_API_KEY=             # RAG responses via Responses API (preferred over Gemini)
-OPENAI_MODEL=gpt-5.4        # gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano, etc.
+OPENAI_API_KEY=             # OpenAI API Key (auto-enables OpenAI provider fallback integrations)
+OPENAI_MODEL=gpt-5.6-luna        # Default OpenAI model (e.g., gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna)
 OPENAI_TEMPERATURE=0.7      # 0.0 = deterministic, 2.0 = creative
 NOTION_CLIENT_ID=           # Notion OAuth (for Notion uplink)
 NOTION_CLIENT_SECRET=
