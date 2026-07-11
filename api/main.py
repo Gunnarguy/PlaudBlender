@@ -37,7 +37,19 @@ async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
     init_db()
     
-    async def plaud_warmup():
+    async def run_startup_tasks():
+        # 1. Clean up stale processing recordings in background
+        try:
+            import asyncio
+            from app_v2.services.data_service import ChronosDataService
+            
+            svc = ChronosDataService()
+            await asyncio.to_thread(svc._reconcile_stale_processing_recordings)
+            logger.info("Stale processing recordings check complete.")
+        except Exception as exc:
+            logger.warning("Stale recordings cleanup on startup failed: %s", exc)
+
+        # 2. Warm up Plaud API credentials
         try:
             import asyncio
             from src.plaud_oauth import PlaudOAuthClient
@@ -57,7 +69,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Plaud auth warmup failed: %s", exc)
 
     import asyncio
-    asyncio.create_task(plaud_warmup())
+    asyncio.create_task(run_startup_tasks())
     yield
 
 

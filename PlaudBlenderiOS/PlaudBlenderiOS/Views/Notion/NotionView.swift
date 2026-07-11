@@ -12,44 +12,42 @@ struct NotionView: View {
     @State private var groupOverrideRecordingId = ""
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if viewModel.isLoading && viewModel.authStatus == nil && viewModel.status == nil {
-                    LoadingView(message: "Checking Notion...")
-                } else if !viewModel.isAuthenticated {
-                    disconnectedView
-                } else if viewModel.shouldShowDatabasePicker {
-                    databaseSelectionView
-                } else if let status = viewModel.status, status.isConnected {
-                    connectedView(status)
-                } else {
-                    disconnectedView
-                }
+        Group {
+            if viewModel.isLoading && viewModel.authStatus == nil && viewModel.status == nil {
+                LoadingView(message: "Checking Notion...")
+            } else if !viewModel.isAuthenticated {
+                disconnectedView
+            } else if viewModel.shouldShowDatabasePicker {
+                databaseSelectionView
+            } else if let status = viewModel.status, status.isConnected {
+                connectedView(status)
+            } else {
+                disconnectedView
             }
-            .navigationTitle("Notion")
-            .refreshable { await viewModel.loadAll() }
-            .task { await viewModel.loadAll() }
-            .onChange(of: scenePhase) { _, newPhase in
-                guard newPhase == .active else { return }
-                Task { await viewModel.refreshAfterAuthorization() }
+        }
+        .navigationTitle("Notion")
+        .refreshable { await viewModel.loadAll() }
+        .task { await viewModel.loadAll() }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task { await viewModel.refreshAfterAuthorization() }
+        }
+        .alert(viewModel.supportsSafeBatchImport ? "Start Safe Notion Batch?" : "Start Notion Import?", isPresented: $showBulkImportConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button(viewModel.supportsSafeBatchImport ? "Import Next Safe Batch" : "Import From Notion") {
+                Task { _ = await viewModel.startImport() }
             }
-            .alert(viewModel.supportsSafeBatchImport ? "Start Safe Notion Batch?" : "Start Notion Import?", isPresented: $showBulkImportConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button(viewModel.supportsSafeBatchImport ? "Import Next Safe Batch" : "Import From Notion") {
-                    Task { _ = await viewModel.startImport() }
-                }
-            } message: {
-                Text(safeBatchWarningMessage)
-            }
-            .sheet(isPresented: $showDatabaseSwitcher) {
-                databaseSwitcherSheet
-            }
-            .sheet(item: $selectedOverrideTarget) { recording in
-                manualOverrideSheet(for: recording)
-            }
-            .sheet(item: $selectedDuplicateGroup) { group in
-                duplicateGroupOverrideSheet(for: group)
-            }
+        } message: {
+            Text(safeBatchWarningMessage)
+        }
+        .sheet(isPresented: $showDatabaseSwitcher) {
+            databaseSwitcherSheet
+        }
+        .sheet(item: $selectedOverrideTarget) { recording in
+            manualOverrideSheet(for: recording)
+        }
+        .sheet(item: $selectedDuplicateGroup) { group in
+            duplicateGroupOverrideSheet(for: group)
         }
     }
 

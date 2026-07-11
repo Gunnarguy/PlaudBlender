@@ -2950,8 +2950,6 @@ class ChronosDataService:
             from src.database.engine import SessionLocal
             import sqlalchemy as sa
 
-            self._reconcile_stale_processing_recordings()
-
             db = SessionLocal()
             try:
                 result = db.execute(

@@ -330,7 +330,14 @@ final class APIClient: Sendable {
             // Treat cancellations as non-fatal — don't flip server reachability.
             let isCancelled = (error as? URLError)?.code == .cancelled || error is CancellationError
             if !isCancelled {
-                isServerReachable = false
+                if let urlError = error as? URLError {
+                    switch urlError.code {
+                    case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet, .networkConnectionLost:
+                        isServerReachable = false
+                    default:
+                        break
+                    }
+                }
                 lastError = error.localizedDescription
             }
             throw error

@@ -20,73 +20,71 @@ struct SyncDashboardView: View {
     private let workflowProviders = ["openai", "gemini", "claude", "local"]
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 12) {
-                    // 0. Service health bar — unified integration status
-                    ServiceStatusBar(
-                        systemStatus: viewModel.systemStatus,
-                        isLoading: viewModel.isLoadingSystemStatus
-                    ) {
-                        await viewModel.loadSystemStatus()
-                    }
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .padding(.horizontal)
-
-                    // Qdrant / pipeline readiness warning
-                    if let sys = viewModel.systemStatus, !viewModel.pipelineReady {
-                        pipelineReadinessWarning(sys)
-                    }
-
-                    // 1. Hero — status + actions + inline stats
-                    heroCard
-
-                    if !viewModel.plaudSyncNotices.isEmpty {
-                        plaudNoticesCard(viewModel.plaudSyncNotices)
-                    }
-
-                    // 2. X-Ray Pipeline Flow — always visible diagnostic card
-                    xrayPipelineCard
-
-                    if let run = activeTraceRun {
-                        traceRunCard(run)
-                    }
-
-                    // 3. Live console — terminal event stream
-                    consoleCard
-
-                    // 4. Stats — recordings + workflows unified
-                    statsCard
-
-                    if viewModel.supportsAdminEndpoints {
-                        adminCard
-                    }
-
-                    if !viewModel.supportsAdminEndpoints || !viewModel.supportsSyncFailuresEndpoint || !viewModel.supportsUploadProcessEndpoint {
-                        compatibilityCard
-                    }
-
-                          if viewModel.supportsSyncFailuresEndpoint,
-                              let failures = viewModel.syncFailures,
-                              failures.actionableCount > 0 {
-                        failuresCard(failures)
-                    }
-
-                    // 5. Upload candidates
-                    if !viewModel.uploadCandidates.isEmpty {
-                        uploadCandidatesCard
-                    }
+        ScrollView {
+            VStack(spacing: 12) {
+                // 0. Service health bar — unified integration status
+                ServiceStatusBar(
+                    systemStatus: viewModel.systemStatus,
+                    isLoading: viewModel.isLoadingSystemStatus
+                ) {
+                    await viewModel.loadSystemStatus()
                 }
-                .padding(.vertical, 8)
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal)
+
+                // Qdrant / pipeline readiness warning
+                if let sys = viewModel.systemStatus, !viewModel.pipelineReady {
+                    pipelineReadinessWarning(sys)
+                }
+
+                // 1. Hero — status + actions + inline stats
+                heroCard
+
+                if !viewModel.plaudSyncNotices.isEmpty {
+                    plaudNoticesCard(viewModel.plaudSyncNotices)
+                }
+
+                // 2. X-Ray Pipeline Flow — always visible diagnostic card
+                xrayPipelineCard
+
+                if let run = activeTraceRun {
+                    traceRunCard(run)
+                }
+
+                // 3. Live console — terminal event stream
+                consoleCard
+
+                // 4. Stats — recordings + workflows unified
+                statsCard
+
+                if viewModel.supportsAdminEndpoints {
+                    adminCard
+                }
+
+                if !viewModel.supportsAdminEndpoints || !viewModel.supportsSyncFailuresEndpoint || !viewModel.supportsUploadProcessEndpoint {
+                    compatibilityCard
+                }
+
+                      if viewModel.supportsSyncFailuresEndpoint,
+                          let failures = viewModel.syncFailures,
+                          failures.actionableCount > 0 {
+                    failuresCard(failures)
+                }
+
+                // 5. Upload candidates
+                if !viewModel.uploadCandidates.isEmpty {
+                    uploadCandidatesCard
+                }
             }
-            .navigationTitle("Sync")
-            .refreshable { await viewModel.refresh() }
-            .task { await viewModel.bootstrapIfNeeded() }
-            .task { await xray.bootstrapIfNeeded() }
-            .sheet(isPresented: $showBatchWorkflowSheet) {
-                batchWorkflowSheet
-            }
+            .padding(.vertical, 8)
+        }
+        .navigationTitle("Sync")
+        .refreshable { await viewModel.refresh() }
+        .task { await viewModel.bootstrapIfNeeded() }
+        .task { await xray.bootstrapIfNeeded() }
+        .sheet(isPresented: $showBatchWorkflowSheet) {
+            batchWorkflowSheet
         }
     }
 
