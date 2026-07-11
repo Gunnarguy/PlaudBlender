@@ -129,7 +129,7 @@ class Settings:
         .strip()
         .lower()
     )
-    gemini_billing_tier: str = os.getenv("GEMINI_BILLING_TIER", "free").strip().lower()
+    gemini_billing_tier: str = os.getenv("GEMINI_BILLING_TIER", "paid").strip().lower()
     chronos_allow_paid_gemini_fallback: bool = (
         os.getenv("CHRONOS_ALLOW_PAID_GEMINI_FALLBACK", "0") == "1"
     )

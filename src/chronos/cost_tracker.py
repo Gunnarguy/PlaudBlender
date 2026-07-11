@@ -29,17 +29,28 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════
 
 _GEMINI_PRICING: dict[str, dict] = {
+    "gemini-3.5-flash": {
+        "provider": "google",
+        "label": "Gemini 3.5 Flash",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 1.50, "output_per_mtok": 9.00},
+    },
     "gemini-3-flash-preview": {
         "provider": "google",
         "label": "Gemini 3 Flash Preview",
         "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
         "paid": {"input_per_mtok": 0.50, "output_per_mtok": 3.00},
     },
+    "gemini-3.1-pro": {
+        "provider": "google",
+        "label": "Gemini 3.1 Pro",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 2.00, "output_per_mtok": 12.00},
+    },
     "gemini-3.1-pro-preview": {
         "provider": "google",
         "label": "Gemini 3.1 Pro",
         "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
-        # Standard rates for prompts <= 200K tokens.
         "paid": {"input_per_mtok": 2.00, "output_per_mtok": 12.00},
     },
     "gemini-2.5-pro": {
@@ -53,6 +64,24 @@ _GEMINI_PRICING: dict[str, dict] = {
         "label": "Gemini 2.5 Flash",
         "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
         "paid": {"input_per_mtok": 0.30, "output_per_mtok": 2.50},
+    },
+    "gemini-1.5-pro": {
+        "provider": "google",
+        "label": "Gemini 1.5 Pro",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 1.25, "output_per_mtok": 5.00},
+    },
+    "gemini-1.5-flash": {
+        "provider": "google",
+        "label": "Gemini 1.5 Flash",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 0.075, "output_per_mtok": 0.30},
+    },
+    "gemini-embedding-2": {
+        "provider": "google",
+        "label": "Gemini Embedding 2",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 0.20, "output_per_mtok": 0.00},
     },
     "gemini-embedding-2-preview": {
         "provider": "google",
