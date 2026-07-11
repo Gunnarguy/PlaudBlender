@@ -116,9 +116,9 @@ class Settings:
     )
     chronos_embedding_dim: int = int(os.getenv("CHRONOS_EMBEDDING_DIM", "768"))
     chronos_analyst_model: str = os.getenv(
-        # Gemini 3.5 Flash — flagship low-cost analyst path
+        # GPT-5.6 Terra — balanced high-performance analyst path
         "CHRONOS_ANALYST_MODEL",
-        "gemini-3.5-flash",
+        "gpt-5.6-terra",
     )
     chronos_processing_provider: str = (
         os.getenv(
