@@ -229,6 +229,28 @@ class PlaudDeviceManager:
         except (ValueError, AttributeError):
             return None
 
+    def _parse_device_id(self, device_id: str) -> Optional[PlaudDevice]:
+        """Parse device ID."""
+        if not device_id:
+            raise ValueError("Device ID cannot be empty")
+        return self.get_device(device_id)
+
+    def _authenticate_device(self, device: Optional[PlaudDevice]) -> bool:
+        """Authenticate with the device."""
+        return device is not None
+
+    def connect_device(self, device_id: str) -> bool:
+        """
+        Connect to a specific device by ID.
+        """
+        try:
+            self._active_device = self._parse_device_id(device_id)
+        except (ValueError, AttributeError) as e:
+            logger.error(f"Invalid device ID format: {e}")
+            return False
+
+        return self._authenticate_device(self._active_device)
+
     def list_devices(self) -> List[PlaudDevice]:
         """
         List all bound devices using API token if available, else fallback to OAuth/dev endpoint.
@@ -249,7 +271,9 @@ class PlaudDeviceManager:
             resp.raise_for_status()
             data = resp.json()
             # Devices may be under 'devices' or root list
-            devices_data: list[dict[str, Any]] = data.get("devices", []) if isinstance(data, dict) else data  # type: ignore[assignment]
+            devices_data: list[dict[str, Any]] = (
+                data.get("devices", []) if isinstance(data, dict) else data
+            )  # type: ignore[assignment]
             if devices_data is None and isinstance(data, list):
                 devices_data = data
             if not devices_data:

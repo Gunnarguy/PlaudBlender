@@ -7,14 +7,12 @@ Tests cover:
 - Auto-sync service
 """
 
-import os
 import getpass
 import sys
 import time
-import threading
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -27,8 +25,6 @@ class TestPlaudUSBWatcher:
         from src.plaud_usb_watcher import (
             PlaudUSBWatcher,
             USBPlaudDevice,
-            PlaudDeviceType,
-            get_usb_watcher,
         )
 
         assert PlaudUSBWatcher is not None
@@ -39,7 +35,11 @@ class TestPlaudUSBWatcher:
         from src.plaud_usb_watcher import PlaudUSBWatcher
 
         watcher = PlaudUSBWatcher()
-        expected_path = Path("/Volumes") if sys.platform == "darwin" else Path(f"/media/{getpass.getuser()}")
+        expected_path = (
+            Path("/Volumes")
+            if sys.platform == "darwin"
+            else Path(f"/media/{getpass.getuser()}")
+        )
         assert watcher.volumes_path == expected_path
         assert watcher.poll_interval == 2.0
         assert not watcher.is_running
@@ -104,7 +104,7 @@ class TestPlaudUSBWatcher:
         """Test that Plaud volume patterns are detected."""
         from src.plaud_usb_watcher import PlaudUSBWatcher, PLAUD_VOLUME_PATTERNS
 
-        watcher = PlaudUSBWatcher()
+        PlaudUSBWatcher()
 
         # Test pattern matching
         assert "PLAUD" in PLAUD_VOLUME_PATTERNS
@@ -139,7 +139,6 @@ class TestPlaudWebhookHandler:
         """Test webhook handler can be imported."""
         from src.plaud_webhook import (
             PlaudWebhookHandler,
-            PlaudEvent,
             PlaudEventType,
         )
 
@@ -245,8 +244,6 @@ class TestPlaudAutoSync:
         from src.plaud_auto_sync import (
             PlaudAutoSync,
             SyncConfig,
-            SyncJob,
-            SyncTrigger,
         )
 
         assert PlaudAutoSync is not None
@@ -367,9 +364,32 @@ class TestWebhookEventTypes:
         ]
 
         for type_name in expected_types:
-            assert hasattr(
-                PlaudEventType, type_name
-            ), f"Missing event type: {type_name}"
+            assert hasattr(PlaudEventType, type_name), (
+                f"Missing event type: {type_name}"
+            )
+
+
+class TestPlaudDeviceManager:
+    """Tests for PlaudDeviceManager."""
+
+    def test_connect_device_invalid_id(self):
+        """Test error path for invalid device ID in connect_device."""
+        from src.plaud_device import PlaudDeviceManager
+
+        with (
+            patch("src.plaud_device.PlaudOAuthClient") as MockOAuth,
+            patch("src.plaud_device.PlaudAPITokenClient") as MockAPI,
+        ):
+            manager = PlaudDeviceManager(
+                oauth_client=MockOAuth(), api_token_client=MockAPI()
+            )
+
+            with patch.object(
+                manager, "_parse_device_id", side_effect=ValueError("Invalid format")
+            ):
+                result = manager.connect_device("invalid_id")
+
+            assert result is False
 
 
 if __name__ == "__main__":
