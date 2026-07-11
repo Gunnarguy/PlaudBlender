@@ -49,7 +49,7 @@ def require_auth(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
     """Validate the Bearer token based on deployment mode and client IP."""
-    mode = os.getenv("CHRONOS_DEPLOYMENT_MODE", "loopback").strip().lower()
+    mode = os.getenv("CHRONOS_DEPLOYMENT_MODE", "trusted_lan").strip().lower()
     client_ip = _get_client_ip(request)
 
     # Determine if auth is bypassed based on mode

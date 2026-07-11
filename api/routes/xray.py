@@ -260,7 +260,7 @@ def _ws_event_matches(
 
 
 async def _websocket_auth_ok(websocket: WebSocket) -> bool:
-    mode = os.getenv("CHRONOS_DEPLOYMENT_MODE", "loopback").strip().lower()
+    mode = os.getenv("CHRONOS_DEPLOYMENT_MODE", "trusted_lan").strip().lower()
 
     # Get client IP
     xff = websocket.headers.get("X-Forwarded-For")
