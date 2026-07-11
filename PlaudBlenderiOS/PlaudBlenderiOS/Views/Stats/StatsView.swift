@@ -698,8 +698,8 @@ struct StatsView: View {
         ) {
             LazyVGrid(columns: statsGridColumns, spacing: 10) {
                 if let cost = viewModel.sessionCost {
-                    MetricTile(title: "Total Cost", value: String(format: "$%.4f", cost.totalCostUsd), footnote: "Current session", icon: "dollarsign.circle", tint: .accentGreen)
-                    MetricTile(title: "API Calls", value: "\(cost.totalCalls)", footnote: String(format: "%.0fm session", cost.sessionMinutes), icon: "arrow.left.arrow.right.circle", tint: .accentPrimary)
+                    MetricTile(title: "Total Cost", value: String(format: "$%.4f", cost.totalCostUsd), footnote: "Today's spend", icon: "dollarsign.circle", tint: .accentGreen)
+                    MetricTile(title: "API Calls", value: "\(cost.totalCalls)", footnote: "Today's calls", icon: "arrow.left.arrow.right.circle", tint: .accentPrimary)
                     MetricTile(title: "Input Tokens", value: formatTokens(cost.totalInputTokens), footnote: "Prompt volume", icon: "arrow.down.circle", tint: .accentOrange)
                     MetricTile(title: "Output Tokens", value: formatTokens(cost.totalOutputTokens), footnote: "Response volume", icon: "arrow.up.circle", tint: .accentPurple)
                 }
@@ -1142,9 +1142,9 @@ struct CostQuickLookSheet: View {
                     ) {
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                             MetricTile(
-                                title: "Session",
+                                title: "Today",
                                 value: formatCost(sessionCost?.totalCostUsd ?? 0, zeroAsFree: false),
-                                footnote: sessionCost.map { String(format: "%.0fm live window", $0.sessionMinutes) } ?? "Current app session",
+                                footnote: "Today's spend",
                                 icon: "dollarsign.circle",
                                 tint: .accentGreen
                             )
@@ -1158,7 +1158,7 @@ struct CostQuickLookSheet: View {
                             MetricTile(
                                 title: "Calls",
                                 value: "\(sessionCost?.totalCalls ?? 0)",
-                                footnote: "Current session calls",
+                                footnote: "Today's calls",
                                 icon: "arrow.left.arrow.right.circle",
                                 tint: .accentOrange
                             )
