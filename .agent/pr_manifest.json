@@ -1,0 +1,3481 @@
+{
+  "9": {
+    "actual_patch_summary": "Full Chronos system buildout containing core business logic, FastAPI server, Dash UI, SQLite repository, and Qdrant client.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [
+      "chronos_recordings",
+      "chronos_events",
+      "segments",
+      "recordings"
+    ],
+    "services_touched": [
+      "chronos-api.service",
+      "chronos-ui.service",
+      "chronos-qdrant.service"
+    ],
+    "ports_touched": [
+      8000,
+      8050,
+      6333
+    ],
+    "external_integrations_touched": [
+      "Plaud",
+      "Gemini",
+      "OpenAI"
+    ],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "high",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Core foundation of the entire PlaudBlender project.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "Chronos: Complete system buildout \u2014 Tiers 1-3 + cleanup",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "fed7e320a301f76c9c66ce3fa9c09c6b5b15871d",
+    "merge_commit_sha": "f52501aa374ba97a1511b97c1f85df3cdc29c6c3",
+    "changed_files": [
+      ".env.example",
+      ".github/copilot-instructions.md",
+      ".vscode/settings.json",
+      ".vscode/tasks.json",
+      "README.md",
+      "app_v2/assets/style.css",
+      "app_v2/callbacks/__init__.py",
+      "app_v2/callbacks/day_view.py",
+      "app_v2/callbacks/graph.py",
+      "app_v2/callbacks/navigation.py",
+      "app_v2/callbacks/search.py",
+      "app_v2/components/__init__.py",
+      "app_v2/components/day_view.py",
+      "app_v2/components/graph.py",
+      "app_v2/components/recording_detail.py",
+      "app_v2/components/search.py",
+      "app_v2/components/sidebar.py",
+      "app_v2/components/stats.py",
+      "app_v2/components/topics.py",
+      "app_v2/layout.py",
+      "app_v2/main.py",
+      "app_v2/services/__init__.py",
+      "app_v2/services/data_service.py",
+      "chronos_app.py",
+      "docs/PROJECT_GUIDE.md",
+      "docs/PlaudDocs/AI-Summary.md",
+      "docs/PlaudDocs/API-Reference-Overview.md",
+      "docs/PlaudDocs/CustomWorkflowquickstart.md",
+      "docs/PlaudDocs/Customized-Workflow.md",
+      "docs/PlaudDocs/DeveloperQuickstart.md",
+      "docs/PlaudDocs/Device-Operations.md",
+      "docs/PlaudDocs/File-Management.md",
+      "docs/PlaudDocs/Plaud-SDK.md",
+      "docs/PlaudDocs/Transcription.md",
+      "docs/PlaudDocs/Webhook-Events.md",
+      "docs/PlaudDocs/iOS-SDK.md",
+      "docs/chronos-ui-redesign.md",
+      "generate_mindmap.py",
+      "gui/__init__.py",
+      "gui/app.py",
+      "gui/components/__init__.py",
+      "gui/components/stat_card.py",
+      "gui/components/status_bar.py",
+      "gui/services/__init__.py",
+      "gui/services/clients.py",
+      "gui/services/embedding_service.py",
+      "gui/services/pinecone_service.py",
+      "gui/services/search_service.py",
+      "gui/services/settings_service.py",
+      "gui/services/stats_service.py",
+      "gui/services/timeline_service.py",
+      "gui/services/transcripts_service.py",
+      "gui/state.py",
+      "gui/theme.py",
+      "gui/utils/__init__.py",
+      "gui/utils/async_tasks.py",
+      "gui/utils/logging.py",
+      "gui/utils/tooltips.py",
+      "gui/views/__init__.py",
+      "gui/views/base.py",
+      "gui/views/dashboard.py",
+      "gui/views/logs.py",
+      "gui/views/notion.py",
+      "gui/views/pinecone.py",
+      "gui/views/search.py",
+      "gui/views/settings.py",
+      "gui/views/timeline.py",
+      "gui/views/transcripts.py",
+      "lib/vis-timeline/vis-timeline-graph2d.min.css",
+      "lib/vis-timeline/vis-timeline-graph2d.min.js",
+      "mcp.json",
+      "plaud_setup.py",
+      "pyproject.toml",
+      "requirements.txt",
+      "scripts/analyze_data.py",
+      "scripts/auto_sync.py",
+      "scripts/chronos_pipeline.py",
+      "scripts/cleanup_qdrant.py",
+      "scripts/diagnose_failures.py",
+      "scripts/fix_recordings.py",
+      "scripts/import_local_audio.py",
+      "scripts/index_unindexed.py",
+      "scripts/inspect_notranscript.py",
+      "scripts/launch_app.py",
+      "scripts/mcp_server.py",
+      "scripts/migrate_rename_vector_id.py",
+      "scripts/nuclear_fix.py",
+      "scripts/recover_audio.py",
+      "scripts/recover_failures.py",
+      "scripts/recover_last.py",
+      "scripts/test_data_service.py",
+      "scripts/verify_status.py",
+      "src/__init__.py",
+      "src/ai/__init__.py",
+      "src/ai/embeddings.py",
+      "src/ai/providers.py",
+      "src/chronos/embedding_service.py",
+      "src/chronos/engine.py",
+      "src/chronos/graph_rag.py",
+      "src/chronos/graph_service.py"
+    ]
+  },
+  "10": {
+    "actual_patch_summary": "Show pending recordings in Timeline and Sync views.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "CLOSED_UNMERGED",
+    "audit_disposition": "CLOSE",
+    "reason": "Closed unmerged; portions were adapted manually outside the PR.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "Show pending recordings in Timeline and Sync views",
+    "state": "closed",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "39081413cb94b847db42e20314509c355377684f",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "app_v2/callbacks/navigation.py",
+      "app_v2/components/day_view.py",
+      "app_v2/services/data_service.py"
+    ]
+  },
+  "11": {
+    "actual_patch_summary": "Promotion of tested live Pi state to main branch.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Promoted working configuration state to repository baseline.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "Promote tested Pi Chronos baseline to main",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "d7bed51498d8eec904ff6dd6de2ef1e1663b5073",
+    "merge_commit_sha": "d7bed51498d8eec904ff6dd6de2ef1e1663b5073",
+    "changed_files": [
+      "api/main.py",
+      "api/routes/auth.py",
+      "api/routes/health.py",
+      "api/routes/notion.py",
+      "api/routes/sync.py",
+      "api/schemas/responses.py",
+      "app_v2/callbacks/navigation.py",
+      "app_v2/main.py",
+      "app_v2/services/data_service.py",
+      "deploy/systemd/chronos-api.service",
+      "deploy/watchdog.sh",
+      "scripts/chronos_pipeline.py",
+      "scripts/launch_api.py",
+      "src/chronos/ingest_service.py",
+      "src/chronos/notion_bridge.py",
+      "src/plaud_client.py",
+      "src/plaud_oauth.py",
+      "tests/test_api.py",
+      "tests/test_ingest_service.py",
+      "tests/test_services_smoke.py"
+    ]
+  },
+  "12": {
+    "actual_patch_summary": "Broad Pi 4B optimization including uvloop, gc.collect(), SQLite pragmas, Docker limits, VNC and swap settings.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [
+      "chronos_recordings",
+      "chronos_events"
+    ],
+    "services_touched": [
+      "chronos-api.service",
+      "chronos-ui.service",
+      "chronos-auto-sync.service",
+      "chronos-qdrant.service"
+    ],
+    "ports_touched": [
+      8000,
+      8050,
+      8090,
+      6333
+    ],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Reduces peak RSS spikes via gc.collect() and page-cache constraints.",
+      "cpu": "Reduces network latency overhead, swaps serialization cost.",
+      "io": "Lowers disk write amplification via WAL journal mode and normal sync.",
+      "network": "Reduces data size via Gzip response compression.",
+      "tasks_threads": "Limits concurrent subprocess workers.",
+      "startup_time": "Faster startup via uvloop event engine."
+    },
+    "risk": "high",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Highly beneficial optimization suite. Needs careful validation of limits to prevent aggregate OOM under contention.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "feat: 10x Performance Optimization for Raspberry Pi 4B (4GB)",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "11f83ec937fb603f7f85783502fd7c66b6745070",
+    "merge_commit_sha": "1fce7596a5d3814dc4e2d3775e7ca884152cc176",
+    "changed_files": [
+      "api/main.py",
+      "app_v2/callbacks/navigation.py",
+      "app_v2/components/graph.py",
+      "app_v2/main.py",
+      "deploy/systemd/chronos-auto-update.service",
+      "deploy/systemd/chronos-pipeline.service",
+      "docker-compose.yml",
+      "scripts/chronos_pipeline.py",
+      "scripts/launch_api.py",
+      "scripts/launch_app.py",
+      "scripts/setup_zram.sh",
+      "serve.sh",
+      "src/chronos/local_llm_service.py",
+      "src/chronos/qdrant_client.py",
+      "src/database/engine.py",
+      "tests/test_api.py",
+      "tests/test_mcp_server.py",
+      "tests/test_tier3.py"
+    ]
+  },
+  "13": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused json import in webhook server",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "a33c1ee1a1c8a905bec8bd3db6edf44900e2b277",
+    "merge_commit_sha": "69ae5164c2b1a14f7347bff6112623d86deb7c20",
+    "changed_files": [
+      "src/plaud_webhook_server.py"
+    ]
+  },
+  "14": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused annotations import in genai_helpers",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "e91f48f4f81a26f5e5c604f9929698067feb42a6",
+    "merge_commit_sha": "338b112f447f1c5d80c569eaee2b13759a18b2ff",
+    "changed_files": [
+      "src/chronos/genai_helpers.py"
+    ]
+  },
+  "15": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused LargeBinary import in models",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "69336da0ad7aa13acc7d43494b8d62b46e5febb8",
+    "merge_commit_sha": "3d75850ae47016adb6afab5f21cfe779a08c2545",
+    "changed_files": [
+      "src/database/models.py"
+    ]
+  },
+  "16": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Test create_layout correctly returns the main html.Div element",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "51d90ab899feaddd6cee5fb1fabd204b91956dce",
+    "merge_commit_sha": "8871b589452219df891342fcb2fd166e87ea5a1d",
+    "changed_files": [
+      "tests/test_ui_smoke.py"
+    ]
+  },
+  "17": {
+    "actual_patch_summary": "Add SQLite database engine tests for default paths and pragmas.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_database_engine.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add tests for database engine configuration",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "e3f92595aeedda2d22170d7e385634002a16594e",
+    "merge_commit_sha": "db3478b6dd145df53baedcf320a30c8924af7654",
+    "changed_files": [
+      "tests/test_database_engine.py"
+    ]
+  },
+  "18": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused ScrollRequest import in cleanup_qdrant",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "5430caec2dd11623da51dd6d79d6d526583842f1",
+    "merge_commit_sha": "20903c63f375765840f1a3cab7fa096ba88f07c1",
+    "changed_files": [
+      "scripts/cleanup_qdrant.py"
+    ]
+  },
+  "19": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [code health improvement] Remove unused secrets import",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "8b5dd498e635cd3e3d86b15162a38762d32e56f8",
+    "merge_commit_sha": "3689beb725bbcbd4018deb4ad87ff5ebdcafbb0e",
+    "changed_files": [
+      "app_v2/main.py"
+    ]
+  },
+  "20": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [code health improvement] Remove unused no_update import",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "991e9c7745165d4ae957a51566ac7352b6e03396",
+    "merge_commit_sha": "86965ecd664c3839a81d8ccd00ef8febe5e2b34f",
+    "changed_files": [
+      "app_v2/callbacks/graph.py"
+    ]
+  },
+  "21": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [Code Health] Remove unused or_ import in chronos_repository.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "f347bca0c8c1d887452511abd681311844fa5a18",
+    "merge_commit_sha": "952b67556bbf9cf01ea1ed309c0ffa44a530a403",
+    "changed_files": [
+      "src/database/chronos_repository.py"
+    ]
+  },
+  "22": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [code health] Remove unused DayOfWeek import in engine",
+    "state": "closed",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "3d95c7d900ef7b0e659d6a35172fa8ae6b0d3e6a",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/chronos/engine.py"
+    ]
+  },
+  "23": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea [testing] add tests for logger utility",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "1ef36da68c7db18c85da2609c1fd54631deac8c9",
+    "merge_commit_sha": "9e109f4d5aabf873da6651c2d53cf8e5c5b499ec",
+    "changed_files": [
+      "tests/test_logger.py"
+    ]
+  },
+  "24": {
+    "actual_patch_summary": "FastAPI startup, shutdown, and CORS route testing.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api_main.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea [testing improvement] Add missing test file for API main entrypoint",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "8c0812e403c23b750f79ae1640495ef1a4d36e2e",
+    "merge_commit_sha": "47f764cc46626c4397385524c8e9fce4d051182a",
+    "changed_files": [
+      "tests/test_api_main.py"
+    ]
+  },
+  "25": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused EventCategory and DayOfWeek imports from engine.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "e4d7c26c1ca66e73c0c61186958e848d9f7c434f",
+    "merge_commit_sha": "49eb05f7f87459802a521155af3e5bb49c447b42",
+    "changed_files": [
+      "src/chronos/engine.py"
+    ]
+  },
+  "26": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add test for get_webhook_handler singleton",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "b88232c4089d21753de4bbde9daa22198636400c",
+    "merge_commit_sha": "e25a402abed71bcdfa37a4fb2e15da7f4a1ae578",
+    "changed_files": [
+      "tests/test_plaud_webhook.py"
+    ]
+  },
+  "27": {
+    "actual_patch_summary": "Secure CORS implementation inside Plaud OAuth Callback routing.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [
+      8050,
+      8000
+    ],
+    "external_integrations_touched": [
+      "Plaud OAuth"
+    ],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Security fix to prevent cross-origin state reflection.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83d\udd12 Secure CORS Implementation in OAuth Callback",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "e19cd76e8c414fb55a0d7b2a8f8ec9087a5723cc",
+    "merge_commit_sha": "fa660de5b6363b67880e8f04c83eb5c011af2183",
+    "changed_files": [
+      "src/plaud_oauth.py"
+    ]
+  },
+  "28": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add test file for health route",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "f0703138c67060ed20430824042fc26b77488f60",
+    "merge_commit_sha": "221a14083dbb25648d9c28f3c51492b1c5ceca5a",
+    "changed_files": [
+      "tests/test_health_route.py"
+    ]
+  },
+  "29": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add tests for configuration module",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "5c3da4cb8b4b0a69550eb83db439f40d8bba06c6",
+    "merge_commit_sha": "a1fdc8d053f51cba736e35b48e9ff13a2052f04c",
+    "changed_files": [
+      "tests/test_config.py"
+    ]
+  },
+  "30": {
+    "actual_patch_summary": "Add comprehensive dependency tests for FastAPI routers.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_dependencies.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea add comprehensive tests for API dependencies",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "6fd631089dde407871f87818fc69e5da9d997d11",
+    "merge_commit_sha": "c4591547abdf04a68e4a374addab441fdd6a6ddb",
+    "changed_files": [
+      "api/dependencies.py",
+      "tests/test_dependencies.py"
+    ]
+  },
+  "31": {
+    "actual_patch_summary": "Reset failed recordings lacking transcripts to raw state.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [
+      "chronos_recordings"
+    ],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Fixes stuck recording state on processing failures.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "Fix stuck recording reset for failed recordings without transcripts",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "0c28b80bfc1703ece8d59360890d1e928e7d8146",
+    "merge_commit_sha": "56a27158fbe7cbf1cf172aa393370c83b80da30b",
+    "changed_files": [
+      "scripts/fix_recordings.py"
+    ]
+  },
+  "32": {
+    "actual_patch_summary": "SQL JOIN optimization for fetching workflow metadata.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [
+      "chronos_recordings"
+    ],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Reduces Python memory footprint.",
+      "cpu": "Eliminates N+1 database queries.",
+      "io": "Reduces read queries.",
+      "network": "None",
+      "tasks_threads": "None",
+      "startup_time": "None"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Performance optimization for UI timeline queries.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 Optimize workflow metadata fetching with SQL JOIN",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "e99cf91bca24cede4e254631fcc50a715af1173f",
+    "merge_commit_sha": "05ab6562f83818970569224745be5b2606bf30c2",
+    "changed_files": [
+      "app_v2/services/data_service.py"
+    ]
+  },
+  "33": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [Code Health] Remove unused os import in plaud_auto_sync.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "0f2af5874fc33f2a02873442079c8f12adb0a196",
+    "merge_commit_sha": "4db195eb5117e3fab1756fb03a278684ca0c2cc8",
+    "changed_files": [
+      "src/plaud_auto_sync.py"
+    ]
+  },
+  "34": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [code health improvement] Remove unused no_update import",
+    "state": "closed",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "ce0b2cdc59b4f46feda2767c3013fcb5fa01ced3",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "app_v2/callbacks/graph.py"
+    ]
+  },
+  "35": {
+    "actual_patch_summary": "Harden LAN CORS regular expressions to prevent origin spoofing.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Ensures LAN/Tailscale origin matching is safe and strictly bounded.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83d\udd12 Fix Overly Permissive CORS Configuration",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "ff305443bd21f0a95e7677137872b407c4e72d41",
+    "merge_commit_sha": "c657c54e8896a9f2c844e7cd0dc7bbc90592f3b0",
+    "changed_files": [
+      "api/main.py",
+      "tests/test_cors.py"
+    ]
+  },
+  "36": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 Optimize dict parsing loop in list_databases",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "82571c7e7b850a04838c4e0cca570bc782b0638b",
+    "merge_commit_sha": "ecbf1b4ef4fd8131b1c49ec608a22cf43ec11082",
+    "changed_files": [
+      "src/notion_service.py"
+    ]
+  },
+  "37": {
+    "actual_patch_summary": "Sanitize and parameterize subprocess administration arguments to block command injection.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "high",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Critical security fix for remote admin execution endpoints.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83d\udd12 Fix Command Injection Vulnerability in admin.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "3a9e24aca767a8de6ed3b8f20a42c927011e5cdc",
+    "merge_commit_sha": "2220721dc95761ba5587bd7624025579ba85a669",
+    "changed_files": [
+      "api/routes/admin.py"
+    ]
+  },
+  "38": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [code health] Remove unused json import in openai_service.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "882d5ea4b907a567a5fac1108478aac65a658d42",
+    "merge_commit_sha": "b91c6296afe1e6afb04ee1f21fc41e557abcbeab",
+    "changed_files": [
+      "src/chronos/openai_service.py"
+    ]
+  },
+  "39": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [code health improvement] Remove unused datetime import",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "06316a102cb46a1c2631a80b4f6d09941a89cc52",
+    "merge_commit_sha": "e01d91ae53fef1e48e2633d49951dfe555e39450",
+    "changed_files": [
+      "src/chronos/qdrant_client.py"
+    ]
+  },
+  "40": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused imports in src/chronos/analytics.py",
+    "state": "closed",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "db0f83b78ab3d66e9ce25bb9cd0df403f5d07ade",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/chronos/analytics.py"
+    ]
+  },
+  "41": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused os import from test_all.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "b3f31f6dc20b8d12c6673b7d69b23980b322f9db",
+    "merge_commit_sha": "8ec603228195c4df09318cd42c766be595a5e7f4",
+    "changed_files": [
+      "test_all.py"
+    ]
+  },
+  "42": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused json import in plaud_workflow.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "ceaf8db53aec16b4576ec725e1743abcf50a39e0",
+    "merge_commit_sha": "928332e2671799f7d9c5455104eb7e165071f25c",
+    "changed_files": [
+      "src/plaud_workflow.py"
+    ]
+  },
+  "43": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Code health: Remove unused PlaudWebhookHandler import",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "e134d8435782fa55c918a4b52879a35c223c9c98",
+    "merge_commit_sha": "5eedcecbf8d473b80a8002a4e755ed0ead872a5c",
+    "changed_files": [
+      "src/plaud_webhook_server.py"
+    ]
+  },
+  "44": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [Code Health] Remove unused imports in analytics.py",
+    "state": "closed",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "909401cbc6aad8af79aaa209019dfb27a3ae12e9",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/chronos/analytics.py"
+    ]
+  },
+  "45": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused imports in engine.py",
+    "state": "closed",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "ac0e252fff6055e0d5f5753499cc07c1446eff09",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/chronos/engine.py"
+    ]
+  },
+  "46": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused import in src/plaud_auto_sync.py",
+    "state": "closed",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "dd5f3a0e6fea76d11990e6018a93d8aedeeef9bf",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/plaud_auto_sync.py"
+    ]
+  },
+  "47": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [Code Health] Remove unused import ChronosRecordingSchema",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "5d18e3c6650168162cdea6122b9f0defc7366c07",
+    "merge_commit_sha": "9a9dfa00b0aeab2c63c535b5c1a84251d194263c",
+    "changed_files": [
+      "src/chronos/ingest_service.py"
+    ]
+  },
+  "48": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused import in check_metrics.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "db0f6487a237b7a73da99fe36f3823d0cfb905a4",
+    "merge_commit_sha": "f6a89d5cc40a650f9b8e1f5d14f1d99dbd7aaf0e",
+    "changed_files": [
+      "check_metrics.py"
+    ]
+  },
+  "49": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [Code Health] Remove unused import in trace_service.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "0fe673459a5dd9e13c7381fa7cd5a05864834fb7",
+    "merge_commit_sha": "5a0815dfa2c811987fb232e10328f06f40986efb",
+    "changed_files": [
+      "src/chronos/trace_service.py"
+    ]
+  },
+  "50": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused os import in plaud_usb_watcher.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "8a0a1fd9f386570174b6f30869ebd0fb8a8abf7e",
+    "merge_commit_sha": "a3374a3c2eb8d7942c286d997dc98d8c0306533c",
+    "changed_files": [
+      "src/plaud_usb_watcher.py"
+    ]
+  },
+  "51": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused annotations import in ask_service.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "807c42f1a957a9f1ce247b8b894828219d05c57e",
+    "merge_commit_sha": "647c72a1b5f67adeda8591add6037bd614667581",
+    "changed_files": [
+      "src/chronos/ask_service.py"
+    ]
+  },
+  "52": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [Code Health] Remove unused imports in local_llm_service.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "0c51f839b02d54c244551a96e459aefcd9f97701",
+    "merge_commit_sha": "e0c00af67b1eb85b816b70707a56cd4c1c11dcdd",
+    "changed_files": [
+      "src/chronos/local_llm_service.py"
+    ]
+  },
+  "53": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [code health improvement] Remove unused __future__ import",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "6cbacc9995e9829e815fd0df6e853bb9b5170e91",
+    "merge_commit_sha": "476f7e344bc13abf6a93fa7f62beeeec47779089",
+    "changed_files": [
+      "src/chronos/pipeline_stages.py"
+    ]
+  },
+  "54": {
+    "actual_patch_summary": "Optimize add_segments database query by eliminating N+1 session refresh cycles.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [
+      "segments"
+    ],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Optimizes high-frequency segment insertions during transcripts indexing.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 Optimize add_segments by removing N+1 session refresh",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "0749adace529a9cb475ffbeb6e5d58e0806a6240",
+    "merge_commit_sha": "724a7320ddc6089fa04ad41e46b4f9c98f2d2eb5",
+    "changed_files": [
+      "src/database/repository.py"
+    ]
+  },
+  "55": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea [Add test for get_webhook_server singleton]",
+    "state": "closed",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "5e614300dfb0ffdc4de64a35a52880735d687949",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "tests/test_plaud_webhook_server.py"
+    ]
+  },
+  "56": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add tests for EventLogEntry.to_dict",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "636ca2c54a9ebed15e9d34c409fc711edec18e5e",
+    "merge_commit_sha": "e7e282e97a594575ce8dc3df1dca38544302fba7",
+    "changed_files": [
+      "tests/test_plaud_webhook_server.py"
+    ]
+  },
+  "57": {
+    "actual_patch_summary": "Restrict API CORS allowed methods and request header fields.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Standard API hardening to restrict unauthorized request headers.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83d\udd12 Fix overly permissive CORS policy",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "cb777337249d2bc92cc8d77ab4c0199df1356c11",
+    "merge_commit_sha": "2a936388f724c43774260f96b8a7334d1ec99d68",
+    "changed_files": [
+      "api/main.py"
+    ]
+  },
+  "58": {
+    "actual_patch_summary": "Optimize file iteration and metadata parsing in PlaudUSBWatcher.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "None",
+      "cpu": "Reduces cpu load during directory scans.",
+      "io": "Reduces disk file read calls.",
+      "network": "None",
+      "tasks_threads": "None",
+      "startup_time": "None"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Prevents slow local folder scanning on USB drive insertion.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 Optimize file iteration in PlaudUSBWatcher",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "299702daa33dacb9b5ea3bddb50fc74792c93bee",
+    "merge_commit_sha": "4a0ecd44a22c19cf2bedbb02a8ef8257b2dd0472",
+    "changed_files": [
+      "src/plaud_usb_watcher.py"
+    ]
+  },
+  "59": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused Path import in plaud_auto_sync.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "b33ba08696336d848d22db23365e89eb4694ef9c",
+    "merge_commit_sha": "de14a5e161a1c1848ba43478e9810890f3331ccb",
+    "changed_files": [
+      "src/plaud_auto_sync.py"
+    ]
+  },
+  "60": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [Remove unused imports in chronos analytics service]",
+    "state": "closed",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "51891de5e50c25544519042e9940252f14a360f6",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/chronos/analytics.py"
+    ]
+  },
+  "61": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 Remove unused imports in src/chronos/engine.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "5ec6137cf2ae8d54a23be60b3d6ad4381915eafc",
+    "merge_commit_sha": "3ff148c1ba9cf3b03bb14836f14b84ce20381df9",
+    "changed_files": [
+      "src/chronos/engine.py"
+    ]
+  },
+  "62": {
+    "actual_patch_summary": "Workflow legacy-query batching for bulk submissions.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [
+      "chronos_recordings"
+    ],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Speeds up legacy recordings status sync.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 Optimize workflow submit with batch legacy query",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "3a1e937a59711f70802d64a191647696e97c48fc",
+    "merge_commit_sha": "db1f8afe85d9e696cdf5fdd18d99d89db55283a6",
+    "changed_files": [
+      "app_v2/services/data_service.py"
+    ]
+  },
+  "63": {
+    "actual_patch_summary": "Optimize KnowledgeGraph adjacency list indexing to O(1) cache fetch.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Slightly higher cached RAM usage.",
+      "cpu": "Significant decrease on heavy visualization loads.",
+      "io": "None",
+      "network": "None",
+      "tasks_threads": "None",
+      "startup_time": "None"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Crucial optimization for the 3D WebGL graph rendering queries.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 Optimize KnowledgeGraph get_entity_neighbors from O(E) to O(1)",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "29eb48baed6c75de224bf264ce9531d9365de2f4",
+    "merge_commit_sha": "4965ee3b78d3d81a74b650e7f11e78add4ab76f4",
+    "changed_files": [
+      "src/chronos/graph_rag.py"
+    ]
+  },
+  "64": {
+    "actual_patch_summary": "Cost-tracker database session aggregation optimization.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [
+      "api_usage_log"
+    ],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Avoids opening multiple individual database connections during stats aggregation.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 Performance: Optimize Cost Tracker Session Aggregation",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "6c9ac6457d46549e84feb01dd2afdc449d9b148a",
+    "merge_commit_sha": "eb456d11c123f9c208628b8072d0e47c0a8b2f1a",
+    "changed_files": [
+      "src/chronos/cost_tracker.py"
+    ]
+  },
+  "65": {
+    "actual_patch_summary": "Enforce strict schema-input validations on SQLite metadata tables.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [
+      "sqlite_sequence"
+    ],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "high",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Blocks malicious schema injections during bootstrapping/initialization.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83d\udd12 Fix SQL injection vulnerability in schema initialization",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "c732dd53b6639b2747acf8f25e231750c2278fa4",
+    "merge_commit_sha": "531d52ed66d2f37d4d226a3875f7159cc90b0fb5",
+    "changed_files": [
+      "src/database/engine.py",
+      "tests/test_database_engine.py"
+    ]
+  },
+  "66": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83d\udd12 Fix overly permissive CORS policy",
+    "state": "closed",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "61975ae949a3b6288844d1c9f4f727b6f9c61e48",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "api/main.py"
+    ]
+  },
+  "67": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddf9 [Code Health] Remove unused imports in src/chronos/analytics.py",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "ebca4bf56625dad436ba443ce49a817fb5391e69",
+    "merge_commit_sha": "fbcf80e992d239d1c0f0b8762f418d0acdef0475",
+    "changed_files": [
+      "src/chronos/analytics.py"
+    ]
+  },
+  "68": {
+    "actual_patch_summary": "Clean code health or minor testing improvements.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Successfully merged in history, verified clean code health improvement.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Improve testing coverage for PlaudDevice.to_dict()",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "a93105cbb7cabeff26ca49258cdd004e20af9cb5",
+    "merge_commit_sha": "413c3f66f0fb9974e34a07e09ff7c5eeeb40fbcb",
+    "changed_files": [
+      "tests/test_device_integration.py"
+    ]
+  },
+  "69": {
+    "actual_patch_summary": "Parameterized SQLite PRAGMA table_info sanitization.",
+    "description_matches_patch": true,
+    "present_in_current_main": true,
+    "present_on_live_pi": true,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "MERGED",
+    "audit_disposition": "KEEP",
+    "reason": "Security hardening for best-effort SQLite migrations.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83d\udd12 Fix SQL injection vulnerability in PRAGMA table_info",
+    "state": "merged",
+    "merged": true,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "18b2f84b8f15c2de1c48e7ebd76d1a3a7ed46f9c",
+    "merge_commit_sha": "bac50d97993c32fa7e95d4f36d9c1e22f764b6d1",
+    "changed_files": [
+      "scripts/migrate_rename_vector_id.py",
+      "src/database/engine.py"
+    ]
+  },
+  "70": {
+    "actual_patch_summary": "Add comprehensive tests for Dash layout components.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "SQUASH",
+    "reason": "Squash and consolidate into the Cluster A test suite branch.",
+    "tests_required": [
+      "pytest tests/test_ui_smoke.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add tests for layout components",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "7d8ac9b2bad14f54b8221b33d8c9e8567053245b",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "tests/test_api.py",
+      "tests/test_layout.py"
+    ]
+  },
+  "71": {
+    "actual_patch_summary": "Add tests for Notion callback cache functions.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "SQUASH",
+    "reason": "Squash and consolidate into the Cluster A test suite branch.",
+    "tests_required": [
+      "pytest tests/test_notion_service.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add tests for Notion callbacks cache functions",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "6d810cfdd14c9f5a563d77c7a3b88fbaae700ad2",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "tests/test_api.py",
+      "tests/test_app_v2_callbacks_notion.py"
+    ]
+  },
+  "72": {
+    "actual_patch_summary": "Add test coverage for merge_preferences utility.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "SQUASH",
+    "reason": "Squash and consolidate into the Cluster A test suite branch.",
+    "tests_required": [
+      "pytest tests/test_config.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add test coverage for merge_preferences function",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "5c78ee9d80cb821ee2b7374832020998c167624a",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "tests/test_api.py",
+      "tests/test_navigation.py"
+    ]
+  },
+  "73": {
+    "actual_patch_summary": "Optimize reconciliation of stale processing recordings via bulk database update.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [
+      "chronos_recordings"
+    ],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Rework to implement safe lease-based processing state transitions and heartbeat verification.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 Optimize reconciliation of stale processing recordings",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "19c5ffce0728272983530439665d47118f77d035",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "app_v2/services/data_service.py",
+      "tests/test_api.py"
+    ]
+  },
+  "74": {
+    "actual_patch_summary": "Add validate_event_quality edge case handling and checks.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Rework to safely handle zero or negative duration values without silently classifying them as valid.",
+    "tests_required": [
+      "pytest tests/test_chronos_engine.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add tests for validate_event_quality edge cases",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "a25468342b4341edf3e75a31cb26e19ce8f85210",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/chronos/engine.py",
+      "tests/test_api.py",
+      "tests/test_chronos_engine.py"
+    ]
+  },
+  "75": {
+    "actual_patch_summary": "Optimize Notion sync N+1 queries by aggregating database hits.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "CLOSE",
+    "reason": "Close/supersede. Notion sync performance optimization is covered and cleanly done in PR #77.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 [performance] Optimize Notion sync N+1 query",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "0258cb5dc5f7f4a265d4eb16b86f199b1073688b",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/chronos/notion_bridge.py",
+      "tests/test_api.py"
+    ]
+  },
+  "76": {
+    "actual_patch_summary": "Fix insecure CORS policy reflection in OAuth callback routing. Contaminated with orig/rej/patch files.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [
+      "app_v2/main.py.orig",
+      "patch.diff",
+      "patch_test.diff",
+      "run_test.py",
+      "tests/test_api.py.orig"
+    ],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "high",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Rework to implement secure CORS reflection check without commit contamination (reimplement cleanly).",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83d\udd12 Fix insecure CORS policy reflection in OAuth callback",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "632c191ae55e2b7ba955436bb1b074d543bbc1b8",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "app_v2/main.py",
+      "app_v2/main.py.orig",
+      "patch.diff",
+      "patch_test.diff",
+      "run_test.py",
+      "tests/test_api.py",
+      "tests/test_api.py.orig"
+    ]
+  },
+  "77": {
+    "actual_patch_summary": "Optimize get_coverage_calendar Notion Sync N+1 query.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Rework to ensure correct date formatting, grouping, timezone boundaries, and indexing.",
+    "tests_required": [
+      "pytest tests/test_notion_bridge.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 Optimize get_coverage_calendar Notion Sync N+1 query",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "6d8a4c5b00dd06ec00b6ccc54646a60ca000c82f",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/chronos/notion_bridge.py",
+      "tests/test_api.py"
+    ]
+  },
+  "78": {
+    "actual_patch_summary": "Add edge case test for empty lists in match_notion_to_chronos.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "SQUASH",
+    "reason": "Squash and consolidate into the Cluster C Notion branch.",
+    "tests_required": [
+      "pytest tests/test_notion_bridge.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add edge case test for empty lists in match_notion_to_chronos",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "7a6f9f22a73b0c8a5b9e6bea381b18d7cc386c1e",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "tests/test_notion_bridge.py"
+    ]
+  },
+  "79": {
+    "actual_patch_summary": "Optimize resetting stuck recordings with bulk update.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "SUPERSEDE",
+    "reason": "Superseded by the consolidated state-safe Cluster B implementation.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 Optimize resetting stuck recordings with bulk update",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "982a982c288cd2c0f5785bea491ba5538477dec2",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "app_v2/services/data_service.py",
+      "tests/test_api.py"
+    ]
+  },
+  "80": {
+    "actual_patch_summary": "Refactor get_client singleton pattern and add tests.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Rework to ensure proper lifecycle management, credential invalidation, and thread safety.",
+    "tests_required": [
+      "pytest tests/test_plaud_client_singleton.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Refactor get_client singleton pattern and add tests",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "5874c1dd4dfbb2e1a26751018e65dea94dce69b7",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/plaud_client.py",
+      "tests/test_api.py",
+      "tests/test_plaud_client_singleton.py"
+    ]
+  },
+  "81": {
+    "actual_patch_summary": "Improve test coverage for get_database dependency.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "medium",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Keep intent but consolidate SQLAlchemy session lifecycle (ensure single scope commit/close).",
+    "tests_required": [
+      "pytest tests/test_dependencies.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea [Testing improvement] Improve test coverage for get_database dependency",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "db4eeba3679a897b75039ba3579b28b198031561",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "api/dependencies.py",
+      "tests/test_dependencies.py"
+    ]
+  },
+  "82": {
+    "actual_patch_summary": "Add unit tests for plaud auto sync module (currently empty).",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "CLOSE",
+    "reason": "Close since the PR has no code changes (empty patch).",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add unit tests for plaud auto sync module",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "5374b5a8ad922f61e06b0ad4ddeac7cace667724",
+    "merge_commit_sha": "",
+    "changed_files": []
+  },
+  "83": {
+    "actual_patch_summary": "Add test for invalid device ID error path.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Reimplement cleanly to verify valid device mount checks, last-seen, and directory readability.",
+    "tests_required": [
+      "pytest tests/test_device_integration.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add test for invalid device ID error path",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "47ac9ed3b9f866e0211fc6699480bcb3ab59cc35",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/plaud_device.py",
+      "tests/test_device_integration.py"
+    ]
+  },
+  "84": {
+    "actual_patch_summary": "Add smoke test for create_system_view. Contaminated with description text file.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [
+      "pr_description.txt"
+    ],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "SQUASH",
+    "reason": "Squash and consolidate tests into Cluster A while removing the txt artifact.",
+    "tests_required": [
+      "pytest tests/test_ui_smoke.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea Add smoke test for create_system_view",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "3569465526d79309763302b2b0fb85d56ca223fb",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "pr_description.txt",
+      "tests/test_ui_smoke.py"
+    ]
+  },
+  "85": {
+    "actual_patch_summary": "Add validation and test for negative limits in processing engine.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Rework to define clean fallback policy and validation bounds (None, 0, 1, negatives).",
+    "tests_required": [
+      "pytest tests/test_processing_engine.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea [testing improvement] Add validation and test for negative limits",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "7053fdba0283449e79f4af03d90ed808acdbc9b6",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/processing/engine.py",
+      "tests/test_processing_engine.py"
+    ]
+  },
+  "86": {
+    "actual_patch_summary": "Make ensure-public and stack-status endpoints non-blocking via subprocess execution.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [],
+    "services_touched": [
+      "chronos-api.service"
+    ],
+    "ports_touched": [
+      8000
+    ],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "high",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Rework to handle cancellation, process groups, child signal forwarding, and output stream bounds.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 perf: Make ensure-public and stack-status endpoints non-blocking",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "c70cde06996c14d654b9b6ef8a3cd69fa5c0e4f3",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "api/routes/admin.py",
+      "pyproject.toml"
+    ]
+  },
+  "87": {
+    "actual_patch_summary": "Add tests for get_manual_notion_match_overrides and convert to SQLAlchemy storage.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [
+      "manual_notion_overrides"
+    ],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "high",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Rework to write a safe database migration strategy that parses existing JSON data without loss.",
+    "tests_required": [
+      "pytest tests/test_notion_bridge.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83e\uddea [testing improvement] Add tests for get_manual_notion_match_overrides and convert to SQLAlchemy",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "0cfcbedc6d5d45850ddca1205e222d5f0ebdcf45",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "src/chronos/notion_bridge.py",
+      "src/database/models.py",
+      "tests/test_notion_bridge.py"
+    ]
+  },
+  "88": {
+    "actual_patch_summary": "Enforce authentication and fix fail open JWT defaults. Contaminated with script/txt files.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [
+      "submission.txt",
+      "test_script.py"
+    ],
+    "database_tables_touched": [],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "critical",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Rework to enforce fail-closed JWT auth with explicit deployment modes (loopback, trusted LAN, public).",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\ud83d\udd12 Fix fail open JWT authentication default",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "33635963393ddd7baf44670f6256e9baca36cf6f",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "api/auth/jwt.py",
+      "api/routes/xray.py",
+      "submission.txt",
+      "test_script.py",
+      "tests/test_api.py"
+    ]
+  },
+  "89": {
+    "actual_patch_summary": "Optimize data service N+1 query.",
+    "description_matches_patch": true,
+    "present_in_current_main": false,
+    "present_on_live_pi": false,
+    "live_pi_differs_from_main": false,
+    "overlaps_with": [],
+    "contradicts": [],
+    "generated_artifacts": [],
+    "database_tables_touched": [
+      "chronos_recordings"
+    ],
+    "services_touched": [],
+    "ports_touched": [],
+    "external_integrations_touched": [],
+    "resource_effects": {
+      "memory": "Negligible",
+      "cpu": "Negligible",
+      "io": "Negligible",
+      "network": "Negligible",
+      "tasks_threads": "None",
+      "startup_time": "No effect"
+    },
+    "risk": "low",
+    "historical_disposition": "OPEN",
+    "audit_disposition": "REWORK",
+    "reason": "Rework to provide granular batch category update responses rather than simple boolean states.",
+    "tests_required": [
+      "pytest tests/test_api.py"
+    ],
+    "pi_validation_required": [],
+    "integration_commit": "",
+    "title": "\u26a1 Optimize data service N+1 query",
+    "state": "open",
+    "merged": false,
+    "base_sha": "a1ad35ba023f344a4ee2be47b80a63435f2b72b3",
+    "head_sha": "cc2849843355be0c8cc19b7172b753b9c5783223",
+    "merge_commit_sha": "",
+    "changed_files": [
+      "api/routes/recordings.py",
+      "app_v2/callbacks/recording_detail.py",
+      "app_v2/services/data_service.py",
+      "tests/test_api.py",
+      "tests/test_data_service_sqlite_backfill.py"
+    ]
+  }
+}
