@@ -29,7 +29,9 @@ BACKUP_DIR = DATA_DIR / "exports"
 LOG_DIR = ROOT / ".logs"
 
 
-def _run_status_command(args: list[str], timeout: int = 3) -> subprocess.CompletedProcess:
+def _run_status_command(
+    args: list[str], timeout: int = 3
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         args,
         cwd=str(ROOT),
@@ -38,6 +40,49 @@ def _run_status_command(args: list[str], timeout: int = 3) -> subprocess.Complet
         timeout=timeout,
         check=False,
     )
+
+
+async def _run_chronos_async(
+    args: list[str], timeout: int = 90
+) -> StackControlResponse:
+    import asyncio
+
+    cmd = ["bash", str(CHRONOS_SCRIPT), *args]
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=str(ROOT),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        stdout = stdout.decode("utf-8")
+        stderr = stderr.decode("utf-8")
+    except asyncio.TimeoutError:
+        process.kill()
+        stdout, stderr = await process.communicate()
+        stdout = stdout.decode("utf-8")
+        stderr = stderr.decode("utf-8")
+
+    output = ((stdout or "") + ("\n" + stderr if stderr else "")).strip()
+    status = "ok" if process.returncode == 0 else "failed"
+    return StackControlResponse(
+        action=" ".join(args),
+        status=status,
+        message=f"Command exited with code {process.returncode}",
+        output=output,
+    )
+
+
+async def _get_public_url_async() -> str | None:
+    response = await _run_chronos_async(["url"], timeout=10)
+    if response.status != "ok":
+        return None
+    output = (response.output or "").strip()
+    if output.startswith("http"):
+        return output.rsplit("/api/v1/auth/notion/callback", 1)[0]
+    return None
 
 
 def _run_chronos(args: list[str], timeout: int = 90) -> StackControlResponse:
@@ -153,16 +198,16 @@ def _backup_info(path: Path, message: str = "") -> BackupInfoOut:
 
 @router.post("/stack/status", response_model=StackControlResponse)
 async def stack_status():
-    response = _run_chronos(["status"], timeout=15)
-    response.public_url = _get_public_url()
+    response = await _run_chronos_async(["status"], timeout=15)
+    response.public_url = await _get_public_url_async()
     return response
 
 
 @router.post("/stack/ensure-public", response_model=StackControlResponse)
 async def ensure_public_stack():
-    response = _run_chronos(["start"], timeout=45)
+    response = await _run_chronos_async(["start"], timeout=45)
     response.action = "ensure-public"
-    response.public_url = _get_public_url()
+    response.public_url = await _get_public_url_async()
     return response
 
 
@@ -247,8 +292,8 @@ async def runtime_snapshot():
     failure_count = sum(1 for service in services if service.get("healthy") is False)
     ok = failure_count == 0
 
-    watchdog_state, watchdog_healthy, watchdog_enabled, watchdog_detail = _systemd_state(
-        "chronos-watchdog.timer"
+    watchdog_state, watchdog_healthy, watchdog_enabled, watchdog_detail = (
+        _systemd_state("chronos-watchdog.timer")
     )
 
     plaud_auth = {

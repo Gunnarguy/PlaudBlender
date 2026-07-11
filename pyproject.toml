@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "Plaud recordings to a local searchable knowledge timeline with Plaud API, SQLite, Qdrant, AI processing, graph visualization, MCP tools, iOS companion, and optional Notion bridge."
 readme = "README.md"
 requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28.1",
+    "uvicorn>=0.51.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
