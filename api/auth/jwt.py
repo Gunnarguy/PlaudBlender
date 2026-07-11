@@ -66,10 +66,12 @@ def require_auth(
 
     api_key = _get_api_key()
     if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized: Server is improperly configured (missing CHRONOS_API_KEY)",
-        )
+        if mode == "public":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized: Server is improperly configured (missing CHRONOS_API_KEY)",
+            )
+        return "bypassed"
 
     if credentials is None:
         raise HTTPException(

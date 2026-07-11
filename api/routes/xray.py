@@ -300,8 +300,10 @@ async def _websocket_auth_ok(websocket: WebSocket) -> bool:
 
     api_key = os.getenv("CHRONOS_API_KEY", "").strip()
     if not api_key:
-        await websocket.close(code=1008)
-        return False
+        if mode == "public":
+            await websocket.close(code=1008)
+            return False
+        return True
 
     token = websocket.query_params.get("token") or ""
     auth = websocket.headers.get("authorization", "")
