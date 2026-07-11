@@ -405,6 +405,62 @@ class TestDashApp:
             "?return_to=https%3A%2F%2Fui.example%2Fnotion"
         )
 
+    def test_create_system_view_returns_div(self, monkeypatch):
+        """A simple smoke test asserting the function returns an html.Div object when passed a mock service."""
+        from dash import html
+        from app_v2.callbacks import navigation
+
+        monkeypatch.setattr(
+            navigation,
+            "_get_local_runtime_status",
+            lambda: {
+                "manager_label": "unknown",
+                "manager_detail": "unknown",
+                "systemd_managed_auto_sync": False,
+                "auto_sync_ok": False,
+                "auto_sync_label": "unknown",
+                "auto_sync_detail": "unknown",
+                "watchdog_ok": False,
+                "watchdog_label": "unknown",
+                "watchdog_detail": "unknown",
+                "plaud_ok": False,
+                "plaud_label": "unknown",
+                "plaud_detail": "unknown",
+            },
+        )
+        monkeypatch.setattr(
+            navigation,
+            "_check_services",
+            lambda _settings: {},
+        )
+        monkeypatch.setattr(
+            navigation,
+            "_systemd_unit_state",
+            lambda _unit: ("unknown", "unknown"),
+        )
+        monkeypatch.setattr(
+            navigation,
+            "_read_log_tail",
+            lambda _name, max_lines=12: [],
+        )
+
+        class FakeStats:
+            total_events = 0
+            total_topics = 0
+
+        class FakeService:
+            def get_recording_db_stats(self):
+                return {}
+
+            def get_stats(self):
+                return FakeStats()
+
+            def get_system_stats(self):
+                return {}
+
+        view = navigation.create_system_view(FakeService())
+        assert isinstance(view, html.Div)
+
     def test_create_system_view_renders_runtime_details(self, monkeypatch):
         """System view should render host/runtime diagnostics without touching real services."""
         from app_v2.callbacks import navigation
