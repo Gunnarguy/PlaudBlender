@@ -181,9 +181,15 @@ async def recording_processing(recording_id: str):
 
         total_cost = sum(float(getattr(span, "cost_usd", 0) or 0) for span in spans)
         total_input = sum(int(getattr(span, "input_tokens", 0) or 0) for span in spans)
-        total_output = sum(int(getattr(span, "output_tokens", 0) or 0) for span in spans)
-        providers = sorted({str(span.provider) for span in spans if getattr(span, "provider", None)})
-        models = sorted({str(span.model) for span in spans if getattr(span, "model", None)})
+        total_output = sum(
+            int(getattr(span, "output_tokens", 0) or 0) for span in spans
+        )
+        providers = sorted(
+            {str(span.provider) for span in spans if getattr(span, "provider", None)}
+        )
+        models = sorted(
+            {str(span.model) for span in spans if getattr(span, "model", None)}
+        )
 
         return RecordingProcessingOut(
             recording_id=recording_id,
@@ -253,7 +259,7 @@ async def set_category_override(
     svc: ChronosDataService = Depends(get_service),
 ):
     """Override event category."""
-    svc.save_category_override(event_id, body.category)
+    svc.save_category_override([event_id], body.category)
     return SuccessResponse(message=f"Category set to {body.category}")
 
 

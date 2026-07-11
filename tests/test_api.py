@@ -16,7 +16,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-
 # ── Fake dataclasses matching data_service shapes ───────────
 
 
@@ -403,7 +402,11 @@ class TestAuthEnforcement:
 
     def test_require_auth_missing_key_public_mode(self, client):
         """When CHRONOS_REQUIRE_AUTH=1 and CHRONOS_API_KEY is empty, request is rejected."""
-        with patch.dict(os.environ, {"CHRONOS_REQUIRE_AUTH": "1", "CHRONOS_API_KEY": ""}, clear=False):
+        with patch.dict(
+            os.environ,
+            {"CHRONOS_REQUIRE_AUTH": "1", "CHRONOS_API_KEY": ""},
+            clear=False,
+        ):
             r = client.get("/api/v1/timeline/days")
             assert r.status_code == 401
             assert "unauthorized" in r.json()["detail"].lower()
@@ -504,7 +507,7 @@ class TestRecordings:
         )
         assert r.status_code == 200
         assert r.json()["success"] is True
-        mock_svc.save_category_override.assert_called_once_with("evt-001", "personal")
+        mock_svc.save_category_override.assert_called_once_with(["evt-001"], "personal")
 
     def test_category_override_missing_body(self, client):
         r = client.put("/api/v1/recordings/rec-001/events/evt-001/category")
@@ -707,15 +710,21 @@ class TestSync:
                 }
             ],
         }
-        with patch("src.chronos.pipeline_progress.read_progress", return_value=progress):
+        with patch(
+            "src.chronos.pipeline_progress.read_progress", return_value=progress
+        ):
             r = client.get("/api/v1/sync/status")
             assert r.status_code == 200
             data = r.json()
             assert data["current_phase"] == "backfill"
             assert data["sync_mode"] == "backfill"
             assert data["partial_success"] is True
-            assert data["warnings"] == ["Partial Plaud backfill preserved earlier pages."]
-            assert data["phases"][0]["warnings"] == ["Stopping to avoid an infinite Plaud page loop."]
+            assert data["warnings"] == [
+                "Partial Plaud backfill preserved earlier pages."
+            ]
+            assert data["phases"][0]["warnings"] == [
+                "Stopping to avoid an infinite Plaud page loop."
+            ]
 
     def test_pipeline_status_running(self, client):
         with patch(
@@ -842,9 +851,10 @@ class TestSettings:
             notion_token=None,
         )
 
-        with patch("api.routes.settings.get_settings", return_value=fake_settings), patch(
-            "api.routes.settings.NotionOAuthClient"
-        ) as MockNotion:
+        with (
+            patch("api.routes.settings.get_settings", return_value=fake_settings),
+            patch("api.routes.settings.NotionOAuthClient") as MockNotion,
+        ):
             MockNotion.return_value.access_token = "notion-oauth-token"
             response = authed_client.get("/api/v1/settings", headers=AUTH_HEADER)
 
@@ -880,7 +890,9 @@ class TestSettings:
             "chronos_autosync_defer_seconds": 60,
         }
 
-        with patch("api.routes.settings._write_env_updates", return_value=12) as mock_write:
+        with patch(
+            "api.routes.settings._write_env_updates", return_value=12
+        ) as mock_write:
             response = authed_client.put(
                 "/api/v1/settings", headers=AUTH_HEADER, json=payload
             )

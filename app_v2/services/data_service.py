@@ -11,7 +11,7 @@ import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date as date_cls, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Iterable
 
 from src.database import SessionLocal
 from src.config import get_local_timezone
@@ -562,9 +562,7 @@ class ChronosDataService:
             return parsed.astimezone(timezone.utc).replace(tzinfo=None)
         return parsed
 
-    def _get_recent_plaud_recording_dates(
-        self, days_back: int
-    ) -> Optional[set[str]]:
+    def _get_recent_plaud_recording_dates(self, days_back: int) -> Optional[set[str]]:
         """Return recent Plaud recording dates keyed by actual recording start day.
 
         This is used to distinguish a genuinely empty day from a probable
@@ -572,8 +570,9 @@ class ChronosDataService:
         does not hammer Plaud while browsing.
         """
         days_back = max(1, min(days_back, _EMPTY_DAY_AUDIT_MAX_DAYS))
+
         def _read_cached_result(
-            cached_entry: Optional[Tuple[datetime, Optional[frozenset[str]]]]
+            cached_entry: Optional[Tuple[datetime, Optional[frozenset[str]]]],
         ) -> object:
             if not cached_entry:
                 return ...
@@ -692,7 +691,11 @@ class ChronosDataService:
 
         if suspected_days and _xlog:
             sample = ", ".join(suspected_days[:3])
-            extra = "" if len(suspected_days) <= 3 else f" (+{len(suspected_days) - 3} more)"
+            extra = (
+                ""
+                if len(suspected_days) <= 3
+                else f" (+{len(suspected_days) - 3} more)"
+            )
             _xlog(
                 "data",
                 "gap-audit",
@@ -1609,19 +1612,123 @@ class ChronosDataService:
 
         # Skip low-value keywords, generic verbs, pronouns, fillers, and conversational tokens
         stop_keywords = {
-            "unknown", "none", "other", "general", "n/a", "na", "misc", "the", "and",
-            "for", "with", "that", "this", "from", "about", "against", "doing", "does",
-            "did", "done", "do", "thank", "thanks", "please", "how", "what", "why",
-            "who", "where", "when", "which", "whose", "dude", "guy", "guys", "bro",
-            "stuff", "thing", "things", "something", "anything", "nothing", "someone",
-            "anyone", "everyone", "some", "any", "all", "very", "really", "so", "then",
-            "there", "their", "here", "also", "even", "much", "many", "more", "most",
-            "somehow", "anyway", "actually", "basically", "him", "her", "them", "they",
-            "you", "me", "my", "your", "our", "us", "we", "he", "she", "will", "would",
-            "could", "should", "can", "want", "wanted", "take", "took", "tell", "told",
-            "get", "got", "go", "going", "make", "think", "thought", "know", "say", "said",
-            "yeah", "yes", "okay", "ok", "hey", "well", "just", "like", "about", "after",
-            "again", "before", "being", "into", "through", "would", "should", "could"
+            "unknown",
+            "none",
+            "other",
+            "general",
+            "n/a",
+            "na",
+            "misc",
+            "the",
+            "and",
+            "for",
+            "with",
+            "that",
+            "this",
+            "from",
+            "about",
+            "against",
+            "doing",
+            "does",
+            "did",
+            "done",
+            "do",
+            "thank",
+            "thanks",
+            "please",
+            "how",
+            "what",
+            "why",
+            "who",
+            "where",
+            "when",
+            "which",
+            "whose",
+            "dude",
+            "guy",
+            "guys",
+            "bro",
+            "stuff",
+            "thing",
+            "things",
+            "something",
+            "anything",
+            "nothing",
+            "someone",
+            "anyone",
+            "everyone",
+            "some",
+            "any",
+            "all",
+            "very",
+            "really",
+            "so",
+            "then",
+            "there",
+            "their",
+            "here",
+            "also",
+            "even",
+            "much",
+            "many",
+            "more",
+            "most",
+            "somehow",
+            "anyway",
+            "actually",
+            "basically",
+            "him",
+            "her",
+            "them",
+            "they",
+            "you",
+            "me",
+            "my",
+            "your",
+            "our",
+            "us",
+            "we",
+            "he",
+            "she",
+            "will",
+            "would",
+            "could",
+            "should",
+            "can",
+            "want",
+            "wanted",
+            "take",
+            "took",
+            "tell",
+            "told",
+            "get",
+            "got",
+            "go",
+            "going",
+            "make",
+            "think",
+            "thought",
+            "know",
+            "say",
+            "said",
+            "yeah",
+            "yes",
+            "okay",
+            "ok",
+            "hey",
+            "well",
+            "just",
+            "like",
+            "about",
+            "after",
+            "again",
+            "before",
+            "being",
+            "into",
+            "through",
+            "would",
+            "should",
+            "could",
         }
 
         for event in events:
@@ -2935,34 +3042,56 @@ class ChronosDataService:
             logger.error(f"Error resetting recordings: {e}")
             return 0
 
-    def save_category_override(self, event_qdrant_id: str, new_category: str) -> bool:
-        """Save a user category override for an event.
+    def save_category_override(
+        self, event_qdrant_ids: str | Iterable[str], new_category: str
+    ) -> bool:
+        """Save a user category override for one or more events.
 
-        Finds the ChronosEvent by its qdrant_point_id and sets user_category_override.
+        Finds the ChronosEvents by their qdrant_point_ids (or event_ids) and sets user_category_override.
         """
         try:
             from src.database.models import ChronosEvent
 
             db = SessionLocal()
             try:
-                evt = (
+                if isinstance(event_qdrant_ids, str):
+                    event_ids = [event_qdrant_ids]
+                else:
+                    event_ids = list(event_qdrant_ids)
+
+                if not event_ids:
+                    return True
+
+                evts = (
                     db.query(ChronosEvent)
-                    .filter_by(qdrant_point_id=event_qdrant_id)
-                    .first()
+                    .filter(ChronosEvent.qdrant_point_id.in_(event_ids))
+                    .all()
                 )
-                if not evt:
-                    evt = (
+
+                found_ids = {e.qdrant_point_id for e in evts if e.qdrant_point_id}
+                missing_ids = [eid for eid in event_ids if eid not in found_ids]
+
+                if missing_ids:
+                    fallback_evts = (
                         db.query(ChronosEvent)
-                        .filter_by(event_id=event_qdrant_id)
-                        .first()
+                        .filter(ChronosEvent.event_id.in_(missing_ids))
+                        .all()
                     )
-                if evt:
-                    setattr(evt, "user_category_override", new_category)
+                    evts.extend(fallback_evts)
+                    found_ids.update({e.event_id for e in fallback_evts if e.event_id})
+
+                if evts:
+                    for evt in evts:
+                        setattr(evt, "user_category_override", new_category)
                     db.commit()
                     # Invalidate cache so next load reflects the change
                     self._get_all_events(force_refresh=True)
-                    return True
-                logger.warning(f"No event found with qdrant_point_id={event_qdrant_id}")
+
+                for eid in event_ids:
+                    if eid not in found_ids:
+                        logger.warning(f"No event found with id={eid}")
+
+                return bool(evts)
             finally:
                 db.close()
         except Exception as e:

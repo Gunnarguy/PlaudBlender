@@ -120,7 +120,7 @@ def test_save_category_override_works_for_sqlite_only_event_ids(monkeypatch, tmp
         )
         session.commit()
 
-    assert service.save_category_override("evt_override_1", "work") is True
+    assert service.save_category_override(["evt_override_1"], "work") is True
 
     detail = service.get_recording_detail("rec_override")
     assert detail is not None

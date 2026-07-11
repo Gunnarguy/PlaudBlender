@@ -55,7 +55,7 @@ def register_recording_detail_callbacks(app):
         from app_v2.services.xray import xray_log
 
         svc = get_data_service()
-        ok = svc.save_category_override(event_id, new_value)
+        ok = svc.save_category_override([event_id], new_value)
 
         if ok:
             logger.info(f"Category override saved: event={event_id} → {new_value}")
@@ -64,7 +64,10 @@ def register_recording_detail_callbacks(app):
         else:
             logger.warning(f"Failed to save category override: event={event_id}")
             xray_log(
-                "detail", "category", f"Couldn't save that category change", level="error"
+                "detail",
+                "category",
+                f"Couldn't save that category change",
+                level="error",
             )
             return "⚠ Could not save override"
 
