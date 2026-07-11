@@ -56,8 +56,9 @@ def register_recording_detail_callbacks(app):
 
         svc = get_data_service()
         ok = svc.save_category_override(event_id, new_value)
+        is_success = ok.get("success", False) if isinstance(ok, dict) else bool(ok)
 
-        if ok:
+        if is_success:
             logger.info(f"Category override saved: event={event_id} → {new_value}")
             xray_log("detail", "category", f"You re-categorized this as '{new_value}'")
             return f"✓ Category updated to {new_value}"

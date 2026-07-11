@@ -253,7 +253,16 @@ async def set_category_override(
     svc: ChronosDataService = Depends(get_service),
 ):
     """Override event category."""
-    svc.save_category_override(event_id, body.category)
+    from fastapi import HTTPException
+    res = svc.save_category_override(event_id, body.category)
+    is_success = res.get("success", False) if isinstance(res, dict) else bool(res)
+    if not is_success:
+        detail = "Event not found"
+        if isinstance(res, dict) and res.get("lock_encountered"):
+            detail = "Database lock/timeout encountered"
+        elif isinstance(res, dict) and res.get("errors"):
+            detail = f"Failed to override category: {', '.join(res.get('errors'))}"
+        raise HTTPException(status_code=400, detail=detail)
     return SuccessResponse(message=f"Category set to {body.category}")
 
 
