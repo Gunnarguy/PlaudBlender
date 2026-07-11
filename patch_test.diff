@@ -1,0 +1,13 @@
+--- tests/test_api.py
++++ tests/test_api.py
+@@ -835,6 +835,10 @@
+             openai_api_key_configured=False,
+             qdrant_api_key=None,
+             notion_token=None,
++            chronos_custom_categories="",
++            chronos_index_events_per_limit=0,
++            chronos_autosync_index_timeout=900,
++            chronos_stats_enable_plaud_cloud=False
+         )
+
+         with patch("api.routes.settings.get_settings", return_value=fake_settings), patch(
