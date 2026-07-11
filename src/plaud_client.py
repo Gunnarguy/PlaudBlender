@@ -54,7 +54,9 @@ class PlaudClient:
         self.oauth = oauth_client or PlaudOAuthClient()
 
         if not self.oauth.is_authenticated:
-            logger.warning("Not authenticated. Call authenticate() or oauth.authenticate_interactive()")
+            logger.warning(
+                "Not authenticated. Call authenticate() or oauth.authenticate_interactive()"
+            )
 
     @staticmethod
     def _parse_datetime(value: Optional[str]) -> datetime:
@@ -227,7 +229,9 @@ class PlaudClient:
     def get_recording_stats(self) -> dict:
         """Get aggregate statistics about all recordings."""
         recordings = self.list_recordings(fetch_all=True)
-        total_duration = sum(r.get('duration', 0) for r in recordings) / 1000  # ms to sec
+        total_duration = (
+            sum(r.get("duration", 0) for r in recordings) / 1000
+        )  # ms to sec
 
         return {
             "total_count": len(recordings),
@@ -360,28 +364,32 @@ class PlaudClient:
         file_data = self.get_transcript(recording_id)
 
         # Plaud returns data in source_list with transaction type containing transcript
-        if isinstance(file_data, dict) and 'source_list' in file_data:
-            for source in file_data['source_list']:
-                if source.get('data_type') == 'transaction':
-                    content = source.get('data_content', '')
+        if isinstance(file_data, dict) and "source_list" in file_data:
+            for source in file_data["source_list"]:
+                if source.get("data_type") == "transaction":
+                    content = source.get("data_content", "")
                     try:
                         # Parse the JSON transcript segments
                         segments = json_module.loads(content)
                         # Join all content from segments
-                        texts = [seg.get('content', '') for seg in segments if seg.get('content')]
-                        return ' '.join(texts)
+                        texts = [
+                            seg.get("content", "")
+                            for seg in segments
+                            if seg.get("content")
+                        ]
+                        return " ".join(texts)
                     except:
                         return content
 
         # Fallback: try other common field names
         if isinstance(file_data, dict):
-            for field in ['transcript', 'text', 'transcription', 'content']:
+            for field in ["transcript", "text", "transcription", "content"]:
                 if field in file_data:
                     value = file_data[field]
                     if isinstance(value, str):
                         return value
                     if isinstance(value, dict):
-                        return value.get('text', value.get('content', str(value)))
+                        return value.get("text", value.get("content", str(value)))
 
         return str(file_data)
 
@@ -390,7 +398,7 @@ class PlaudClient:
         if isinstance(data, str):
             return data
         if isinstance(data, dict):
-            for field in ['transcript', 'text', 'transcription', 'content']:
+            for field in ["transcript", "text", "transcription", "content"]:
                 if field in data:
                     return self._extract_text(data[field])
         return str(data)
@@ -454,15 +462,17 @@ class PlaudClient:
 
         results = []
         for rec in recordings:
-            rec_id = rec.get('id')
+            rec_id = rec.get("id")
             if rec_id:
                 try:
-                    rec['transcript_text'] = self.get_transcript_text(rec_id)
+                    rec["transcript_text"] = self.get_transcript_text(rec_id)
                     results.append(rec)
-                    logger.info(f"✅ Fetched transcript for: {rec.get('title', rec_id)[:50]}")
+                    logger.info(
+                        f"✅ Fetched transcript for: {rec.get('title', rec_id)[:50]}"
+                    )
                 except Exception as e:
                     logger.warning(f"⚠️ Could not fetch transcript for {rec_id}: {e}")
-                    rec['transcript_text'] = None
+                    rec["transcript_text"] = None
                     results.append(rec)
 
         return results
@@ -490,21 +500,23 @@ class PlaudClient:
         processed = []
         for rec in recordings:
             rec_data = {
-                'id': rec.get('id'),
-                'title': rec.get('title', 'Untitled Recording'),
-                'created_at': rec.get('created_at'),
-                'duration': rec.get('duration'),
-                'recording_type': rec.get('type', 'unknown'),
+                "id": rec.get("id"),
+                "title": rec.get("title", "Untitled Recording"),
+                "created_at": rec.get("created_at"),
+                "duration": rec.get("duration"),
+                "recording_type": rec.get("type", "unknown"),
             }
 
             # Fetch transcript
             try:
-                rec_data['transcript'] = self.get_transcript_text(rec['id'])
-                if rec_data['transcript'] and len(rec_data['transcript'].strip()) > 50:
+                rec_data["transcript"] = self.get_transcript_text(rec["id"])
+                if rec_data["transcript"] and len(rec_data["transcript"].strip()) > 50:
                     processed.append(rec_data)
                     logger.info(f"📝 Loaded: {rec_data['title'][:40]}...")
                 else:
-                    logger.warning(f"⏭️ Skipped (no/short transcript): {rec_data['title'][:40]}")
+                    logger.warning(
+                        f"⏭️ Skipped (no/short transcript): {rec_data['title'][:40]}"
+                    )
             except Exception as e:
                 logger.error(f"❌ Error fetching transcript: {e}")
 
@@ -820,7 +832,9 @@ class PlaudClient:
                 continue
 
             display_name = os.path.splitext(entry.name)[0]
-            in_cloud = display_name.strip().lower() in cloud_names if check_cloud else False
+            in_cloud = (
+                display_name.strip().lower() in cloud_names if check_cloud else False
+            )
 
             candidates.append(
                 {
@@ -862,14 +876,17 @@ class PlaudClient:
         return None
 
 
+_client_instance = None
+
+
 def get_client() -> PlaudClient:
     """
-    Convenience function to get an authenticated Plaud client.
-
-    Returns:
-        Authenticated PlaudClient instance
+    Get or create the global PlaudClient instance.
     """
-    return PlaudClient()
+    global _client_instance
+    if _client_instance is None:
+        _client_instance = PlaudClient()
+    return _client_instance
 
 
 if __name__ == "__main__":
