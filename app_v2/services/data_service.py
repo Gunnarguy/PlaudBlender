@@ -3021,15 +3021,18 @@ class ChronosDataService:
             try:
                 reset_count = 0
 
-                processing_rows = (
+                updated_processing = (
                     db.query(_ChronosRecordingModel)
                     .filter(_ChronosRecordingModel.processing_status == "processing")
-                    .all()
+                    .update(
+                        {
+                            "processing_status": "pending",
+                            "error_message": None,
+                        },
+                        synchronize_session=False,
+                    )
                 )
-                for rec in processing_rows:
-                    rec.processing_status = "pending"
-                    rec.error_message = None
-                    reset_count += 1
+                reset_count += updated_processing
 
                 failed_rows = (
                     db.query(_ChronosRecordingModel)
