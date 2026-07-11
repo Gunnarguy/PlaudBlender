@@ -1,6 +1,6 @@
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from src.chronos.notion_bridge import (
     _sanitize_extracted_events,
@@ -159,3 +159,54 @@ def test_get_import_progress_pauses_legacy_running_file_without_pid(monkeypatch)
         == "Import progress came from an older worker and is no longer active"
     )
     assert saved["status"] == "paused"
+
+
+def test_match_notion_to_chronos_empty_lists():
+    from src.chronos.notion_bridge import match_notion_to_chronos
+
+    session = Mock()
+    session.query().all.return_value = []
+
+    matches = match_notion_to_chronos([], session)
+    assert matches == {}
+
+
+def test_get_manual_notion_match_overrides_success():
+    from src.database.models import NotionMatchOverride
+    from src.chronos.notion_bridge import get_manual_notion_match_overrides
+
+    mock_db = Mock()
+    override1 = NotionMatchOverride(notion_page_id="page1", chronos_recording_id="rec1")
+    override2 = NotionMatchOverride(notion_page_id="page2", chronos_recording_id="rec2")
+    mock_db.query.return_value.all.return_value = [override1, override2]
+
+    with patch("src.database.engine.SessionLocal", return_value=mock_db):
+        result = get_manual_notion_match_overrides()
+        assert result == {"page1": "rec1", "page2": "rec2"}
+        mock_db.close.assert_called_once()
+
+
+def test_get_manual_notion_match_overrides_empty():
+    from src.chronos.notion_bridge import get_manual_notion_match_overrides
+
+    mock_db = Mock()
+    mock_db.query.return_value.all.return_value = []
+
+    with patch("src.database.engine.SessionLocal", return_value=mock_db):
+        result = get_manual_notion_match_overrides()
+        assert result == {}
+        mock_db.close.assert_called_once()
+
+
+def test_get_manual_notion_match_overrides_exception():
+    from src.chronos.notion_bridge import get_manual_notion_match_overrides
+
+    mock_db = Mock()
+    mock_db.query.return_value.all.side_effect = Exception("DB Error")
+
+    with patch("src.database.engine.SessionLocal", return_value=mock_db):
+        try:
+            get_manual_notion_match_overrides()
+        except Exception as e:
+            assert str(e) == "DB Error"
+        mock_db.close.assert_called_once()

@@ -688,18 +688,17 @@ _MATCH_OVERRIDE_FILE = os.path.join(
 
 def get_manual_notion_match_overrides() -> Dict[str, str]:
     """Load persisted manual Notion → Chronos match overrides."""
+    from src.database.engine import SessionLocal
+    from src.database.models import NotionMatchOverride
+
+    db = SessionLocal()
     try:
-        with open(_MATCH_OVERRIDE_FILE, "r") as file:
-            data = json.load(file)
-            return data if isinstance(data, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError):
+        overrides = db.query(NotionMatchOverride).all()
+        return {o.notion_page_id: o.chronos_recording_id for o in overrides}
+    except Exception:
         return {}
-
-
-def _save_manual_notion_match_overrides(overrides: Dict[str, str]) -> None:
-    os.makedirs(os.path.dirname(_MATCH_OVERRIDE_FILE), exist_ok=True)
-    with open(_MATCH_OVERRIDE_FILE, "w") as file:
-        json.dump(overrides, file, indent=2, sort_keys=True)
+    finally:
+        db.close()
 
 
 def set_manual_notion_match_override(
@@ -722,10 +721,19 @@ def set_manual_notion_match_override(
     if not exists:
         return False, f"Chronos recording {recording_id} was not found"
 
-    overrides = get_manual_notion_match_overrides()
-    overrides[page_id] = recording_id
-    _save_manual_notion_match_overrides(overrides)
-    return True, f"Override saved for {page_id}"
+    from src.database.models import NotionMatchOverride
+    try:
+        override = session.query(NotionMatchOverride).filter_by(notion_page_id=page_id).first()
+        if override:
+            override.chronos_recording_id = recording_id
+        else:
+            override = NotionMatchOverride(notion_page_id=page_id, chronos_recording_id=recording_id)
+            session.add(override)
+        session.commit()
+        return True, f"Override saved for {page_id}"
+    except Exception as e:
+        session.rollback()
+        return False, str(e)
 
 
 def clear_manual_notion_match_override(page_id: str) -> Tuple[bool, str]:
@@ -734,13 +742,23 @@ def clear_manual_notion_match_override(page_id: str) -> Tuple[bool, str]:
     if not page_id:
         return False, "page_id is required"
 
-    overrides = get_manual_notion_match_overrides()
-    if page_id not in overrides:
-        return False, f"No override exists for {page_id}"
+    from src.database.engine import SessionLocal
+    from src.database.models import NotionMatchOverride
 
-    overrides.pop(page_id, None)
-    _save_manual_notion_match_overrides(overrides)
-    return True, f"Override cleared for {page_id}"
+    session = SessionLocal()
+    try:
+        override = session.query(NotionMatchOverride).filter_by(notion_page_id=page_id).first()
+        if not override:
+            return False, f"No override exists for {page_id}"
+
+        session.delete(override)
+        session.commit()
+        return True, f"Override cleared for {page_id}"
+    except Exception as e:
+        session.rollback()
+        return False, str(e)
+    finally:
+        session.close()
 
 
 def _load_progress() -> Dict:
@@ -1356,11 +1374,18 @@ def get_coverage_calendar(
 
     # Get Chronos recording dates
     chronos_dates: Dict[str, int] = {}
-    for rec in session.query(ChronosRecording).all():
-        if rec.created_at:
-            d = rec.created_at.strftime("%Y-%m-%d") if isinstance(rec.created_at, datetime) else str(rec.created_at)[:10]
-            if rec.source != "notion":
-                chronos_dates[d] = chronos_dates.get(d, 0) + 1
+    from sqlalchemy import String as SQLString, cast, func
+    date_expr = func.substr(cast(ChronosRecording.created_at, SQLString), 1, 10)
+    query_res = session.query(
+        date_expr,
+        func.count(ChronosRecording.recording_id)
+    ).filter(
+        ChronosRecording.source != "notion",
+        ChronosRecording.created_at.is_not(None)
+    ).group_by(
+        date_expr
+    ).all()
+    chronos_dates = {d: count for d, count in query_res if d}
 
     # Get Notion recording dates (use pre-fetched if available)
     notion_dates: Dict[str, int] = {}

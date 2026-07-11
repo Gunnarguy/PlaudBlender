@@ -67,6 +67,49 @@ def init_db(engine_override: Optional[Engine] = None) -> None:
     # Best-effort additive migrations for SQLite.
     if eng.dialect.name == "sqlite":
         _ensure_sqlite_additive_schema(eng)
+        _migrate_json_notion_matches_to_db(eng)
+
+
+def _migrate_json_notion_matches_to_db(eng: Engine) -> None:
+    """Read data/notion_matches.json if it exists, insert into SQLite, and safely rename/back it up."""
+    import json
+    import logging
+
+    logger = logging.getLogger(__name__)
+    json_path = os.path.join(PROJECT_ROOT, "data", "notion_matches.json")
+    if not os.path.exists(json_path):
+        return
+
+    try:
+        with open(json_path, "r") as f:
+            data = json.load(f)
+
+        if isinstance(data, dict) and data:
+            with eng.connect() as conn:
+                transaction = conn.begin()
+                try:
+                    for page_id, rec_id in data.items():
+                        conn.execute(
+                            text(
+                                "INSERT OR REPLACE INTO notion_match_overrides "
+                                "(notion_page_id, chronos_recording_id) "
+                                "VALUES (:page_id, :rec_id)"
+                            ),
+                            {"page_id": page_id, "rec_id": rec_id}
+                        )
+                    transaction.commit()
+                except Exception as db_exc:
+                    transaction.rollback()
+                    raise db_exc
+
+        # After successful insertion, backup the file to prevent re-running
+        backup_path = json_path + ".bak"
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+        os.rename(json_path, backup_path)
+        logger.info(f"Successfully migrated JSON notion matches to database and renamed to {backup_path}")
+    except Exception as exc:
+        logger.error(f"Failed to migrate JSON notion matches: {exc}")
 
 
 def _ensure_sqlite_additive_schema(eng: Engine) -> None:
@@ -136,6 +179,20 @@ def _ensure_sqlite_additive_schema(eng: Engine) -> None:
             _add_column("chronos_events", "user_category_override VARCHAR")
         if event_cols and "category_confidence" not in event_cols:
             _add_column("chronos_events", "category_confidence REAL")
+
+        # Add lease columns to chronos_recordings table
+        rec_cols = _columns_for("chronos_recordings")
+        if rec_cols:
+            if "processing_started_at" not in rec_cols:
+                _add_column("chronos_recordings", "processing_started_at DATETIME")
+            if "heartbeat_at" not in rec_cols:
+                _add_column("chronos_recordings", "heartbeat_at DATETIME")
+            if "lease_expires_at" not in rec_cols:
+                _add_column("chronos_recordings", "lease_expires_at DATETIME")
+            if "worker_id" not in rec_cols:
+                _add_column("chronos_recordings", "worker_id VARCHAR")
+            if "attempt_count" not in rec_cols:
+                _add_column("chronos_recordings", "attempt_count INTEGER DEFAULT 0")
 
         # Ensure indexes exist for frequently-queried columns
         with eng.connect() as conn:
