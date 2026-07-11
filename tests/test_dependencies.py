@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch, MagicMock
 
 from fastapi import FastAPI, Depends
@@ -7,6 +6,7 @@ from fastapi.testclient import TestClient
 from api.dependencies import get_service, get_config
 from app_v2.services.data_service import ChronosDataService
 from src.config import Settings
+
 
 def test_get_service_caching():
     """Verify that get_service is cached."""
@@ -26,6 +26,7 @@ def test_get_service_caching():
         assert result1 is mock_service
         assert result2 is mock_service
 
+
 def test_get_config_no_caching():
     """Verify that get_config is not cached and returns fresh settings."""
     with patch("api.dependencies.get_settings") as mock_get_settings:
@@ -41,6 +42,7 @@ def test_get_config_no_caching():
         assert result1 is mock_settings
         assert result2 is mock_settings
 
+
 def test_fastapi_dependency_overrides():
     """Verify that FastAPI dependency overrides work correctly with our dependencies."""
     app = FastAPI()
@@ -55,9 +57,10 @@ def test_fastapi_dependency_overrides():
 
     # Test without overrides
     # Note: we need to mock the underlying functions because they might fail without real env
-    with patch("api.dependencies.get_data_service") as mock_get_data_service, \
-         patch("api.dependencies.get_settings") as mock_get_settings:
-
+    with (
+        patch("api.dependencies.get_data_service") as mock_get_data_service,
+        patch("api.dependencies.get_settings") as mock_get_settings,
+    ):
         mock_get_data_service.return_value = MagicMock(spec=ChronosDataService)
         mock_get_settings.return_value = MagicMock(spec=Settings)
 
@@ -102,17 +105,27 @@ def test_fastapi_dependency_overrides():
     # Cleanup overrides
     app.dependency_overrides = {}
 
+
 def test_get_database():
-    """Verify that get_database yields from get_db correctly."""
+    """Verify that get_database creates a session, yields it, and closes it."""
     from api.dependencies import get_database
-    with patch("api.dependencies.get_db") as mock_get_db:
-        # Mock get_db to return a generator
-        def mock_generator():
-            yield "mock_session"
-        mock_get_db.return_value = mock_generator()
+
+    with patch("api.dependencies.SessionLocal") as mock_session_local:
+        mock_db = MagicMock()
+        mock_session_local.return_value = mock_db
 
         generator = get_database()
-        result = next(generator)
 
-        mock_get_db.assert_called_once()
-        assert result == "mock_session"
+        # Test yielding the session
+        result = next(generator)
+        assert result == mock_db
+        mock_session_local.assert_called_once()
+        mock_db.close.assert_not_called()
+
+        # Test closing the session
+        try:
+            next(generator)
+        except StopIteration:
+            pass
+
+        mock_db.close.assert_called_once()
