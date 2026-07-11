@@ -141,12 +141,12 @@ def _compute_layout_positions(G, node_props, layout_type="lanes"):
         others = [n for n in nodes if node_props.get(n, {}).get("type") != "category"]
 
         num_cats = max(1, len(categories))
-        lane_radius = 2.4
+        lane_radius = 3.2
 
         category_map = {}
         for idx, cat in enumerate(categories):
             theta = (idx / num_cats) * 2 * math.pi
-            pos[cat] = (lane_radius * math.cos(theta), 0.5, lane_radius * math.sin(theta))
+            pos[cat] = (lane_radius * math.cos(theta), 0.8, lane_radius * math.sin(theta))
             category_map[cat] = idx
 
         lane_groups = {}
@@ -169,10 +169,10 @@ def _compute_layout_positions(G, node_props, layout_type="lanes"):
             group_nodes.sort(key=lambda n: node_props.get(n, {}).get("avg_ts", 0.0))
 
             for idx, node in enumerate(group_nodes):
-                y_offset = (idx - (len(group_nodes) - 1) / 2) * 0.14
+                y_offset = (idx - (len(group_nodes) - 1) / 2) * 0.16
                 pos[node] = (
                     base_x + math.sin(idx) * 0.06,
-                    y_offset - 0.4,
+                    y_offset - 0.5,
                     base_z + math.cos(idx) * 0.06
                 )
     elif layout_type in ("levels", "breadthfirst"):
@@ -187,9 +187,9 @@ def _compute_layout_positions(G, node_props, layout_type="lanes"):
                 theta = (idx / count) * 2 * math.pi
                 pos[node] = (radius * math.cos(theta), y_val, radius * math.sin(theta))
 
-        layout_layer(layer0, 1.2, 0.7)
-        layout_layer(layer1, 0.0, 1.6)
-        layout_layer(layer2, -1.2, 2.4)
+        layout_layer(layer0, 1.6, 1.0)
+        layout_layer(layer1, 0.0, 2.2)
+        layout_layer(layer2, -1.6, 3.2)
     elif layout_type in ("orbit", "concentric"):
         sorted_nodes = sorted(nodes, key=lambda n: node_props.get(n, {}).get("count", 0), reverse=True)
         categories = [n for n in sorted_nodes if node_props.get(n, {}).get("type") == "category"]
@@ -199,7 +199,7 @@ def _compute_layout_positions(G, node_props, layout_type="lanes"):
         for idx, cat in enumerate(categories):
             theta = (idx / num_cats) * 2 * math.pi
             phi = math.acos(-1.0 + (2.0 * idx) / num_cats)
-            r = 0.4
+            r = 0.6
             pos[cat] = (
                 r * math.sin(phi) * math.cos(theta),
                 r * math.sin(phi) * math.sin(theta),
@@ -209,7 +209,7 @@ def _compute_layout_positions(G, node_props, layout_type="lanes"):
         others.sort(key=lambda n: node_props.get(n, {}).get("avg_ts", 0.0), reverse=True)
         for idx, node in enumerate(others):
             shell = idx % 3
-            r = 0.9 + shell * 0.7
+            r = 1.4 + shell * 1.0
             count_in_shell = math.ceil(len(others) / 3)
             idx_in_shell = idx // 3
 
@@ -225,10 +225,10 @@ def _compute_layout_positions(G, node_props, layout_type="lanes"):
         N = len(sorted_nodes)
         for idx, node in enumerate(sorted_nodes):
             theta = (idx / max(1, N)) * 2 * math.pi * 3.5
-            radius = 1.5 - (idx / max(1, N)) * 0.4
+            radius = 2.0 - (idx / max(1, N)) * 0.5
             pos[node] = (
                 radius * math.cos(theta),
-                (idx / max(1, N)) * 3.6 - 1.8,
+                (idx / max(1, N)) * 4.8 - 2.4,
                 radius * math.sin(theta)
             )
     else:
@@ -358,11 +358,23 @@ def _build_plotly_3d_figure(graph_data, layout_name: str = "lanes") -> go.Figure
 
             custom_data_list.append(props)
 
+        node_text_labels = []
+        for node_id in ids:
+            props = node_props.get(node_id, {})
+            label = props.get("label", node_id)
+            count = props.get("count", props.get("mention_count", 0))
+            if ntype == "category":
+                node_text_labels.append(label)
+            elif count >= 4:
+                node_text_labels.append(label)
+            else:
+                node_text_labels.append("")
+
         node_trace = go.Scatter3d(
             x=x_coords,
             y=y_coords,
             z=z_coords,
-            mode="markers",
+            mode="markers+text",
             name=name,
             marker=dict(
                 symbol="circle",
@@ -371,8 +383,11 @@ def _build_plotly_3d_figure(graph_data, layout_name: str = "lanes") -> go.Figure
                 line=dict(color="#0f172a", width=1.5),
                 opacity=0.92
             ),
-            text=hover_texts,
+            text=node_text_labels,
+            hovertext=hover_texts,
             hoverinfo="text",
+            textposition="top center",
+            textfont=dict(color="#e2e8f0", size=10, family="sans-serif"),
             customdata=custom_data_list,
             showlegend=True
         )
