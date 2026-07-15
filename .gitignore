@@ -4,6 +4,7 @@
 !.env.example
 tokens.txt
 .plaud_tokens.json
+.plaud_api_token.json
 
 # Python
 venv/
@@ -58,6 +59,7 @@ GeminiEmbed2*.md
 # Runtime logs and tokens
 .logs/
 .notion_tokens.json
+PlaudBlenderiOS/PlaudBlenderiOS/LocalOverrides.plist
 
 # Databases, logs, temp, and media files
 *.sqlite

@@ -46,6 +46,8 @@ final class PlaudSyncDiagnosticsTests: XCTestCase {
             detail: nil,
             warning: nil,
             warnings: ["Partial Plaud backfill preserved earlier pages."],
+            accumulatedCostUsd: nil,
+            activatedModels: nil,
             phases: [
                 PipelinePhase(
                     name: "backfill",
@@ -85,6 +87,8 @@ final class PlaudSyncDiagnosticsTests: XCTestCase {
             detail: nil,
             warning: "Repeated page signature detected on page 2; stopping backfill.",
             warnings: nil,
+            accumulatedCostUsd: nil,
+            activatedModels: nil,
             phases: [
                 PipelinePhase(
                     name: "backfill",
@@ -270,5 +274,71 @@ final class PlaudSyncDiagnosticsTests: XCTestCase {
         let day = try JSONDecoder().decode(DaySummary.self, from: json)
 
         XCTAssertEqual(day.recordings?.map(\.recordingId), ["rec-created-fallback", "rec-newest", "rec-middle"])
+    }
+
+    func testPlaudIntegrationStatusDecodesMissingRuntimeToolCount() throws {
+        let json = #"""
+        {
+          "account_rest": "Unverified",
+          "official_mcp": "Available",
+          "mcp_tool_count": null,
+          "embedded_auth": "Configured",
+          "file_upload": "Ready",
+          "transcription": "Ready",
+          "region": "us",
+          "last_verified": "2026-07-15T23:00:00Z",
+          "correlation_id": "request-1"
+        }
+        """#.data(using: .utf8)!
+
+        let status = try JSONDecoder().decode(PlaudIntegrationStatus.self, from: json)
+
+        XCTAssertEqual(status.accountREST, "Unverified")
+        XCTAssertNil(status.mcpToolCount)
+        XCTAssertEqual(status.region, "us")
+    }
+
+    func testPlaudCapabilityManifestDecodesDiagnosticFields() throws {
+        let json = #"""
+        {
+          "generated_at": "2026-07-15T23:00:00Z",
+          "capabilities": [{
+            "operation_id": "mcp.get_transcript",
+            "transport": "plaud_mcp",
+            "authentication_model": "MCP OAuth",
+            "safety": "read-only",
+            "implementation_status": "implemented",
+            "test_status": "runtime-discovered",
+            "source_file": "src/plaud_integrations/mcp_account.py",
+            "method": null,
+            "path": null,
+            "tool_name": "get_transcript",
+            "description": "Returns transcript",
+            "schema_hash": "abc123",
+            "discovered_at_runtime": true,
+            "last_successful_call_time": "2026-07-15T22:59:00Z",
+            "last_failure": null,
+            "last_latency_ms": 42
+          }]
+        }
+        """#.data(using: .utf8)!
+
+        let manifest = try JSONDecoder().decode(PlaudCapabilityManifest.self, from: json)
+        let capability = try XCTUnwrap(manifest.capabilities.first)
+
+        XCTAssertEqual(capability.toolName, "get_transcript")
+        XCTAssertEqual(capability.lastLatencyMs, 42)
+        XCTAssertEqual(capability.authenticationModel, "MCP OAuth")
+    }
+
+    func testIntegrationTransportRawValuesRemainStable() throws {
+        let values: [IntegrationTransport] = [
+            .chronosREST, .plaudAccountREST, .plaudMCP, .plaudEmbeddedREST, .plaudUpload
+        ]
+
+        let data = try JSONEncoder().encode(values)
+        let decoded = try JSONDecoder().decode([IntegrationTransport].self, from: data)
+
+        XCTAssertEqual(decoded.map(\.rawValue), values.map(\.rawValue))
     }
 }

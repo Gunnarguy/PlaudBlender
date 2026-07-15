@@ -4,6 +4,14 @@ import OSLog
 
 private let logger = Logger(subsystem: "com.gunndamental.PlaudBlenderiOS", category: "APIClient")
 
+enum IntegrationTransport: String, Codable, Sendable {
+    case chronosREST
+    case plaudAccountREST
+    case plaudMCP
+    case plaudEmbeddedREST
+    case plaudUpload
+}
+
 struct ClientNetworkEvent: Identifiable, Sendable {
     let id = UUID()
     let timestamp: Date
@@ -21,6 +29,7 @@ struct ClientNetworkEvent: Identifiable, Sendable {
     let responsePreview: String?
     let errorMessage: String?
     let requestId: String
+    let transport: IntegrationTransport
 
     var isError: Bool {
         if errorMessage != nil {
@@ -245,12 +254,12 @@ final class APIClient: Sendable {
         let requestId = UUID().uuidString.prefix(8).lowercased()
         request.setValue("ios-\(requestId)", forHTTPHeaderField: "X-Request-ID")
 
-        logger.debug("📡 \(method, privacy: .public) \(url.absoluteString, privacy: .public) [\(requestId, privacy: .public)]")
+        logger.debug("📡 \(method, privacy: .public) \(url.path(percentEncoded: false), privacy: .public) [\(requestId, privacy: .public)]")
         return request
     }
 
     private func execute<T: Decodable>(_ request: URLRequest) async throws -> T {
-        let urlString = request.url?.absoluteString ?? "?"
+        let urlString = sanitizedURLString(request.url)
         let path = request.url?.path(percentEncoded: false) ?? urlString
         let method = request.httpMethod ?? "?"
         let start = CFAbsoluteTimeGetCurrent()
@@ -267,7 +276,7 @@ final class APIClient: Sendable {
 
             let statusCode = http.statusCode
             guard 200..<300 ~= statusCode else {
-                let body = String(data: data, encoding: .utf8) ?? ""
+                let body = previewString(from: data) ?? ""
                 await recordNetworkEvent(
                     kind: "http",
                     method: method,
@@ -281,7 +290,7 @@ final class APIClient: Sendable {
                     responseData: data,
                     errorMessage: body
                 )
-                logger.error("❌ \(method) \(urlString) — HTTP \(statusCode) (\(elapsed)ms) body=\(body.prefix(300), privacy: .public)")
+                logger.error("❌ \(method) \(urlString) — HTTP \(statusCode) (\(elapsed)ms)")
                 isServerReachable = true  // server is reachable, just returned an error
                 throw APIError.httpError(status: statusCode, body: body)
             }
@@ -305,8 +314,7 @@ final class APIClient: Sendable {
             do {
                 return try decoder.decode(T.self, from: data)
             } catch {
-                let snippet = String(data: data.prefix(500), encoding: .utf8) ?? "(binary)"
-                logger.error("🔴 DECODE FAILED \(method) \(urlString): \(error) — body: \(snippet, privacy: .public)")
+                logger.error("🔴 DECODE FAILED \(method) \(urlString): \(error)")
                 throw APIError.decodingFailed(error)
             }
         } catch let error as APIError {
@@ -509,7 +517,8 @@ final class APIClient: Sendable {
             requestPreview: previewString(from: requestBody),
             responsePreview: previewString(from: responseData),
             errorMessage: errorMessage,
-            requestId: requestId
+            requestId: requestId,
+            transport: integrationTransport(for: path)
         )
 
         await MainActor.run {
@@ -522,13 +531,68 @@ final class APIClient: Sendable {
 
     private func previewString(from data: Data?) -> String? {
         guard let data, !data.isEmpty else { return nil }
+        if let object = try? JSONSerialization.jsonObject(with: data),
+           JSONSerialization.isValidJSONObject(object),
+           let redactedData = try? JSONSerialization.data(withJSONObject: redactJSON(object)) {
+            return truncatedPreview(String(decoding: redactedData, as: UTF8.self))
+        }
+        return truncatedPreview(String(decoding: data, as: UTF8.self))
+    }
+
+    private func truncatedPreview(_ string: String) -> String {
         let previewLimit = 600
-        let prefix = data.prefix(previewLimit)
-        let string = String(decoding: prefix, as: UTF8.self)
-        if data.count > previewLimit {
-            return string + "…"
+        if string.utf8.count > previewLimit {
+            return String(string.prefix(previewLimit)) + "…"
         }
         return string
+    }
+
+    private func redactJSON(_ value: Any, key: String? = nil) -> Any {
+        let sensitiveKeys = [
+            "authorization", "access_token", "refresh_token", "client_secret",
+            "secret_key", "api_key", "x-client-api-key", "webhook_secret", "code"
+        ]
+        if let key {
+            let normalized = key.lowercased().replacingOccurrences(of: "-", with: "_")
+            if sensitiveKeys.contains(where: { normalized.contains($0.replacingOccurrences(of: "-", with: "_")) }) {
+                return "[REDACTED]"
+            }
+        }
+        if let dictionary = value as? [String: Any] {
+            var result: [String: Any] = [:]
+            for (childKey, childValue) in dictionary {
+                result[childKey] = redactJSON(childValue, key: childKey)
+            }
+            return result
+        }
+        if let dictionary = value as? [AnyHashable: Any] {
+            var result: [String: Any] = [:]
+            for (childKey, childValue) in dictionary {
+                result[String(describing: childKey)] = redactJSON(childValue, key: String(describing: childKey))
+            }
+            return result
+        }
+        if let array = value as? [Any] {
+            return array.map { redactJSON($0) }
+        }
+        return value
+    }
+
+    private func sanitizedURLString(_ url: URL?) -> String {
+        guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return "?"
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? url.path(percentEncoded: false)
+    }
+
+    private func integrationTransport(for path: String) -> IntegrationTransport {
+        if path.contains("/plaud/integrations/mcp/") { return .plaudMCP }
+        if path.contains("/plaud/integrations/embedded/uploads") { return .plaudUpload }
+        if path.contains("/plaud/integrations/embedded/") { return .plaudEmbeddedREST }
+        if path.contains("/auth/plaud") { return .plaudAccountREST }
+        return .chronosREST
     }
 
     private func sanitizedHeaders(from headers: [AnyHashable: Any]) -> [String: String] {
@@ -537,7 +601,7 @@ final class APIClient: Sendable {
         for (key, value) in headers {
             let headerKey = String(describing: key)
             let lowercasedKey = headerKey.lowercased()
-            if ["authorization", "cookie", "set-cookie", "x-api-key"].contains(lowercasedKey) {
+            if ["authorization", "cookie", "set-cookie", "x-api-key", "x-client-api-key", "x-client-secret"].contains(lowercasedKey) {
                 sanitized[headerKey] = "<redacted>"
             } else {
                 sanitized[headerKey] = String(describing: value)

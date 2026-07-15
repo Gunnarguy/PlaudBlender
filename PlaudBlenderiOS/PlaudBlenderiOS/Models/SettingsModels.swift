@@ -121,3 +121,77 @@ struct ServerSettingsUpdateRequest: Codable, Sendable {
         case chronosLocalLLMAllowedTasks = "chronos_local_llm_allowed_tasks"
     }
 }
+
+// MARK: - PLAUD public platform diagnostics
+
+struct PlaudIntegrationStatus: Codable, Sendable {
+    let accountREST: String
+    let officialMCP: String
+    let mcpToolCount: Int?
+    let embeddedAuth: String
+    let fileUpload: String
+    let transcription: String
+    let region: String
+    let lastVerified: String?
+
+    enum CodingKeys: String, CodingKey {
+        case accountREST = "account_rest"
+        case officialMCP = "official_mcp"
+        case mcpToolCount = "mcp_tool_count"
+        case embeddedAuth = "embedded_auth"
+        case fileUpload = "file_upload"
+        case transcription
+        case region
+        case lastVerified = "last_verified"
+    }
+}
+
+struct PlaudCapabilityManifest: Codable, Sendable {
+    let generatedAt: String
+    let capabilities: [PlaudIntegrationCapability]
+
+    enum CodingKeys: String, CodingKey {
+        case generatedAt = "generated_at"
+        case capabilities
+    }
+}
+
+struct PlaudIntegrationCapability: Codable, Identifiable, Sendable {
+    var id: String { operationID }
+
+    let operationID: String
+    let transport: String
+    let authenticationModel: String
+    let safety: String
+    let implementationStatus: String
+    let testStatus: String
+    let sourceFile: String
+    let method: String?
+    let path: String?
+    let toolName: String?
+    let description: String?
+    let schemaHash: String?
+    let discoveredAtRuntime: Bool
+    let lastSuccessfulCallTime: String?
+    let lastFailure: String?
+    let lastLatencyMs: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case operationID = "operation_id"
+        case transport
+        case authenticationModel = "authentication_model"
+        case safety
+        case implementationStatus = "implementation_status"
+        case testStatus = "test_status"
+        case sourceFile = "source_file"
+        case method
+        case path
+        case toolName = "tool_name"
+        case description
+        case schemaHash = "schema_hash"
+        case discoveredAtRuntime = "discovered_at_runtime"
+        case lastSuccessfulCallTime = "last_successful_call_time"
+        case lastFailure = "last_failure"
+        case lastLatencyMs = "last_latency_ms"
+    }
+}

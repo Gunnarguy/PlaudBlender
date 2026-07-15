@@ -206,20 +206,7 @@ class PlaudOAuthClient:
         if state:
             data["state"] = state
 
-        logger.info(
-            "═══ TOKEN EXCHANGE ═══\n"
-            "  URL: %s\n"
-            "  redirect_uri: %s\n"
-            "  code: %s…\n"
-            "  state: %s\n"
-            "  client_id: %s…%s",
-            PLAUD_TOKEN_URL,
-            self.redirect_uri,
-            code[:16] if len(code) > 16 else code,
-            (state[:16] + "…") if state else "(none)",
-            self.client_id[:8],
-            self.client_id[-4:],
-        )
+        logger.info("Exchanging Plaud OAuth authorization code")
 
         try:
             response = requests.post(
@@ -228,12 +215,7 @@ class PlaudOAuthClient:
                 data=data,
                 timeout=15,
             )
-            logger.info(
-                "  → %s %s  body: %s",
-                response.status_code,
-                response.reason,
-                response.text[:500],
-            )
+            logger.info("Plaud token exchange returned HTTP %s", response.status_code)
             response.raise_for_status()
         except requests.HTTPError as exc:
             logger.error("Token exchange failed: %s", exc)
@@ -277,12 +259,7 @@ class PlaudOAuthClient:
         try:
             response = requests.post(PLAUD_REFRESH_URL, headers=headers, data=data)
             if not response.ok:
-                logger.error(
-                    "Token refresh failed: %s %s — %s",
-                    response.status_code,
-                    response.reason,
-                    response.text[:500],
-                )
+                logger.error("Plaud token refresh failed: HTTP %s", response.status_code)
             response.raise_for_status()
         except requests.HTTPError as exc:
             logger.error(

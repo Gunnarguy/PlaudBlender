@@ -1,0 +1,434 @@
+{
+  "capabilities": [
+    {
+      "authentication_model": "HTTP Basic client_id:secret_key",
+      "description": null,
+      "discovered_at_runtime": false,
+      "implementation_status": "implemented",
+      "input_schema": null,
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": "POST",
+      "operation_id": "createPartnerAccessToken",
+      "output_schema": null,
+      "path": "/oauth/partner/access-token",
+      "safety": "auth",
+      "schema_hash": null,
+      "source_file": "src/plaud_integrations/embedded_auth.py",
+      "source_version": null,
+      "test_status": "unit-tested",
+      "tool_name": null,
+      "transport": "plaud_embedded_rest"
+    },
+    {
+      "authentication_model": "HTTP Basic plus refresh_token form body",
+      "description": null,
+      "discovered_at_runtime": false,
+      "implementation_status": "implemented",
+      "input_schema": null,
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": "POST",
+      "operation_id": "refreshPartnerAccessToken",
+      "output_schema": null,
+      "path": "/oauth/partner/access-token/refresh",
+      "safety": "auth",
+      "schema_hash": null,
+      "source_file": "src/plaud_integrations/embedded_auth.py",
+      "source_version": null,
+      "test_status": "unit-tested",
+      "tool_name": null,
+      "transport": "plaud_embedded_rest"
+    },
+    {
+      "authentication_model": "Bearer partner access token",
+      "description": null,
+      "discovered_at_runtime": false,
+      "implementation_status": "implemented",
+      "input_schema": null,
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": "POST",
+      "operation_id": "createUserAccessToken",
+      "output_schema": null,
+      "path": "/open/partner/users/access-token",
+      "safety": "auth",
+      "schema_hash": null,
+      "source_file": "src/plaud_integrations/embedded_auth.py",
+      "source_version": null,
+      "test_status": "unit-tested",
+      "tool_name": null,
+      "transport": "plaud_embedded_rest"
+    },
+    {
+      "authentication_model": "Bearer user access token",
+      "description": null,
+      "discovered_at_runtime": false,
+      "implementation_status": "implemented",
+      "input_schema": null,
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": "POST",
+      "operation_id": "generatePresignedUrls",
+      "output_schema": null,
+      "path": "/open/partner/files/upload/generate-presigned-urls",
+      "safety": "mutating",
+      "schema_hash": null,
+      "source_file": "src/plaud_integrations/embedded_upload.py",
+      "source_version": null,
+      "test_status": "unit-tested",
+      "tool_name": null,
+      "transport": "plaud_embedded_rest"
+    },
+    {
+      "authentication_model": "Presigned URL",
+      "description": null,
+      "discovered_at_runtime": false,
+      "implementation_status": "implemented",
+      "input_schema": null,
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": "PUT",
+      "operation_id": "uploadPresignedPart",
+      "output_schema": null,
+      "path": "<runtime presigned URL>",
+      "safety": "mutating",
+      "schema_hash": null,
+      "source_file": "src/plaud_integrations/embedded_upload.py",
+      "source_version": null,
+      "test_status": "unit-tested",
+      "tool_name": null,
+      "transport": "plaud_upload"
+    },
+    {
+      "authentication_model": "Bearer user access token",
+      "description": null,
+      "discovered_at_runtime": false,
+      "implementation_status": "implemented",
+      "input_schema": null,
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": "POST",
+      "operation_id": "completeUpload",
+      "output_schema": null,
+      "path": "/open/partner/files/upload/complete-upload",
+      "safety": "mutating",
+      "schema_hash": null,
+      "source_file": "src/plaud_integrations/embedded_upload.py",
+      "source_version": null,
+      "test_status": "unit-tested",
+      "tool_name": null,
+      "transport": "plaud_embedded_rest"
+    },
+    {
+      "authentication_model": "X-Client-Id + X-Client-Api-Key",
+      "description": null,
+      "discovered_at_runtime": false,
+      "implementation_status": "implemented",
+      "input_schema": null,
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": "POST",
+      "operation_id": "createTranscription",
+      "output_schema": null,
+      "path": "/open/partner/ai/transcriptions/",
+      "safety": "mutating",
+      "schema_hash": null,
+      "source_file": "src/plaud_integrations/transcription.py",
+      "source_version": null,
+      "test_status": "unit-tested",
+      "tool_name": null,
+      "transport": "plaud_embedded_rest"
+    },
+    {
+      "authentication_model": "X-Client-Id + X-Client-Api-Key",
+      "description": null,
+      "discovered_at_runtime": false,
+      "implementation_status": "implemented",
+      "input_schema": null,
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": "GET",
+      "operation_id": "getTranscription",
+      "output_schema": null,
+      "path": "/open/partner/ai/transcriptions/{transcription_id}",
+      "safety": "read-only",
+      "schema_hash": null,
+      "source_file": "src/plaud_integrations/transcription.py",
+      "source_version": null,
+      "test_status": "unit-tested",
+      "tool_name": null,
+      "transport": "plaud_embedded_rest"
+    },
+    {
+      "authentication_model": "Third-party OAuth bearer token",
+      "description": null,
+      "discovered_at_runtime": false,
+      "implementation_status": "compatibility-awaiting-public-verification",
+      "input_schema": null,
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": null,
+      "operation_id": "legacyAccountREST",
+      "output_schema": null,
+      "path": null,
+      "safety": "read-only",
+      "schema_hash": null,
+      "source_file": "src/plaud_integrations/legacy_account.py",
+      "source_version": null,
+      "test_status": "regression-tested",
+      "tool_name": null,
+      "transport": "plaud_account_rest"
+    },
+    {
+      "authentication_model": "MCP OAuth",
+      "description": "Log in, sign in, or authenticate with Plaud account via OAuth (opens browser)",
+      "discovered_at_runtime": true,
+      "implementation_status": "implemented",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": null,
+      "operation_id": "mcp.login",
+      "output_schema": null,
+      "path": null,
+      "safety": "auth",
+      "schema_hash": "93c97dcbc49a46a59947907c54efe71d43900bbee809ce22844bc36166038ded",
+      "source_file": "src/plaud_integrations/mcp_account.py",
+      "source_version": "0.3.5",
+      "test_status": "runtime-discovered",
+      "tool_name": "login",
+      "transport": "plaud_mcp"
+    },
+    {
+      "authentication_model": "MCP OAuth",
+      "description": "List Plaud recordings. Supports optional client-side filtering: `query` (case-insensitive name substring), `date_from`/`date_to` (YYYY-MM-DD, inclusive). When any filter is set, paginates up to 5 pages \u00d7 100 recordings and returns all matches.",
+      "discovered_at_runtime": true,
+      "implementation_status": "implemented",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "date_from": {
+            "description": "Start date inclusive, YYYY-MM-DD",
+            "type": "string"
+          },
+          "date_to": {
+            "description": "End date inclusive, YYYY-MM-DD",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "description": "Page number (ignored when filters are set)",
+            "type": "number"
+          },
+          "page_size": {
+            "default": 20,
+            "description": "Items per page (ignored when filters are set)",
+            "type": "number"
+          },
+          "query": {
+            "description": "Case-insensitive substring match on recording name",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": null,
+      "operation_id": "mcp.list_files",
+      "output_schema": null,
+      "path": null,
+      "safety": "read-only",
+      "schema_hash": "530045a5cee1252ea9321afeae5ba00adb7d4d5955e20c7d16e9a11cd365b162",
+      "source_file": "src/plaud_integrations/mcp_account.py",
+      "source_version": "0.3.5",
+      "test_status": "runtime-discovered",
+      "tool_name": "list_files",
+      "transport": "plaud_mcp"
+    },
+    {
+      "authentication_model": "MCP OAuth",
+      "description": "Get details of a specific Plaud recording by ID",
+      "discovered_at_runtime": true,
+      "implementation_status": "implemented",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "file_id": {
+            "description": "The file ID to retrieve",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "type": "object"
+      },
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": null,
+      "operation_id": "mcp.get_file",
+      "output_schema": null,
+      "path": null,
+      "safety": "read-only",
+      "schema_hash": "45f6b3b243e7869af85767449c78abb6a5110ae69e2742f763703db2bdcb98a6",
+      "source_file": "src/plaud_integrations/mcp_account.py",
+      "source_version": "0.3.5",
+      "test_status": "runtime-discovered",
+      "tool_name": "get_file",
+      "transport": "plaud_mcp"
+    },
+    {
+      "authentication_model": "MCP OAuth",
+      "description": "Fetch AI-generated notes for a Plaud recording \u2014 compact summary, action items, and key topics",
+      "discovered_at_runtime": true,
+      "implementation_status": "implemented",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "file_id": {
+            "description": "The file ID to retrieve notes for",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "type": "object"
+      },
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": null,
+      "operation_id": "mcp.get_note",
+      "output_schema": null,
+      "path": null,
+      "safety": "read-only",
+      "schema_hash": "1df29b169610da189eb66e65b21cec89b0709b7cc2ceaec0048e1168026b0a37",
+      "source_file": "src/plaud_integrations/mcp_account.py",
+      "source_version": "0.3.5",
+      "test_status": "runtime-discovered",
+      "tool_name": "get_note",
+      "transport": "plaud_mcp"
+    },
+    {
+      "authentication_model": "MCP OAuth",
+      "description": "Fetch the full timestamped transcript with speaker attribution for a Plaud recording",
+      "discovered_at_runtime": true,
+      "implementation_status": "implemented",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "file_id": {
+            "description": "The file ID to retrieve transcript for",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "type": "object"
+      },
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": null,
+      "operation_id": "mcp.get_transcript",
+      "output_schema": null,
+      "path": null,
+      "safety": "read-only",
+      "schema_hash": "5ff7243d3d29351250c554d966bce3190ce574ae7a7b4529d66b3cd18304ccbd",
+      "source_file": "src/plaud_integrations/mcp_account.py",
+      "source_version": "0.3.5",
+      "test_status": "runtime-discovered",
+      "tool_name": "get_transcript",
+      "transport": "plaud_mcp"
+    },
+    {
+      "authentication_model": "MCP OAuth",
+      "description": "Get current authenticated user info",
+      "discovered_at_runtime": true,
+      "implementation_status": "implemented",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "last_failure": "2026-07-15T23:51:55.966287+00:00: PlaudIntegrationError",
+      "last_latency_ms": 623,
+      "last_successful_call_time": null,
+      "method": null,
+      "operation_id": "mcp.get_current_user",
+      "output_schema": null,
+      "path": null,
+      "safety": "read-only",
+      "schema_hash": "93c97dcbc49a46a59947907c54efe71d43900bbee809ce22844bc36166038ded",
+      "source_file": "src/plaud_integrations/mcp_account.py",
+      "source_version": "0.3.5",
+      "test_status": "runtime-discovered",
+      "tool_name": "get_current_user",
+      "transport": "plaud_mcp"
+    },
+    {
+      "authentication_model": "MCP OAuth",
+      "description": "Log out, sign out, revoke authorization, and disconnect from Plaud account",
+      "discovered_at_runtime": true,
+      "implementation_status": "implemented",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "last_failure": null,
+      "last_latency_ms": null,
+      "last_successful_call_time": null,
+      "method": null,
+      "operation_id": "mcp.logout",
+      "output_schema": null,
+      "path": null,
+      "safety": "auth",
+      "schema_hash": "93c97dcbc49a46a59947907c54efe71d43900bbee809ce22844bc36166038ded",
+      "source_file": "src/plaud_integrations/mcp_account.py",
+      "source_version": "0.3.5",
+      "test_status": "runtime-discovered",
+      "tool_name": "logout",
+      "transport": "plaud_mcp"
+    }
+  ],
+  "documentation_sources": [
+    "https://docs.plaud.ai/llms.txt",
+    "https://docs.plaud.ai/plaud-mcp-cli/mcp",
+    "https://docs.plaud.ai/openapi/auth.json",
+    "https://docs.plaud.ai/openapi/file.json",
+    "https://docs.plaud.ai/openapi/transcription.json"
+  ],
+  "generated_at": "2026-07-15T23:55:59.223897+00:00",
+  "legacy_adapter_status": "Compatibility; current public documentation status awaiting verification",
+  "mcp": {
+    "discovered_server_versions": [
+      "0.3.5"
+    ],
+    "discovery_method": "ClientSession.list_tools()",
+    "package": "@plaud-ai/mcp@latest",
+    "remote_server": "https://mcp.plaud.ai/mcp",
+    "runtime_discovery_succeeded": true
+  },
+  "regional_base_urls": {
+    "jp": "https://platform-jp.plaud.ai/developer/api",
+    "us": "https://platform-us.plaud.ai/developer/api"
+  }
+}

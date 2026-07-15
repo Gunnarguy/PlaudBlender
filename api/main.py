@@ -120,6 +120,7 @@ from api.routes.costs import router as costs_router  # noqa: E402
 from api.routes.auth import router as auth_router  # noqa: E402
 from api.routes.settings import router as settings_router  # noqa: E402
 from api.routes.admin import router as admin_router  # noqa: E402
+from api.routes.plaud_integrations import router as plaud_integrations_router  # noqa: E402
 
 app.include_router(health_router)
 app.include_router(timeline_router)
@@ -135,3 +136,4 @@ app.include_router(costs_router)
 app.include_router(auth_router)
 app.include_router(settings_router)
 app.include_router(admin_router)
+app.include_router(plaud_integrations_router)

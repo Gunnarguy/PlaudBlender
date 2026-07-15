@@ -21,7 +21,7 @@ if [[ -f "$ROOT/.env" ]]; then
     set +a
 fi
 
-QDRANT_REMOTE_URL="${QDRANT_REMOTE_URL:-http://100.76.130.109:6333}"
+QDRANT_REMOTE_URL="${QDRANT_REMOTE_URL:-}"
 
 API_PORT=8000
 export CHRONOS_API_WORKERS=2
@@ -94,6 +94,7 @@ _update_env_redirect() {
 
 _probe_qdrant() {
     # Check if remote Qdrant is online and reachable
+    [[ -n "$QDRANT_REMOTE_URL" ]] || return 1
     if curl -s -m 1.5 "${QDRANT_REMOTE_URL}/v1/health" >/dev/null 2>&1; then
         return 0
     else
@@ -147,7 +148,7 @@ do_start() {
     echo -e "  ${GREEN}✔  .env${RESET}  →  NOTION_REDIRECT_URI updated"
 
     # Dynamic Qdrant Database Routing & Fallback
-    echo -e "  ${DIM}Checking connection to Remote Qdrant (${QDRANT_REMOTE_URL})…${RESET}"
+    echo -e "  ${DIM}Checking configured remote Qdrant…${RESET}"
     if _probe_qdrant; then
         echo -e "  ${GREEN}✔  Remote Qdrant is ONLINE! Connecting directly…${RESET}"
         export QDRANT_URL="${QDRANT_REMOTE_URL}"

@@ -1,6 +1,7 @@
 """OAuth authentication flow endpoints (Plaud + Notion)."""
 
 import os
+import secrets
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, HTTPException, Request
@@ -14,6 +15,16 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 _plaud_oauth_pending: dict[str, dict[str, str]] = {}
 _plaud_oauth_completed: dict[str, dict[str, str]] = {}
 _notion_oauth_pending: dict[str, dict[str, str]] = {}
+
+
+def _matching_pending_state(state: str) -> str | None:
+    """Return an exact pending state using constant-time comparisons."""
+    if not state:
+        return None
+    for candidate in _plaud_oauth_pending:
+        if secrets.compare_digest(candidate, state):
+            return candidate
+    return None
 
 
 # ── Plaud OAuth ─────────────────────────────────────────────
@@ -90,6 +101,11 @@ async def plaud_callback(
             error=completed.get("error", "authorization_failed"),
         )
 
+    # State is single-use and must originate from our authorize endpoint.
+    # Do this before reflecting provider errors or exchanging any code.
+    if _matching_pending_state(state) is None:
+        return _plaud_redirect("mobile", error="invalid_state")
+
     if error:
         _plaud_oauth_pending.pop(state, None)
         _plaud_oauth_completed[state] = {
@@ -142,6 +158,10 @@ async def plaud_token_exchange(body: TokenExchangeRequest):
     """Exchange auth code for Plaud access token."""
     from src.plaud_oauth import PlaudOAuthClient
 
+    pending_state = _matching_pending_state(body.state or "")
+    if pending_state is None:
+        raise HTTPException(status_code=400, detail="invalid_state")
+    _plaud_oauth_pending.pop(pending_state, None)
     client = PlaudOAuthClient()
     try:
         client.exchange_code_for_token(code=body.code, state=body.state)

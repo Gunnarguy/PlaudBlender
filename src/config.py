@@ -66,6 +66,13 @@ class Settings:
     plaud_client_secret: Optional[str] = os.getenv("PLAUD_CLIENT_SECRET")
     plaud_redirect_uri: Optional[str] = os.getenv("PLAUD_REDIRECT_URI")
 
+    # Plaud Embedded uses a separate partner credential set. These values are
+    # backend-only and must not be collapsed into the account OAuth client.
+    plaud_embedded_client_id: Optional[str] = os.getenv("PLAUD_EMBEDDED_CLIENT_ID")
+    plaud_embedded_secret_key: Optional[str] = os.getenv("PLAUD_EMBEDDED_SECRET_KEY")
+    plaud_embedded_api_key: Optional[str] = os.getenv("PLAUD_EMBEDDED_API_KEY")
+    plaud_embedded_region: str = os.getenv("PLAUD_EMBEDDED_REGION", "us")
+
     # Plaud Webhook (for async notifications)
     plaud_webhook_secret: Optional[str] = os.getenv("PLAUD_WEBHOOK_SECRET")
     plaud_webhook_url: Optional[str] = os.getenv("PLAUD_WEBHOOK_URL")

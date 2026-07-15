@@ -11,6 +11,10 @@ final class SettingsViewModel: NSObject {
     var plaudValidationDiagnostics: PlaudStatusValidationDiagnostics?
     var notionAuthStatus: TokenStatus?
     var systemStatus: SystemStatus?
+    var plaudIntegrationStatus: PlaudIntegrationStatus?
+    var plaudCapabilityManifest: PlaudCapabilityManifest?
+    var plaudIntegrationError: String?
+    var isLoadingPlaudIntegrations = false
     var processingProvider = ""
     var cleaningModel = ""
     var analystModel = ""
@@ -228,6 +232,24 @@ final class SettingsViewModel: NSObject {
         isLoadingSystemStatus = false
     }
 
+    func loadPlaudIntegrations() async {
+        isLoadingPlaudIntegrations = true
+        defer { isLoadingPlaudIntegrations = false }
+        do {
+            let status: PlaudIntegrationStatus = try await api.get("/api/plaud/integrations/status")
+            let manifest: PlaudCapabilityManifest = try await api.get("/api/plaud/integrations/capabilities")
+            plaudIntegrationStatus = status
+            plaudCapabilityManifest = manifest
+            plaudIntegrationError = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            plaudIntegrationStatus = nil
+            plaudCapabilityManifest = nil
+            plaudIntegrationError = error.localizedDescription
+        }
+    }
+
     func loadServerSettings() async {
         isLoadingServerConfig = true
         do {
@@ -336,6 +358,7 @@ final class SettingsViewModel: NSObject {
         await loadPlaudStatus()
         await loadNotionStatus()
         await loadSystemStatus()
+        await loadPlaudIntegrations()
         await loadServerSettings()
     }
 

@@ -54,11 +54,12 @@ if [[ -f "$ROOT_DIR/.env" ]]; then
   set +a
 fi
 
-QDRANT_REMOTE_URL="${QDRANT_REMOTE_URL:-http://100.76.130.109:6333}"
+QDRANT_REMOTE_URL="${QDRANT_REMOTE_URL:-}"
 
 cd "$ROOT_DIR"
 
 _probe_qdrant() {
+  [[ -n "$QDRANT_REMOTE_URL" ]] || return 1
   if curl -s -m 1.5 "${QDRANT_REMOTE_URL}/v1/health" >/dev/null 2>&1; then
     return 0
   else
@@ -66,7 +67,7 @@ _probe_qdrant() {
   fi
 }
 
-echo "Checking connection to Remote Qdrant (${QDRANT_REMOTE_URL})..."
+echo "Checking configured remote Qdrant..."
 if _probe_qdrant; then
   echo "✔ Remote Qdrant is ONLINE! Connecting directly..."
   export QDRANT_URL="${QDRANT_REMOTE_URL}"

@@ -21,29 +21,12 @@ final class AuthManager: Sendable {
         return plist
     }()
 
-    /// Pi's Tailscale MagicDNS host for remote access when the iPhone is on the tailnet.
-    private static var piTailscaleMagicDNSURL: String {
-        overrides["piTailscaleMagicDNSURL"] ?? "http://your-device.your-tailnet.ts.net:8000"
-    }
-    /// Pi's stable Tailscale IP fallback when MagicDNS is unavailable on the client.
-    private static var piTailscaleURL: String {
-        overrides["piTailscaleURL"] ?? "http://100.76.130.109:8000"
-    }
-    /// Pi's known LAN IP for fast local access on home Wi-Fi.
-    private static var piLanURL: String {
-        overrides["piLanURL"] ?? "http://10.0.0.170:8000"
-    }
-    /// Legacy Mac-local recovery URL from earlier debugging sessions.
-    private static var legacyMacRecoveryHost: String {
-        overrides["legacyMacRecoveryHost"] ?? "10.x.y.z"
-    }
-    /// Legacy temporary ngrok API URL from earlier debugging sessions.
-    private static var legacyNgrokRecoveryHost: String {
-        overrides["legacyNgrokRecoveryHost"] ?? "your-ngrok-domain.ngrok-free.app"
-    }
-    /// Reserved ngrok tunnel — public fallback backend URL for the Pi API.
-    private static var ngrokURL: String {
-        overrides["ngrokURL"] ?? "https://glairy-ona-irreplaceable.ngrok-free.dev"
+    private static let publicPlaceholderURL = "https://chronos.invalid"
+
+    /// Optional local fallbacks live only in ignored LocalOverrides.plist.
+    private static var locallyConfiguredFallbacks: [String] {
+        ["piTailscaleMagicDNSURL", "piTailscaleURL", "piLanURL", "ngrokURL"]
+            .compactMap { preferredServerURL(from: overrides[$0]) }
     }
 
     /// Default server URL — uses Info.plist value (ngrok), then falls back.
@@ -51,7 +34,7 @@ final class AuthManager: Sendable {
         if let configuredServerURL = Self.configuredServerURL {
             return configuredServerURL
         }
-        return ngrokURL
+        return locallyConfiguredFallbacks.first ?? publicPlaceholderURL
     }
 
     var isAuthenticated: Bool {
@@ -94,15 +77,9 @@ final class AuthManager: Sendable {
             candidates.append(configuredServerURL)
         }
 
-        // 3. Prefer direct Pi access over Tailscale before public tunneling.
-        if !Self.piTailscaleMagicDNSURL.contains("your-device.") {
-            candidates.append(Self.piTailscaleMagicDNSURL)
-        }
-        candidates.append(Self.piTailscaleURL)
-        candidates.append(Self.piLanURL)
-
-        // 4. Public Pi API tunnel (works when direct access is unavailable and ngrok quota permits)
-        candidates.append(Self.ngrokURL)
+        // Local network, tailnet, and tunnel fallbacks are private machine
+        // configuration and are intentionally absent from public Swift source.
+        candidates.append(contentsOf: Self.locallyConfiguredFallbacks)
 
         var seen = Set<String>()
         return candidates.filter { seen.insert($0).inserted }
@@ -159,10 +136,6 @@ final class AuthManager: Sendable {
             return nil
         }
 
-        if host == legacyMacRecoveryHost || host == legacyNgrokRecoveryHost {
-            return ngrokURL
-        }
-
         var normalized = "\(scheme)://\(host)"
         if let port = components.port {
             normalized += ":\(port)"
@@ -179,11 +152,6 @@ final class AuthManager: Sendable {
     }
 
     private static func isBuiltInServerURL(_ value: String) -> Bool {
-        [
-            piTailscaleMagicDNSURL,
-            piTailscaleURL,
-            ngrokURL,
-            piLanURL,
-        ].contains(value)
+        locallyConfiguredFallbacks.contains(value) || value == publicPlaceholderURL
     }
 }

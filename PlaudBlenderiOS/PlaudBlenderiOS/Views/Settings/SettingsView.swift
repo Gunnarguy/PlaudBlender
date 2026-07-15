@@ -151,6 +151,40 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("PLAUD Platform") {
+                    if let status = viewModel.plaudIntegrationStatus {
+                        plaudPlatformRow("Account REST", status: status.accountREST)
+                        plaudPlatformRow("Official MCP", status: status.officialMCP)
+                        plaudPlatformRow(
+                            "MCP tools",
+                            status: status.mcpToolCount.map { "\($0) discovered" } ?? "Runtime check pending"
+                        )
+                        plaudPlatformRow("Embedded Auth", status: status.embeddedAuth)
+                        plaudPlatformRow("File Upload", status: status.fileUpload)
+                        plaudPlatformRow("Transcription", status: status.transcription)
+                        plaudPlatformRow("Region", status: status.region.uppercased())
+                        if let lastVerified = status.lastVerified {
+                            plaudPlatformRow("Last Verified", status: lastVerified)
+                        }
+                    } else if viewModel.isLoadingPlaudIntegrations {
+                        HStack {
+                            ProgressView()
+                            Text("Loading platform status…")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text(viewModel.plaudIntegrationError ?? "Platform status unavailable")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    NavigationLink {
+                        PlaudPlatformDiagnosticsView(viewModel: viewModel)
+                    } label: {
+                        Label("Diagnostic Details", systemImage: "stethoscope")
+                    }
+                }
+
                 // Notion auth status
                 Section("Notion Connection") {
                     if let status = viewModel.notionAuthStatus {
@@ -500,6 +534,17 @@ struct SettingsView: View {
         }
     }
 
+    private func plaudPlatformRow(_ title: String, status: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+            Spacer()
+            Text(status)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
     private func plaudValidationIcon(for state: PlaudStatusValidationState) -> String {
         switch state {
         case .validatedWithServer:
@@ -538,5 +583,79 @@ struct SettingsView: View {
             guard let anchor = currentPresentationAnchor() else { return }
             await viewModel.startPlaudOAuthFlow(anchor: anchor)
         }
+    }
+}
+
+private struct PlaudPlatformDiagnosticsView: View {
+    @Bindable var viewModel: SettingsViewModel
+
+    var body: some View {
+        List {
+            if viewModel.isLoadingPlaudIntegrations && viewModel.plaudCapabilityManifest == nil {
+                ProgressView("Discovering capabilities…")
+            }
+
+            if let error = viewModel.plaudIntegrationError {
+                Section("Last Error") {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                }
+            }
+
+            ForEach(viewModel.plaudCapabilityManifest?.capabilities ?? []) { capability in
+                Section(capability.toolName ?? capability.operationID) {
+                    diagnosticRow("Transport", capability.transport)
+                    diagnosticRow("Status", capability.implementationStatus)
+                    diagnosticRow("Safety", capability.safety)
+                    diagnosticRow("Authentication", capability.authenticationModel)
+                    diagnosticRow("Source", capability.sourceFile)
+                    if let method = capability.method, let path = capability.path {
+                        diagnosticRow("Operation", "\(method) \(path)")
+                    }
+                    diagnosticRow(
+                        "Last call",
+                        capability.lastSuccessfulCallTime ?? "No successful runtime call recorded"
+                    )
+                    diagnosticRow(
+                        "Latency",
+                        capability.lastLatencyMs.map { "\($0) ms" } ?? "Not recorded"
+                    )
+                    if let error = capability.lastFailure {
+                        diagnosticRow("Last error", error)
+                    }
+                    if let hash = capability.schemaHash {
+                        diagnosticRow("Schema", String(hash.prefix(12)))
+                    }
+                }
+            }
+        }
+        .navigationTitle("PLAUD Diagnostics")
+        .refreshable { await viewModel.loadPlaudIntegrations() }
+        .task {
+            if viewModel.plaudCapabilityManifest == nil {
+                await viewModel.loadPlaudIntegrations()
+            }
+        }
+    }
+
+    private func diagnosticRow(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(redacted(value))
+                .font(.subheadline)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func redacted(_ value: String) -> String {
+        let lowered = value.lowercased()
+        if lowered.contains("bearer ") || lowered.contains("access_token") || lowered.contains("refresh_token") {
+            return "[REDACTED]"
+        }
+        return value
     }
 }

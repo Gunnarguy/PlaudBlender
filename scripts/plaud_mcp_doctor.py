@@ -23,14 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-try:
-    from mcp import ClientSession, StdioServerParameters, stdio_client
-except ImportError as exc:  # pragma: no cover - environment guard
-    raise SystemExit(
-        "The Python MCP package is not available in this environment. "
-        "Run this script with the repo virtualenv, for example: "
-        "./venv/bin/python scripts/plaud_mcp_doctor.py --status"
-    ) from exc
+from src.plaud_integrations.mcp_account import PlaudMCPAccountAdapter
 
 
 DEFAULT_MCP_COMMAND = os.getenv("PLAUD_MCP_COMMAND") or shutil.which("npx") or "npx"
@@ -59,6 +52,7 @@ class PlaudMCPDoctor:
     def __init__(self, command: str = DEFAULT_MCP_COMMAND, args: Sequence[str] = DEFAULT_MCP_ARGS):
         self.command = command
         self.args = list(args)
+        self.adapter = PlaudMCPAccountAdapter(command=command, args=args)
 
     def _server_params(self) -> StdioServerParameters:
         return StdioServerParameters(command=self.command, args=self.args)
@@ -156,10 +150,41 @@ class PlaudMCPDoctor:
                 return await self._call_tool_async(session, tool_name, args)
 
     def status(self) -> dict[str, Any]:
-        return self._run(self._gather_status_async())
+        capabilities = self.adapter.discover_tools()
+        tool_names = [item.tool_name for item in capabilities if item.tool_name]
+        try:
+            user_summary = self.call_tool("get_current_user")
+        except Exception as exc:
+            user_summary = ToolCallSummary(
+                name="get_current_user", ok=False, text=str(exc), payload=None
+            )
+        return {
+            "command": self.command,
+            "args": self.args,
+            "tools": tool_names,
+            "tool_schemas": {
+                item.tool_name: {
+                    "description": item.description,
+                    "input_schema": item.input_schema,
+                    "output_schema": item.output_schema,
+                    "schema_hash": item.schema_hash,
+                }
+                for item in capabilities
+                if item.tool_name
+            },
+            "authenticated": user_summary.ok,
+            "user": user_summary.payload,
+            "user_text": user_summary.text,
+        }
 
     def call_tool(self, tool_name: str, args: dict[str, Any] | None = None) -> ToolCallSummary:
-        return self._run(self._tool_once_async(tool_name, args))
+        result = self.adapter.call_tool(tool_name, args)
+        return ToolCallSummary(
+            name=result.tool_name,
+            ok=not result.is_error,
+            text=result.text_content,
+            payload=result.structured_content,
+        )
 
 
 def _read_version(command: str) -> str:
