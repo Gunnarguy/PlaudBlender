@@ -421,6 +421,19 @@ class TestAuthEnforcement:
             r = client.get("/api/v1/timeline/days")
             assert r.status_code == 200
 
+    def test_trusted_lan_fails_closed_for_public_proxy_without_key(self, client):
+        """A public tunnel address cannot inherit keyless trusted-LAN access."""
+        with patch.dict(
+            os.environ,
+            {"CHRONOS_DEPLOYMENT_MODE": "trusted_lan", "CHRONOS_API_KEY": ""},
+            clear=False,
+        ):
+            r = client.get(
+                "/api/v1/timeline/days",
+                headers={"X-Forwarded-For": "8.8.8.8"},
+            )
+            assert r.status_code == 401
+
 
 # ═══════════════════════════════════════════════════════════
 # TIMELINE

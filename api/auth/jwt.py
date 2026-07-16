@@ -66,12 +66,13 @@ def require_auth(
 
     api_key = _get_api_key()
     if not api_key:
-        if mode == "public":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Unauthorized: Server is improperly configured (missing CHRONOS_API_KEY)",
-            )
-        return "bypassed"
+        # Keyless access is only valid when the deployment mode explicitly
+        # allowed this client address above. A public proxy/tunnel request must
+        # never inherit trusted-LAN behavior merely because no key is set.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Server is improperly configured (missing CHRONOS_API_KEY)",
+        )
 
     if credentials is None:
         raise HTTPException(

@@ -52,7 +52,7 @@ US and Japan are the only regions present in the verified OpenAPI server lists. 
 - OAuth callbacks now require a locally issued, constant-time-compared state before errors or codes are accepted.
 - Removed authorization code, state, client ID fragments, and token response bodies from OAuth logs.
 - Added recursive ledger and iOS network-preview redaction.
-- New routes use the existing `require_auth` dependency. Public deployment mode still fails closed when `CHRONOS_API_KEY` is absent.
+- New routes use the existing `require_auth` dependency. Public proxy/tunnel requests fail closed when `CHRONOS_API_KEY` is absent, including when trusted-LAN mode remains enabled for private clients.
 - Embedded partner secret and transcription API key are environment-only backend settings.
 - Keychain persistence uses `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
 - Removed personal LAN, Tailscale IP, and ngrok endpoints from Swift source and executable startup defaults. Local values belong in ignored environment or `LocalOverrides.plist` configuration.
@@ -61,7 +61,7 @@ US and Japan are the only regions present in the verified OpenAPI server lists. 
 
 - Baseline backend suite: could not reach collection; the existing virtualenv stalled while importing pytest/Pygments metadata and was stopped after more than two minutes.
 - New backend contract suite: 11 tests pass.
-- Full backend regression suite: 414 passed and one pre-existing failure remained in `tests/test_config.py::test_resolve_openai_api_key`; the baseline implementation returns a configured key even when `CHRONOS_OPENAI_ENABLED=0`, while the pre-existing test expects `None`. This code was unchanged by the PLAUD work. The run also collected the pre-existing untracked duplicate test files in the working tree; those passed and are not part of this commit.
+- Full backend regression suite: 415 passed and one pre-existing failure remained in `tests/test_config.py::test_resolve_openai_api_key`; the baseline implementation returns a configured key even when `CHRONOS_OPENAI_ENABLED=0`, while the pre-existing test expects `None`. This code was unchanged by the PLAUD work. The run also collected the pre-existing untracked duplicate test files in the working tree; those passed and are not part of this commit.
 - Live MCP discovery: succeeds; package server version `0.3.5`, seven tools, not authenticated. Account data calls were intentionally not attempted.
 - iOS simulator app build: succeeds.
 - Generic iOS device build with signing disabled: succeeds.
