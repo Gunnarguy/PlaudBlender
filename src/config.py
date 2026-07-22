@@ -112,9 +112,9 @@ class Settings:
     #   8192 token input limit. Vectors are L2-normalized by the API.
     # ─────────────────────────────────────────────────────────────────────────
     chronos_cleaning_model: str = os.getenv(
-        # Gemini 3.5 Flash — flagship high-performance reasoning model
+        # Gemini 3.5 Flash-Lite — ultra low-cost reasoning model ($0.30/$2.50 per MTok)
         "CHRONOS_CLEANING_MODEL",
-        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
     )
     chronos_embedding_model: str = os.getenv(
         # Gemini Embedding 2 — current multimodal embedding path for Chronos

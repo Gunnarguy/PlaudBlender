@@ -693,9 +693,44 @@ struct StatsView: View {
     private var costOverviewSection: some View {
         StatsSectionCard(
             title: "Cost Overview",
-            subtitle: "Costs, token volume, and daily burn compressed into cleaner summary tiles.",
+            subtitle: "Costs, token volume, and daily free tier quota status.",
             systemImage: "dollarsign.circle"
         ) {
+            if let cost = viewModel.sessionCost, let freeCalls = cost.freeTierDailyCalls, let freeLimit = cost.freeTierDailyLimit {
+                let remaining = cost.freeTierRemaining ?? max(0, freeLimit - freeCalls)
+                let fraction = min(1.0, max(0.0, Double(freeCalls) / Double(freeLimit)))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "bolt.shield.fill")
+                            .foregroundStyle(.green)
+                        Text("Google AI Studio Free Tier")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text("\(freeCalls) / \(freeLimit) calls")
+                            .font(.caption.weight(.bold))
+                            .monospacedDigit()
+                            .foregroundStyle(.green)
+                    }
+
+                    ProgressView(value: fraction)
+                        .tint(.green)
+
+                    HStack {
+                        Text("\(remaining) free calls remaining today")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(cost.billingTier?.uppercased() == "FREE" ? "100% $0.00 FREE TIER" : "PAID FALLBACK READY")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(cost.billingTier?.uppercased() == "FREE" ? Color.accentGreen : Color.accentOrange)
+                    }
+                }
+                .padding(10)
+                .background(Color.accentGreen.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+
             LazyVGrid(columns: statsGridColumns, spacing: 10) {
                 if let cost = viewModel.sessionCost {
                     MetricTile(title: "Total Cost", value: String(format: "$%.4f", cost.totalCostUsd), footnote: "Today's spend", icon: "dollarsign.circle", tint: .accentGreen)

@@ -214,10 +214,8 @@ def normalize_model_name(model: str) -> str:
 
 
 def _gemini_pricing_tier() -> str:
-    """Return the configured Gemini billing tier for cost estimation.
-    Always estimate using 'paid' rates to show actual real-world API costs.
-    """
-    return "paid"
+    """Return the configured Gemini billing tier ('free' or 'paid')."""
+    return get_settings().gemini_billing_tier
 
 
 def get_pricing(model: str) -> dict:
@@ -594,6 +592,11 @@ def get_session_cost() -> dict:
                 except Exception:
                     pass
 
+            billing_tier = get_settings().gemini_billing_tier
+            free_limit = 1500
+            free_calls = records_count if billing_tier == "free" else 0
+            free_remaining = max(0, free_limit - free_calls)
+
             return {
                 "total_cost_usd": round(total_cost, 4),
                 "total_input_tokens": total_inp,
@@ -603,7 +606,11 @@ def get_session_cost() -> dict:
                 "by_type": by_type,
                 "recent": recent,
                 "session_start": session_start,
-                "session_minutes": round((now - session_start) / 60, 1),
+                "session_minutes": round((now - session_start) / 60.0, 1),
+                "free_tier_daily_calls": free_calls,
+                "free_tier_daily_limit": free_limit,
+                "free_tier_remaining": free_remaining,
+                "billing_tier": billing_tier,
             }
     except Exception as e:
         logger.warning(f"Failed to query session costs: {e}")

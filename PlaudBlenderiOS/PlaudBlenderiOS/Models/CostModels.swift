@@ -10,6 +10,10 @@ struct SessionCost: Codable, Sendable {
     let byType: [String: JSONValue]
     let recent: [CostRecentCall]?
     let sessionMinutes: Double
+    let freeTierDailyCalls: Int?
+    let freeTierDailyLimit: Int?
+    let freeTierRemaining: Int?
+    let billingTier: String?
 
     enum CodingKeys: String, CodingKey {
         case totalCostUsd = "total_cost_usd"
@@ -20,6 +24,10 @@ struct SessionCost: Codable, Sendable {
         case byType = "by_type"
         case recent
         case sessionMinutes = "session_minutes"
+        case freeTierDailyCalls = "free_tier_daily_calls"
+        case freeTierDailyLimit = "free_tier_daily_limit"
+        case freeTierRemaining = "free_tier_remaining"
+        case billingTier = "billing_tier"
     }
 }
 
