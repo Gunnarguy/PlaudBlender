@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -42,6 +43,64 @@ _EMPTY_DAY_AUDIT_FAILURE_TTL_SECONDS = 1800
 _EMPTY_DAY_AUDIT_MAX_DAYS = 45
 _EMPTY_DAY_AUDIT_MAX_PAGES = 12
 _PLAUD_CLOUD_STATS_ENABLED = os.getenv("CHRONOS_STATS_ENABLE_PLAUD_CLOUD", "0") == "1"
+
+# The graph is a summary surface, not a transcript concordance. These words can
+# be valid inside clean event text but are never useful as standalone subjects.
+_GRAPH_LOW_VALUE_KEYWORDS = frozenset(
+    {
+        "a", "about", "actually", "after", "again", "all", "also", "am", "an",
+        "and", "any", "anyone", "anything", "are", "aren", "around", "as", "at",
+        "away", "back", "basically", "be", "because", "been", "before", "being",
+        "but", "by", "can", "come", "conversation", "could", "day", "did", "do",
+        "does", "doing", "done", "down", "dude", "even", "everyone", "everything",
+        "feel", "felt", "few", "for", "from", "general", "get", "gets", "getting",
+        "go", "going", "good", "got", "guy", "guys", "had", "has", "have",
+        "having", "he", "her", "here", "hey", "him", "his", "how", "i", "if",
+        "in", "into", "is", "isn", "it", "its", "just", "kind", "know", "like",
+        "lot", "make", "makes", "many", "maybe", "me", "misc", "more", "most",
+        "much", "my", "n", "na", "not", "nothing", "now", "of", "off", "ok",
+        "okay", "on", "one", "or", "other", "our", "out", "over", "people",
+        "person", "please", "really", "right", "said", "say", "saying", "she",
+        "should", "so", "some", "someone", "something", "sort", "stuff", "take",
+        "talk", "talked", "talking", "tell", "than", "thank", "thanks", "that",
+        "the", "their", "them", "then", "there", "these", "they", "thing",
+        "things", "think", "thinking", "this", "those", "thought", "through",
+        "time", "to", "today", "told", "too", "took", "up", "us", "very", "want",
+        "wanted", "was", "wasn", "way", "we", "week", "well", "were", "weren",
+        "what", "when", "where", "which", "while", "who", "why", "will", "with",
+        "work", "would", "yeah", "yes", "you", "your", "unknown", "none", "n/a",
+    }
+)
+_GRAPH_DISALLOWED_TOKENS = frozenset(
+    {"fuck", "fucks", "fucked", "fucking", "shit", "shits", "shitty", "damn"}
+)
+
+
+def _normalize_graph_keyword(value: Any) -> Optional[str]:
+    """Return a stable, useful graph subject or None for transcript debris."""
+    raw = " ".join(str(value or "").strip().lower().split())
+    tokens = re.findall(r"[a-z0-9][a-z0-9+#._-]*", raw)
+
+    while tokens and tokens[0] in _GRAPH_LOW_VALUE_KEYWORDS:
+        tokens.pop(0)
+    while tokens and tokens[-1] in _GRAPH_LOW_VALUE_KEYWORDS:
+        tokens.pop()
+
+    if not tokens or any(token in _GRAPH_DISALLOWED_TOKENS for token in tokens):
+        return None
+
+    content_tokens = [
+        token
+        for token in tokens
+        if token not in _GRAPH_LOW_VALUE_KEYWORDS and len(token.replace("_", "")) >= 3
+    ]
+    if not content_tokens:
+        return None
+
+    normalized = " ".join(tokens)
+    if len(normalized) > 64:
+        return None
+    return normalized
 
 
 def _utc_naive_to_local_date_key(value: datetime) -> str:
@@ -1494,9 +1553,18 @@ class ChronosDataService:
         keyword_counts: Dict[str, int] = defaultdict(int)
         for event in events:
             for kw in event.keywords:
-                keyword_counts[kw.lower()] += 1
+                normalized = _normalize_graph_keyword(kw)
+                if normalized:
+                    keyword_counts[normalized] += 1
 
-        return sorted(keyword_counts.items(), key=lambda x: -x[1])
+        return sorted(
+            (
+                (keyword, count)
+                for keyword, count in keyword_counts.items()
+                if count >= 2
+            ),
+            key=lambda item: (-item[1], item[0]),
+        )
 
     def get_topic_timeline(self, topic: str) -> TopicTimeline:
         """Get timeline of a topic across all recordings.
@@ -1601,137 +1669,13 @@ class ChronosDataService:
         category_counts: Dict[str, int] = defaultdict(int)
         keyword_counts: Dict[str, int] = defaultdict(int)
         keyword_categories: Dict[str, set] = defaultdict(set)
+        keyword_recordings: Dict[str, set] = defaultdict(set)
         recording_keywords: Dict[str, set] = defaultdict(set)
         date_categories: Dict[str, set] = defaultdict(set)
         date_event_count: Dict[str, int] = defaultdict(int)
         keyword_sentiments: Dict[str, list] = defaultdict(list)
         keyword_timestamps: Dict[str, list] = defaultdict(list)
         category_timestamps: Dict[str, list] = defaultdict(list)
-
-        # Normalize keywords
-        def normalize(kw: str) -> str:
-            return kw.strip().lower()
-
-        # Skip low-value keywords, generic verbs, pronouns, fillers, and conversational tokens
-        stop_keywords = {
-            "unknown",
-            "none",
-            "other",
-            "general",
-            "n/a",
-            "na",
-            "misc",
-            "the",
-            "and",
-            "for",
-            "with",
-            "that",
-            "this",
-            "from",
-            "about",
-            "against",
-            "doing",
-            "does",
-            "did",
-            "done",
-            "do",
-            "thank",
-            "thanks",
-            "please",
-            "how",
-            "what",
-            "why",
-            "who",
-            "where",
-            "when",
-            "which",
-            "whose",
-            "dude",
-            "guy",
-            "guys",
-            "bro",
-            "stuff",
-            "thing",
-            "things",
-            "something",
-            "anything",
-            "nothing",
-            "someone",
-            "anyone",
-            "everyone",
-            "some",
-            "any",
-            "all",
-            "very",
-            "really",
-            "so",
-            "then",
-            "there",
-            "their",
-            "here",
-            "also",
-            "even",
-            "much",
-            "many",
-            "more",
-            "most",
-            "somehow",
-            "anyway",
-            "actually",
-            "basically",
-            "him",
-            "her",
-            "them",
-            "they",
-            "you",
-            "me",
-            "my",
-            "your",
-            "our",
-            "us",
-            "we",
-            "he",
-            "she",
-            "will",
-            "would",
-            "could",
-            "should",
-            "can",
-            "want",
-            "wanted",
-            "take",
-            "took",
-            "tell",
-            "told",
-            "get",
-            "got",
-            "go",
-            "going",
-            "make",
-            "think",
-            "thought",
-            "know",
-            "say",
-            "said",
-            "yeah",
-            "yes",
-            "okay",
-            "ok",
-            "hey",
-            "well",
-            "just",
-            "like",
-            "about",
-            "after",
-            "again",
-            "before",
-            "being",
-            "into",
-            "through",
-            "would",
-            "should",
-            "could",
-        }
 
         for event in events:
             cat = event.category
@@ -1742,11 +1686,12 @@ class ChronosDataService:
             date_event_count[date_key] += 1
 
             for kw in event.keywords:
-                nkw = normalize(kw)
-                if len(nkw) < 2 or nkw in stop_keywords:
+                nkw = _normalize_graph_keyword(kw)
+                if not nkw:
                     continue
                 keyword_counts[nkw] += 1
                 keyword_categories[nkw].add(cat)
+                keyword_recordings[nkw].add(event.recording_id)
                 recording_keywords[event.recording_id].add(nkw)
                 keyword_sentiments[nkw].append(event.sentiment)
                 keyword_timestamps[nkw].append(event.start_ts.timestamp())
@@ -1756,18 +1701,19 @@ class ChronosDataService:
             kw for kw, count in keyword_counts.items() if count >= 2
         }
 
-        # If too few pass the threshold, lower it
-        if len(significant_keywords) < 10:
-            significant_keywords = {
-                kw for kw, count in keyword_counts.items() if count >= 1
-            }
-
-        # Cap at top 80 keywords by frequency to keep graph readable
-        if len(significant_keywords) > 80:
+        # Never fill the graph with singletons just to make it look populated.
+        # A sparse honest graph is more useful than a dense transcript word cloud.
+        if len(significant_keywords) > 48:
             sorted_kws = sorted(
-                significant_keywords, key=lambda k: keyword_counts[k], reverse=True
+                significant_keywords,
+                key=lambda k: (
+                    len(keyword_recordings[k]),
+                    keyword_counts[k],
+                    len(k.split()),
+                ),
+                reverse=True,
             )
-            significant_keywords = set(sorted_kws[:80])
+            significant_keywords = set(sorted_kws[:48])
 
         # ── Build co-occurrence edges between keywords ────────────────
         keyword_cooccurrence: Dict[tuple, int] = defaultdict(int)

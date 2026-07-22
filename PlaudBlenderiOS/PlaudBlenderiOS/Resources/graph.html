@@ -1,558 +1,317 @@
 <!doctype html>
 <html>
   <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta charset="utf-8" />
-    <!-- Load Three.js dependency explicitly for custom 3D element rendering -->
-    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-    <!-- Load 3d-force-graph from a reliable CDN -->
-    <script
-      src="https://unpkg.com/3d-force-graph@1.73.0/dist/3d-force-graph.min.js"
-      onerror="
-        window.webkit.messageHandlers.graphError.postMessage(
-          'Failed to load 3D Force Graph engine from CDN.',
-        )
-      "
-    ></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <style>
-      :root {
-        color-scheme: light dark;
-      }
-
-      html,
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      html, body, #graph-container { width: 100%; height: 100%; margin: 0; overflow: hidden; }
       body {
-        margin: 0;
-        width: 100%;
-        height: 100%;
-        background: #090d16; /* Deep cosmic space black */
-        overflow: hidden;
+        background: #f7f8fa;
+        color: #172033;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
       }
-
-      #graph-container {
-        width: 100%;
-        height: 100%;
-      }
-
-      /* Hover tooltip customization */
-      .graph-tooltip {
-        background: rgba(15, 23, 42, 0.9) !important;
-        border: 1px solid rgba(99, 102, 241, 0.4) !important;
-        border-radius: 8px !important;
-        color: #f8fafc !important;
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif !important;
-        padding: 8px 12px !important;
-        font-size: 11px !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+      #graph-container { position: relative; }
+      svg { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; }
+      .lane { fill: #ffffff; stroke: #e3e7ee; stroke-width: 1; }
+      .lane-title { fill: #172033; font-size: 13px; font-weight: 700; }
+      .lane-subtitle { fill: #687386; font-size: 10px; }
+      .category-card { stroke-width: 1.5; }
+      .category-label { fill: #ffffff; font-size: 12px; font-weight: 700; }
+      .category-count { fill: rgba(255,255,255,.82); font-size: 10px; }
+      .topic-card { fill: #ffffff; stroke: #dce3ec; stroke-width: 1; }
+      .topic-label { fill: #1f2937; font-size: 11px; font-weight: 600; }
+      .topic-count { fill: #697586; font-size: 10px; }
+      .topic-link { fill: none; stroke-width: 2; stroke-linecap: round; opacity: .35; }
+      .relationship { fill: none; stroke: #f59e0b; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 5 5; }
+      .topic-link, .relationship { pointer-events: none; }
+      .selected .topic-card, .selected .category-card { stroke: #0969da; stroke-width: 3; }
+      .selected .topic-label, .selected .category-label { font-weight: 800; }
+      .dimmed { opacity: .22; }
+      .more-label { fill: #687386; font-size: 10px; font-weight: 600; }
+      .rank-number { fill: #8a95a5; font-size: 11px; font-weight: 700; }
+      .axis-label { fill: #687386; font-size: 10px; font-weight: 700; letter-spacing: .5px; }
+      .empty { fill: #687386; font-size: 14px; }
+      @media (prefers-color-scheme: dark) {
+        body { background: #111827; color: #f3f4f6; }
+        .lane { fill: #182233; stroke: #2a394e; }
+        .lane-title, .topic-label { fill: #f3f4f6; }
+        .lane-subtitle, .topic-count, .more-label, .rank-number, .axis-label { fill: #a9b4c4; }
+        .topic-card { fill: #202d40; stroke: #34455e; }
       }
     </style>
   </head>
   <body>
-    <div id="graph-container"></div>
+    <main id="graph-container" aria-label="Knowledge graph"></main>
     <script>
       (() => {
-        let Graph = null;
-        let selectedNodeId = null;
-        let graphData = { nodes: [], links: [] };
-
-        // Highlight tracking sets
-        const highlightNodes = new Set();
-        const highlightLinks = new Set();
-        let hoveredNode = null;
-
-        const post = (name, payload) => {
-          try {
-            const handler = window.webkit?.messageHandlers?.[name];
-            if (handler) {
-              handler.postMessage(payload);
-            }
-          } catch (_) {
-            // Ignore native bridge failures
-          }
+        const container = document.getElementById("graph-container");
+        const state = {
+          payload: { nodes: [], edges: [] },
+          layout: "lanes",
+          selectedNodeId: null,
+          positions: new Map(),
+          viewport: { x: 0, y: 0, width: 360, height: 420 },
+          content: { width: 360, height: 420 },
+          pointers: new Map(),
+          pinchDistance: null,
+          pinchZoom: 1,
         };
 
-        window.addEventListener("error", (event) => {
-          if (event.target?.tagName === "SCRIPT") {
-            post("graphError", "Failed to load WebGL Graph scripts.");
-          }
-        }, true);
-
-        window.onerror = (message, source, line, column) => {
-          post("graphError", [message, source, line, column].filter(Boolean).join(" @ "));
-          return false;
+        const post = (name, value) => {
+          try { window.webkit?.messageHandlers?.[name]?.postMessage(value); } catch (_) {}
         };
 
-        // Determine node size based on size parameter and type for better tap targets
-        const getNodeSizeVal = (sizeVal, type) => {
-          const val = Number(sizeVal || 15);
-          const base = Math.max(6, Math.min(22, val / 2.8));
-          if (type === "category") return base * 1.8; // Category hubs are prominent anchors
-          return base;
+        const escapeHTML = (value) => String(value ?? "").replace(/[&<>'"]/g, char => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+        }[char]));
+        const cleanLabel = (value, max = 30) => {
+          const text = String(value ?? "Untitled").trim();
+          return text.length > max ? `${text.slice(0, Math.max(1, max - 1)).trimEnd()}…` : text;
+        };
+        const metric = node => Number(node.mentionCount ?? node.mention_count ?? node.count ?? 0);
+        const normalize = value => String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+        const colorFor = node => node.color || (node.type === "category" ? "#0969da" : "#64748b");
+        const asNode = raw => raw?.data || raw || {};
+        const asEdge = raw => raw?.data || raw || {};
+
+        const graph = () => {
+          const nodes = (state.payload.nodes || []).map(asNode).filter(node => node.id);
+          const edges = (state.payload.edges || []).map(asEdge).filter(edge => edge.source && edge.target);
+          return { nodes, edges, byID: new Map(nodes.map(node => [node.id, node])) };
         };
 
-        // Draw rounded rectangle on canvas (highly compatible cross-platform drawer)
-        const drawRoundRect = (ctx, x, y, width, height, radius) => {
-          ctx.beginPath();
-          ctx.moveTo(x + radius, y);
-          ctx.lineTo(x + width - radius, y);
-          ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-          ctx.lineTo(x + width, y + height - radius);
-          ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-          ctx.lineTo(x + radius, y + height);
-          ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-          ctx.lineTo(x, y + radius);
-          ctx.quadraticCurveTo(x, y, x + radius, y);
-          ctx.closePath();
-        };
+        const categoriesFor = node => Array.isArray(node.categories)
+          ? node.categories
+          : String(node.categories || "").split(",").map(item => item.trim()).filter(Boolean);
 
-        // Create high-DPI canvas-textured Sprite label for 3D billboard rendering
-        const createLabelSprite = (text, color, isSelected, radius) => {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          
-          const fontSize = isSelected ? 20 : 15;
-          const paddingX = 12;
-          const paddingY = 6;
-          
-          ctx.font = `${isSelected ? 'bold' : 'normal'} ${fontSize}px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif`;
-          
-          const textWidth = ctx.measureText(text).width;
-          const width = textWidth + paddingX * 2;
-          const height = fontSize + paddingY * 2;
-          
-          // Retina/high-res scale factor
-          const scale = 2;
-          canvas.width = width * scale;
-          canvas.height = height * scale;
-          ctx.scale(scale, scale);
-          
-          // Pill background fill
-          ctx.fillStyle = isSelected ? 'rgba(15, 23, 42, 0.95)' : 'rgba(9, 13, 22, 0.85)';
-          ctx.strokeStyle = isSelected ? '#38bdf8' : color;
-          ctx.lineWidth = isSelected ? 2.5 : 1.5;
-          
-          const borderRadius = height / 2;
-          drawRoundRect(ctx, 0, 0, width, height, borderRadius);
-          ctx.fill();
-          ctx.stroke();
-          
-          // Draw sharp label text
-          ctx.fillStyle = isSelected ? '#ffffff' : '#e2e8f0';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(text, width / 2, height / 2);
-          
-          const texture = new THREE.CanvasTexture(canvas);
-          texture.minFilter = THREE.LinearFilter;
-          
-          const spriteMaterial = new THREE.SpriteMaterial({
-            map: texture,
-            transparent: true,
-            depthWrite: false, // Prevents square alpha mask clipping
-            depthTest: true
+        const categoryGroups = (nodes) => {
+          const categories = nodes.filter(node => node.type === "category").sort((a, b) => metric(b) - metric(a) || String(a.label).localeCompare(String(b.label)));
+          const lookup = new Map();
+          categories.forEach(category => {
+            lookup.set(normalize(category.id), category);
+            lookup.set(normalize(category.label), category);
           });
-          
-          const sprite = new THREE.Sprite(spriteMaterial);
-          
-          const spriteHeight = isSelected ? 12 : 9;
-          const spriteWidth = (width / height) * spriteHeight;
-          sprite.scale.set(spriteWidth, spriteHeight, 1);
-          
-          return sprite;
+          const groups = new Map(categories.map(category => [category.id, []]));
+          const uncategorized = [];
+          nodes.filter(node => node.type !== "category").forEach(node => {
+            const firstCategory = categoriesFor(node).map(normalize).map(key => lookup.get(key)).find(Boolean);
+            if (firstCategory) groups.get(firstCategory.id).push(node);
+            else uncategorized.push(node);
+          });
+          if (uncategorized.length) {
+            const fallback = { id: "__uncategorized", label: "Other topics", color: "#64748b", type: "category", count: uncategorized.length };
+            categories.push(fallback);
+            groups.set(fallback.id, uncategorized);
+          }
+          groups.forEach(items => items.sort((a, b) => metric(b) - metric(a) || String(a.label).localeCompare(String(b.label))));
+          return { categories, groups };
         };
 
-        window.updateGraph = (payload, layoutName, initialSelectedId) => {
-          try {
-            if (typeof ForceGraph3D === "undefined") {
-              post("graphError", "3D Force Graph engine is not loaded.");
-              return;
-            }
+        const point = (id, x, y, width, height) => state.positions.set(id, { x, y, width, height, centerX: x + width / 2, centerY: y + height / 2 });
+        const clearPositions = () => state.positions.clear();
+        const nodeIsRelated = (nodeID, edges) => {
+          if (!state.selectedNodeId) return true;
+          return nodeID === state.selectedNodeId || edges.some(edge =>
+            (edge.source === state.selectedNodeId && edge.target === nodeID) ||
+            (edge.target === state.selectedNodeId && edge.source === nodeID)
+          );
+        };
 
-            selectedNodeId = initialSelectedId || null;
+        const card = (node, x, y, width, height, kind = "topic") => {
+          const selected = node.id === state.selectedNodeId;
+          const related = nodeIsRelated(node.id, graph().edges);
+          const className = `${kind === "category" ? "category-card" : "topic-card"}${selected ? " selected" : ""}${related ? "" : " dimmed"}`;
+          const title = escapeHTML(node.fullLabel || node.full_label || node.label || node.id);
+          const count = metric(node);
+          point(node.id, x, y, width, height);
+          if (kind === "category") {
+            const color = colorFor(node);
+            return `<g class="${className}" role="button" tabindex="0" aria-label="${title}, category" data-node-id="${escapeHTML(node.id)}">
+              <rect class="category-card" x="${x}" y="${y}" width="${width}" height="${height}" rx="12" fill="${color}" stroke="${color}" />
+              <text class="category-label" x="${x + 12}" y="${y + 23}">${escapeHTML(cleanLabel(node.label, 21))}</text>
+              <text class="category-count" x="${x + 12}" y="${y + 40}">${count} ${count === 1 ? "event" : "events"}</text>
+            </g>`;
+          }
+          return `<g class="${className}" role="button" tabindex="0" aria-label="${title}, ${count} mentions" data-node-id="${escapeHTML(node.id)}">
+            <rect class="topic-card" x="${x}" y="${y}" width="${width}" height="${height}" rx="10" />
+            <circle cx="${x + 12}" cy="${y + height / 2}" r="4" fill="${colorFor(node)}" />
+            <text class="topic-label" x="${x + 22}" y="${y + height / 2 + 4}">${escapeHTML(cleanLabel(node.label, Math.max(12, Math.floor(width / 10))))}</text>
+            <text class="topic-count" text-anchor="end" x="${x + width - 10}" y="${y + height / 2 + 4}">${count}</text>
+          </g>`;
+        };
 
-            // 1. Transform Cytoscape format into 3D Force Graph format
-            const rawNodes = payload?.nodes || [];
-            const rawEdges = payload?.edges || [];
+        const link = (from, to, color, relationship = false) => {
+          if (!from || !to) return "";
+          return `<path class="${relationship ? "relationship" : "topic-link"}" stroke="${color}" d="M ${from.centerX} ${from.centerY} C ${from.centerX + 34} ${from.centerY}, ${to.centerX - 34} ${to.centerY}, ${to.centerX} ${to.centerY}" />`;
+        };
 
-            const nodes = rawNodes.map(node => {
-              // Support both Cytoscape-formatted and flat JSON objects
-              const d = node.data || node || {};
-              const typeColors = {
-                category: d.color || "#8b5cf6",
-                topic: "#64748b",
-                person: "#3b82f6",
-                project: "#f59e0b",
-                organization: "#10b981",
-                location: "#f97316",
-                date: "#475569"
-              };
-              const color = d.color || typeColors[d.type] || "#4f46e5";
-              
-              let cats = [];
-              if (Array.isArray(d.categories)) {
-                cats = d.categories;
-              } else if (typeof d.categories === "string") {
-                cats = d.categories.split(",").map(c => c.trim()).filter(Boolean);
-              }
-
-              return {
-                id: d.id,
-                label: d.label || d.id,
-                fullLabel: d.fullLabel || d.full_label || d.label || d.id,
-                type: d.type || "topic",
-                sizeVal: getNodeSizeVal(d.size, d.type),
-                color: color,
-                count: d.count || d.mentionCount || d.mention_count || 0,
-                sentiment: d.sentiment || 0,
-                categories: cats,
-                avg_ts: Number(d.avg_ts || d.avgTs || 0.0)
-              };
+        const renderLanes = (data, width, height) => {
+          const { categories, groups } = categoryGroups(data.nodes);
+          const maxVisible = 4;
+          const pad = 14, categoryWidth = Math.min(136, Math.max(106, width * .32));
+          const gap = 12, topicX = pad + categoryWidth + gap, topicWidth = width - topicX - pad;
+          let y = pad;
+          let background = "", cards = "", primaryLinks = "", moreLabels = "";
+          categories.forEach(category => {
+            const topics = groups.get(category.id) || [];
+            const visible = topics.slice(0, maxVisible);
+            const laneHeight = Math.max(72, visible.length * 42 + (topics.length > maxVisible ? 24 : 0) + 18);
+            background += `<rect class="lane" x="${pad}" y="${y}" width="${width - pad * 2}" height="${laneHeight}" rx="16" />`;
+            cards += card(category, pad + 10, y + Math.max(12, (laneHeight - 52) / 2), categoryWidth - 20, 52, "category");
+            visible.forEach((topic, index) => {
+              const topicY = y + 10 + index * 42;
+              cards += card(topic, topicX, topicY, topicWidth, 32);
+              primaryLinks += link(state.positions.get(category.id), state.positions.get(topic.id), colorFor(category));
             });
+            if (!topics.length) {
+              moreLabels += `<text class="more-label" x="${topicX + 2}" y="${y + laneHeight / 2 + 3}">No repeated specific topics yet</text>`;
+            }
+            if (topics.length > maxVisible) {
+              moreLabels += `<text class="more-label" x="${topicX + 2}" y="${y + laneHeight - 10}">+ ${topics.length - maxVisible} more — tap ${escapeHTML(cleanLabel(category.label, 18))} to inspect</text>`;
+            }
+            y += laneHeight + 12;
+          });
+          state.content = { width, height: Math.max(height, y + 4) };
+          return `${background}${primaryLinks}${cards}${moreLabels}`;
+        };
 
-            const links = rawEdges.map(edge => {
-              const d = edge.data || edge || {};
-              return {
-                id: d.id,
-                source: d.source,
-                target: d.target,
-                weight: Number(d.weight || 1)
-              };
+        const renderRanked = (data, width, height) => {
+          const topics = data.nodes.filter(node => node.type !== "category").sort((a, b) => metric(b) - metric(a) || String(a.label).localeCompare(String(b.label)));
+          const maxVisible = 14, pad = 18, rowHeight = 42;
+          let markup = `<text class="axis-label" x="${pad}" y="24">MOST MENTIONED TOPICS</text>`;
+          topics.slice(0, maxVisible).forEach((topic, index) => {
+            const y = 38 + index * rowHeight;
+            markup += `<text class="rank-number" x="${pad}" y="${y + 21}">${index + 1}</text>`;
+            markup += card(topic, pad + 28, y, width - pad * 2 - 28, 32);
+          });
+          if (topics.length > maxVisible) markup += `<text class="more-label" x="${pad + 28}" y="${38 + maxVisible * rowHeight + 5}">+ ${topics.length - maxVisible} additional topics in this graph</text>`;
+          state.content = { width, height: Math.max(height, 38 + Math.min(maxVisible, topics.length) * rowHeight + 36) };
+          return markup;
+        };
+
+        const renderTimeline = (data, width, height) => {
+          const topics = data.nodes.filter(node => node.type !== "category").sort((a, b) => Number(a.avg_ts || 0) - Number(b.avg_ts || 0));
+          const maxVisible = 12, pad = 24, rowHeight = 48, lineX = 30;
+          let markup = `<text class="axis-label" x="${pad}" y="24">EARLIER</text><text class="axis-label" text-anchor="end" x="${width - pad}" y="24">LATER</text>`;
+          markup += `<path d="M ${lineX} 42 L ${lineX} ${54 + Math.min(topics.length, maxVisible) * rowHeight}" stroke="#c7d2e0" stroke-width="2" />`;
+          topics.slice(0, maxVisible).forEach((topic, index) => {
+            const y = 42 + index * rowHeight;
+            markup += `<circle cx="${lineX}" cy="${y + 16}" r="6" fill="${colorFor(topic)}" />`;
+            markup += card(topic, 50, y, width - 68, 32);
+          });
+          if (topics.length > maxVisible) markup += `<text class="more-label" x="50" y="${42 + maxVisible * rowHeight + 8}">+ ${topics.length - maxVisible} additional topics</text>`;
+          state.content = { width, height: Math.max(height, 42 + Math.min(maxVisible, topics.length) * rowHeight + 40) };
+          return markup;
+        };
+
+        const selectedRelationships = (data) => {
+          if (!state.selectedNodeId) return "";
+          return data.edges
+            .filter(edge => edge.source === state.selectedNodeId || edge.target === state.selectedNodeId)
+            .sort((a, b) => Number(b.weight || 0) - Number(a.weight || 0))
+            .slice(0, 6)
+            .map(edge => link(state.positions.get(edge.source), state.positions.get(edge.target), "#f59e0b", true))
+            .join("");
+        };
+
+        const clampViewport = () => {
+          const maxX = Math.max(0, state.content.width - state.viewport.width);
+          const maxY = Math.max(0, state.content.height - state.viewport.height);
+          state.viewport.x = Math.max(0, Math.min(state.viewport.x, maxX));
+          state.viewport.y = Math.max(0, Math.min(state.viewport.y, maxY));
+        };
+
+        const render = () => {
+          const rect = container.getBoundingClientRect();
+          const width = Math.max(280, Math.round(rect.width || 360));
+          const height = Math.max(260, Math.round(rect.height || 420));
+          const data = graph();
+          if (!data.nodes.length) {
+            container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img"><text class="empty" x="${width / 2}" y="${height / 2}" text-anchor="middle">No graph data to show yet.</text></svg>`;
+            return;
+          }
+          const priorWidth = state.viewport.width;
+          const priorHeight = state.viewport.height;
+          if (!state.viewport.width || Math.abs(priorWidth - width) > 2 || Math.abs(priorHeight - height) > 2) {
+            state.viewport.width = width;
+            state.viewport.height = height;
+          }
+          clearPositions();
+          let markup;
+          if (state.layout === "concentric") markup = renderRanked(data, width, height);
+          else if (state.layout === "circle") markup = renderTimeline(data, width, height);
+          else markup = renderLanes(data, width, height);
+          markup += selectedRelationships(data);
+          clampViewport();
+          container.innerHTML = `<svg id="knowledge-map" viewBox="${state.viewport.x} ${state.viewport.y} ${state.viewport.width} ${state.viewport.height}" role="img" aria-label="Knowledge map. Select a category or topic for its strongest connections.">${markup}</svg>`;
+          bindEvents();
+        };
+
+        const updateViewBox = () => {
+          const svg = document.getElementById("knowledge-map");
+          if (svg) svg.setAttribute("viewBox", `${state.viewport.x} ${state.viewport.y} ${state.viewport.width} ${state.viewport.height}`);
+        };
+
+        const selectNode = id => {
+          state.selectedNodeId = state.selectedNodeId === id ? null : id;
+          render();
+          post("nodeTapped", state.selectedNodeId);
+        };
+
+        const bindEvents = () => {
+          const svg = document.getElementById("knowledge-map");
+          if (!svg) return;
+          svg.querySelectorAll("[data-node-id]").forEach(element => {
+            element.addEventListener("click", event => { event.stopPropagation(); selectNode(element.dataset.nodeId); });
+            element.addEventListener("keydown", event => {
+              if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectNode(element.dataset.nodeId); }
             });
-
-            graphData = { nodes, links };
-
-            // 2. Compute Custom Layout Positions
-            const applyLayout = (layout) => {
-              // Reset all fixed coordinates first
-              nodes.forEach(n => {
-                n.fx = undefined;
-                n.fy = undefined;
-                n.fz = undefined;
-              });
-
-              if (layout === "lanes") {
-                const categoryNodes = nodes.filter(n => n.type === "category");
-                const categoryMap = {};
-                categoryNodes.forEach((cat, idx) => {
-                  categoryMap[cat.id] = idx;
-                });
-                const numCats = Math.max(1, categoryNodes.length);
-
-                // Place category hubs in a circular ring
-                const laneRadius = 140;
-                categoryNodes.forEach((cat, idx) => {
-                  const theta = (idx / numCats) * 2 * Math.PI;
-                  cat.fx = laneRadius * Math.cos(theta);
-                  cat.fy = 40; // slightly raised
-                  cat.fz = laneRadius * Math.sin(theta);
-                  cat.x = cat.fx; cat.y = cat.fy; cat.z = cat.fz;
-                });
-
-                // Group other nodes by category
-                const laneGroups = {};
-                nodes.forEach(node => {
-                  if (node.type === "category") return;
-                  let primaryCat = "default";
-                  if (node.categories) {
-                    const cats = Array.isArray(node.categories)
-                      ? node.categories
-                      : node.categories.split(",").map(c => c.trim()).filter(Boolean);
-                    if (cats.length > 0) {
-                      primaryCat = "cat:" + cats[0];
-                    }
-                  }
-                  if (!laneGroups[primaryCat]) {
-                    laneGroups[primaryCat] = [];
-                  }
-                  laneGroups[primaryCat].push(node);
-                });
-
-                // Arrange nodes in vertical lanes below category hubs, sorted by time
-                Object.keys(laneGroups).forEach(catId => {
-                  const catIdx = categoryMap[catId] !== undefined ? categoryMap[catId] : numCats;
-                  const theta = catIdx === numCats ? 0 : (catIdx / numCats) * 2 * Math.PI;
-                  const baseX = catIdx === numCats ? 0 : laneRadius * Math.cos(theta);
-                  const baseZ = catIdx === numCats ? 0 : laneRadius * Math.sin(theta);
-
-                  const groupNodes = laneGroups[catId];
-                  groupNodes.sort((a, b) => a.avg_ts - b.avg_ts); // older at bottom, newer at top
-
-                  groupNodes.forEach((node, idx) => {
-                    const yOffset = (idx - (groupNodes.length - 1) / 2) * 16;
-                    node.fx = baseX + Math.sin(idx) * 6;
-                    node.fy = yOffset - 30;
-                    node.fz = baseZ + Math.cos(idx) * 6;
-                    node.x = node.fx; node.y = node.fy; node.z = node.fz;
-                  });
-                });
-              } else if (layout === "breadthfirst" || layout === "levels") {
-                // Layered Hierarchy
-                const layer0 = nodes.filter(n => n.type === "category");
-                const layer1 = nodes.filter(n => n.type === "topic");
-                const layer2 = nodes.filter(n => n.type !== "category" && n.type !== "topic");
-
-                const layoutLayerCircle = (layerNodes, yLevel, radius) => {
-                  const count = Math.max(1, layerNodes.length);
-                  layerNodes.sort((a, b) => a.avg_ts - b.avg_ts);
-                  layerNodes.forEach((node, idx) => {
-                    const theta = (idx / count) * 2 * Math.PI;
-                    node.fx = radius * Math.cos(theta);
-                    node.fy = yLevel;
-                    node.fz = radius * Math.sin(theta);
-                    node.x = node.fx; node.y = node.fy; node.z = node.fz;
-                  });
-                };
-
-                layoutLayerCircle(layer0, 90, 45);    // Categories: top
-                layoutLayerCircle(layer1, 0, 110);    // Topics: middle
-                layoutLayerCircle(layer2, -90, 160);  // Entities: bottom
-              } else if (layout === "concentric" || layout === "orbit") {
-                // Concentric shells, categories inner, topics outer sorted by time
-                const sortedNodes = [...nodes].sort((a, b) => b.count - a.count);
-                const categories = sortedNodes.filter(n => n.type === "category");
-                const others = sortedNodes.filter(n => n.type !== "category");
-
-                categories.forEach((node, i) => {
-                  const theta = (i / Math.max(1, categories.length)) * 2 * Math.PI;
-                  const phi = Math.acos(-1 + (2 * i) / Math.max(1, categories.length));
-                  const r = 25;
-                  node.fx = r * Math.sin(phi) * Math.cos(theta);
-                  node.fy = r * Math.sin(phi) * Math.sin(theta);
-                  node.fz = r * Math.cos(phi);
-                  node.x = node.fx; node.y = node.fy; node.z = node.fz;
-                });
-
-                others.sort((a, b) => b.avg_ts - a.avg_ts); // newest inner, oldest outer
-                others.forEach((node, i) => {
-                  const shell = i % 3;
-                  const r = 60 + shell * 50;
-                  const countInShell = Math.ceil(others.length / 3);
-                  const indexInShell = Math.floor(i / 3);
-
-                  const theta = (indexInShell / countInShell) * 2 * Math.PI;
-                  const phi = Math.acos(-1 + (2 * indexInShell) / countInShell);
-
-                  node.fx = r * Math.sin(phi) * Math.cos(theta);
-                  node.fy = r * Math.sin(phi) * Math.sin(theta);
-                  node.fz = r * Math.cos(phi);
-                  node.x = node.fx; node.y = node.fy; node.z = node.fz;
-                });
-              } else if (layout === "circle" || layout === "timeline") {
-                // Temporal Helix Spiral (Z-Axis represents time progress)
-                const sortedNodes = [...nodes].sort((a, b) => a.avg_ts - b.avg_ts);
-                const N = sortedNodes.length;
-                sortedNodes.forEach((node, i) => {
-                  const theta = (i / N) * 2 * Math.PI * 3.5;
-                  const radius = 100 - (i / N) * 30;
-                  node.fx = radius * Math.cos(theta);
-                  node.fy = (i / N) * 240 - 120; // Vertical climb represents time progression
-                  node.fz = radius * Math.sin(theta);
-                  node.x = node.fx; node.y = node.fy; node.z = node.fz;
-                });
-              }
-            };
-
-            applyLayout(layoutName);
-
-            // 3. Initialize or Update Graph
-            if (!Graph) {
-              const container = document.getElementById("graph-container");
-              Graph = ForceGraph3D()(container)
-                .graphData(graphData)
-                .backgroundColor("#090d16")
-                .showNavInfo(false)
-                .nodeVal(node => node.sizeVal)
-                .nodeThreeObjectExtend(false)
-                .nodeThreeObject(node => {
-                  const isSelected = node.id === selectedNodeId;
-                  const isHighlighted = highlightNodes.size === 0 || highlightNodes.has(node.id);
-                  const showLabel = isHighlighted && (node.type === 'category' || node.count >= 3 || isSelected);
-
-                  // Calculate sphere size dynamically
-                  const radius = Math.max(3.5, Math.pow(node.sizeVal || 8, 1/3) * 4);
-                  const geometry = new THREE.SphereGeometry(radius, 16, 16);
-
-                  let material;
-                  if (node.type === 'category') {
-                    material = new THREE.MeshPhongMaterial({
-                      color: isHighlighted ? node.color : '#334155',
-                      transparent: true,
-                      opacity: isHighlighted ? 0.95 : 0.15,
-                      shininess: 90,
-                      specular: node.color,
-                      emissive: isHighlighted ? node.color : '#000000',
-                      emissiveIntensity: isHighlighted ? 0.25 : 0
-                    });
-                  } else {
-                    material = new THREE.MeshPhongMaterial({
-                      color: isHighlighted ? node.color : '#475569',
-                      transparent: true,
-                      opacity: isHighlighted ? 0.9 : 0.15,
-                      shininess: 60,
-                      specular: 0x888888
-                    });
-                  }
-
-                  const sphere = new THREE.Mesh(geometry, material);
-
-                  if (showLabel) {
-                    const group = new THREE.Group();
-                    group.add(sphere);
-
-                    const labelSprite = createLabelSprite(node.label, node.color, isSelected, radius);
-                    labelSprite.position.y = radius + 6;
-                    group.add(labelSprite);
-
-                    return group;
-                  }
-
-                  return sphere;
-                })
-                .linkLabel(link => `${link.source.label || link.source} → ${link.target.label || link.target} (Weight: ${link.weight})`)
-                .linkWidth(link => {
-                  const baseWidth = Math.min(link.weight || 1, 15) / 3;
-                  return highlightLinks.has(link) ? baseWidth * 2.5 : baseWidth;
-                })
-                .linkColor(link => {
-                  if (highlightLinks.size > 0 && !highlightLinks.has(link)) {
-                    return "rgba(30, 40, 50, 0.04)"; // Dimmed links
-                  }
-                  return highlightLinks.has(link) ? "#fbbf24" : "rgba(148, 163, 184, 0.3)";
-                })
-                .linkDirectionalParticles(link => highlightLinks.has(link) ? 3 : 0)
-                .linkDirectionalParticleWidth(2.0)
-                .linkDirectionalParticleSpeed(0.015)
-                .nodeLabel(node => {
-                  const typeLabel = node.type.toUpperCase();
-                  const countLabel = node.count ? `<br/>Mentions: ${node.count}` : "";
-                  const sentimentLabel = node.sentiment ? `<br/>Avg Sentiment: ${node.sentiment > 0 ? '+' : ''}${node.sentiment}` : "";
-                  return `<div class="graph-tooltip"><strong>${node.fullLabel}</strong> [${typeLabel}]${countLabel}${sentimentLabel}</div>`;
-                })
-                .onNodeClick(node => {
-                  // Centered camera animation on clicked node
-                  const distance = 96;
-                  const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
-                  Graph.cameraPosition(
-                    { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio },
-                    node,
-                    1200
-                  );
-
-                  // Update selection & highlight neighbors
-                  selectedNodeId = node.id;
-                  updateHighlights(node);
-                  post("nodeTapped", node.id);
-                })
-                .onBackgroundClick(() => {
-                  selectedNodeId = null;
-                  clearHighlights();
-                  post("nodeTapped", "");
-                });
-            } else {
-              Graph.graphData(graphData);
+          });
+          let start = null;
+          const distance = () => {
+            const points = [...state.pointers.values()];
+            return points.length === 2 ? Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y) : null;
+          };
+          svg.addEventListener("pointerdown", event => {
+            svg.setPointerCapture(event.pointerId);
+            state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            start = { x: event.clientX, y: event.clientY, viewX: state.viewport.x, viewY: state.viewport.y };
+            state.pinchDistance = distance();
+            state.pinchZoom = state.viewport.width;
+          });
+          svg.addEventListener("pointermove", event => {
+            if (!state.pointers.has(event.pointerId)) return;
+            state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            const currentDistance = distance();
+            if (state.pinchDistance && currentDistance) {
+              const scale = state.pinchDistance / currentDistance;
+              const targetWidth = Math.max(150, Math.min(state.content.width, state.pinchZoom * scale));
+              const ratio = targetWidth / state.viewport.width;
+              state.viewport.width = targetWidth;
+              state.viewport.height *= ratio;
+              clampViewport(); updateViewBox();
+            } else if (start) {
+              state.viewport.x = start.viewX - (event.clientX - start.x);
+              state.viewport.y = start.viewY - (event.clientY - start.y);
+              clampViewport(); updateViewBox();
             }
-
-            // Adjust simulation forces based on whether physics is required
-            if (layoutName === "cose" || layoutName === "force") {
-              const linkForce = Graph.d3Force("link");
-              if (linkForce) linkForce.distance(110);
-              const chargeForce = Graph.d3Force("charge");
-              if (chargeForce) chargeForce.strength(-140);
-              Graph.d3ReheatSimulation();
-            } else {
-              const linkForce = Graph.d3Force("link");
-              if (linkForce) linkForce.distance(0);
-              const chargeForce = Graph.d3Force("charge");
-              if (chargeForce) chargeForce.strength(0);
-              Graph.cooldownTicks(0); // Lock positions instantly
-            }
-
-            // Apply highlights if a node was pre-selected
-            if (selectedNodeId) {
-              const node = graphData.nodes.find(n => n.id === selectedNodeId);
-              if (node) {
-                updateHighlights(node);
-                setTimeout(() => {
-                  const distance = 110;
-                  const distRatio = 1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
-                  Graph.cameraPosition({ x: (node.x || 1) * distRatio, y: (node.y || 1) * distRatio, z: (node.z || 1) * distRatio }, node, 800);
-                }, 400);
-              }
-            } else {
-              clearHighlights();
-            }
-
-            post("graphReady", `${nodes.length} nodes · ${links.length} connections`);
-          } catch (error) {
-            post("graphError", error?.message || "3D Graph render failed.");
-          }
+          });
+          const finish = event => { state.pointers.delete(event.pointerId); state.pinchDistance = distance(); start = null; };
+          svg.addEventListener("pointerup", finish);
+          svg.addEventListener("pointercancel", finish);
         };
 
-        const updateHighlights = (node) => {
-          highlightNodes.clear();
-          highlightLinks.clear();
-
-          if (node) {
-            highlightNodes.add(node.id);
-            graphData.links.forEach(link => {
-              const sourceId = link.source.id || link.source;
-              const targetId = link.target.id || link.target;
-              if (sourceId === node.id) {
-                highlightNodes.add(targetId);
-                highlightLinks.add(link);
-              } else if (targetId === node.id) {
-                highlightNodes.add(sourceId);
-                highlightLinks.add(link);
-              }
-            });
-          }
-
-          if (Graph) {
-            Graph.nodeThreeObject(Graph.nodeThreeObject());
-            Graph.linkColor(Graph.linkColor());
-            Graph.linkWidth(Graph.linkWidth());
-            Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
-          }
+        window.updateGraph = (payload, layoutName, selectedNodeID) => {
+          state.payload = payload || { nodes: [], edges: [] };
+          state.layout = ["lanes", "concentric", "circle"].includes(layoutName) ? layoutName : "lanes";
+          state.selectedNodeId = selectedNodeID || null;
+          state.viewport.x = 0; state.viewport.y = 0;
+          requestAnimationFrame(() => { render(); post("graphReady", "ready"); });
         };
-
-        const clearHighlights = () => {
-          highlightNodes.clear();
-          highlightLinks.clear();
-          if (Graph) {
-            Graph.nodeThreeObject(Graph.nodeThreeObject());
-            Graph.linkColor(Graph.linkColor());
-            Graph.linkWidth(Graph.linkWidth());
-            Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
-          }
-        };
-
-        window.setSelectedNode = (nodeId) => {
-          try {
-            selectedNodeId = nodeId || null;
-            if (selectedNodeId && Graph) {
-              const node = graphData.nodes.find(n => n.id === selectedNodeId);
-              if (node) {
-                updateHighlights(node);
-                const distance = 96;
-                const distRatio = 1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
-                Graph.cameraPosition({ x: (node.x || 1) * distRatio, y: (node.y || 1) * distRatio, z: (node.z || 1) * distRatio }, node, 800);
-              }
-            } else {
-              clearHighlights();
-            }
-            post("graphReady", "selection-updated");
-          } catch (error) {
-            post("graphError", error?.message || "Failed to update 3D graph selection.");
-          }
-        };
-
-        // Resize handler
-        window.addEventListener("resize", () => {
-          if (Graph) {
-            Graph.width(window.innerWidth);
-            Graph.height(window.innerHeight);
-          }
-        });
+        window.setSelectedNode = nodeID => { state.selectedNodeId = nodeID || null; render(); };
+        window.addEventListener("resize", () => render());
       })();
     </script>
   </body>

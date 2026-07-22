@@ -20,7 +20,7 @@ struct TokenExchangeRequest: Codable, Sendable {
 }
 
 /// Response from `/api/auth/plaud/status` or `/api/auth/notion/status`.
-struct TokenStatus: Codable, Sendable {
+nonisolated struct TokenStatus: Codable, Sendable {
     let isAuthenticated: Bool
     let hasAccessToken: Bool
     let expiresAt: String?

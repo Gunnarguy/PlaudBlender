@@ -4,6 +4,7 @@ Uses the OpenAI Responses API (not Chat Completions) for rich,
 context-aware answers backed by Chronos event data.
 """
 
+import hashlib
 import logging
 import time
 from typing import Any, Callable, List, Optional, TypeVar
@@ -39,6 +40,7 @@ class OpenAIResponseService:
     _MAX_RETRY_ATTEMPTS = 3
     _DEFAULT_REASONING_EFFORT = "low"
     _DEFAULT_MAX_OUTPUT_TOKENS = 1800
+    _EXTRACTION_CACHE_KEY_VERSION = "v1"
 
     @staticmethod
     def _supports_temperature(model_name: Optional[str]) -> bool:
@@ -204,6 +206,29 @@ class OpenAIResponseService:
             return "OpenAI ran out of output tokens before finishing the answer. Increase max_output_tokens or lower reasoning effort."
         return f"OpenAI returned an incomplete response ({reason})."
 
+    @staticmethod
+    def _cache_usage(usage) -> tuple[int, int]:
+        """Return prompt-cache read and write token counts from Responses usage."""
+        details = getattr(usage, "input_tokens_details", None)
+        if details is None:
+            return 0, 0
+        if isinstance(details, dict):
+            cached = details.get("cached_tokens", 0)
+            written = details.get("cache_write_tokens", 0)
+        else:
+            cached = getattr(details, "cached_tokens", 0)
+            written = getattr(details, "cache_write_tokens", 0)
+        return int(cached or 0), int(written or 0)
+
+    @classmethod
+    def _extraction_cache_key(cls, model: str, instructions: str) -> str:
+        """Route identical extraction instructions to the same prompt cache."""
+        instructions_hash = hashlib.sha256(instructions.encode("utf-8")).hexdigest()[:12]
+        return (
+            "plaudblender:chronos-events:"
+            f"{cls._EXTRACTION_CACHE_KEY_VERSION}:{model}:{instructions_hash}"
+        )
+
     def extract_events(
         self,
         prompt: str,
@@ -247,6 +272,9 @@ class OpenAIResponseService:
                 "input": prompt,
                 "text_format": _OpenAIEventOutput,
                 "max_output_tokens": 32768,
+                "prompt_cache_key": self._extraction_cache_key(
+                    request_model, instructions
+                ),
             }
 
             if self._temperature is not None and self._supports_temperature(
@@ -265,6 +293,7 @@ class OpenAIResponseService:
             input_tokens = getattr(usage, "input_tokens", 0)
             output_tokens = getattr(usage, "output_tokens", 0)
             total_tokens = getattr(usage, "total_tokens", input_tokens + output_tokens)
+            cached_tokens, cache_write_tokens = self._cache_usage(usage)
 
             parsed = response.output_parsed
             if parsed is None:
@@ -308,7 +337,8 @@ class OpenAIResponseService:
                     f"OpenAI extracted {result_output.total_events} events",
                     duration_ms=round(_elapsed, 1),
                     detail=(
-                        f"model={response.model} in={input_tokens} out={output_tokens}"
+                        f"model={response.model} in={input_tokens} out={output_tokens} "
+                        f"cache_read={cached_tokens} cache_write={cache_write_tokens}"
                     ),
                 )
 
@@ -318,6 +348,8 @@ class OpenAIResponseService:
                 "usage": {
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
+                    "cached_tokens": cached_tokens,
+                    "cache_write_tokens": cache_write_tokens,
                     "total_tokens": total_tokens,
                 },
             }
@@ -518,6 +550,7 @@ Question: {question}"""
             usage = getattr(response, "usage", None)
             _inp_tok = getattr(usage, "input_tokens", 0)
             _out_tok = getattr(usage, "output_tokens", 0)
+            cached_tokens, cache_write_tokens = self._cache_usage(usage)
             output_details = getattr(usage, "output_tokens_details", None)
             reasoning_tokens = (
                 getattr(output_details, "reasoning_tokens", 0)
@@ -538,7 +571,9 @@ Question: {question}"""
                     duration_ms=round(_elapsed, 1),
                     detail=(
                         f"model={response.model} in={_inp_tok} out={_out_tok} "
-                        f"reasoning={reasoning_tokens} total={getattr(usage, 'total_tokens', _inp_tok + _out_tok)}"
+                        f"reasoning={reasoning_tokens} cache_read={cached_tokens} "
+                        f"cache_write={cache_write_tokens} "
+                        f"total={getattr(usage, 'total_tokens', _inp_tok + _out_tok)}"
                     ),
                     level="perf",
                 )
@@ -566,6 +601,8 @@ Question: {question}"""
                 "usage": {
                     "input_tokens": _inp_tok,
                     "output_tokens": _out_tok,
+                    "cached_tokens": cached_tokens,
+                    "cache_write_tokens": cache_write_tokens,
                     "reasoning_tokens": reasoning_tokens,
                     "total_tokens": getattr(usage, "total_tokens", _inp_tok + _out_tok),
                 },

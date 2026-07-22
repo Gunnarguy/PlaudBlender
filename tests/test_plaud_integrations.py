@@ -90,6 +90,19 @@ class PlaudIntegrationTests(unittest.TestCase):
         self.assertIn("code=%5BREDACTED%5D", value["url"])
         self.assertNotIn("abc", value["url"])
 
+    def test_secret_redaction_removes_signed_storage_credentials_from_urls_and_text(self):
+        signed_url = (
+            "https://storage.example/avatar.jpg?AWSAccessKeyId=temp-id"
+            "&Signature=signed-value&x-amz-security-token=session-value"
+        )
+        value = redact({"url": signed_url, "text": f'{{"avatar":"{signed_url}"}}'})
+
+        for item in value.values():
+            self.assertNotIn("temp-id", item)
+            self.assertNotIn("signed-value", item)
+            self.assertNotIn("session-value", item)
+            self.assertTrue(REDACTED in item or "%5BREDACTED%5D" in item)
+
     def test_oauth_state_must_match_a_locally_issued_value(self):
         auth_routes._plaud_oauth_pending.clear()
         auth_routes._plaud_oauth_pending["expected-state"] = {"source": "mobile", "return_to": ""}

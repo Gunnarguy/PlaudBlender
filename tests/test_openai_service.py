@@ -173,4 +173,78 @@ def test_ask_uses_low_reasoning_and_default_output_cap(monkeypatch):
     assert captured["reasoning"]["effort"] == "low"
     assert captured["max_output_tokens"] == OpenAIResponseService._DEFAULT_MAX_OUTPUT_TOKENS
     assert "temperature" not in captured
+    assert "prompt_cache_key" not in captured
     assert result["config"]["reasoning"] == "low"
+
+
+def test_extract_events_uses_stable_cache_key_and_reports_cache_usage(monkeypatch):
+    monkeypatch.setattr("src.chronos.openai_service.get_settings", _make_settings)
+
+    captured = {}
+    response = SimpleNamespace(
+        output_parsed=SimpleNamespace(
+            events=[
+                {
+                    "event_id": "event-123",
+                    "recording_id": "recording-123",
+                    "start_ts": "2026-07-17T10:00:00Z",
+                    "end_ts": "2026-07-17T10:05:00Z",
+                    "day_of_week": "Friday",
+                    "hour_of_day": 10,
+                    "clean_text": "A concrete event extracted from the transcript.",
+                }
+            ],
+            total_events=1,
+        ),
+        output_text="",
+        output=[],
+        usage=SimpleNamespace(
+            input_tokens=2400,
+            output_tokens=20,
+            total_tokens=2420,
+            input_tokens_details=SimpleNamespace(
+                cached_tokens=1600,
+                cache_write_tokens=0,
+            ),
+        ),
+        model="gpt-5.4",
+        incomplete_details=None,
+    )
+
+    def parse(**kwargs):
+        captured.update(kwargs)
+        return response
+
+    client = SimpleNamespace(responses=SimpleNamespace(parse=parse))
+    svc = OpenAIResponseService()
+    monkeypatch.setattr(svc, "_get_client", lambda: client)
+    monkeypatch.setattr(svc, "_call_with_retry", lambda _op, func, **_kwargs: func())
+    monkeypatch.setattr(
+        "src.chronos.cost_tracker.track_usage",
+        lambda *args, **kwargs: None,
+    )
+
+    result = svc.extract_events(
+        "A sufficiently long transcript body",
+        recording_id="recording-123",
+    )
+
+    assert captured["prompt_cache_key"].startswith(
+        "plaudblender:chronos-events:v1:gpt-5.4:"
+    )
+    assert result["usage"]["cached_tokens"] == 1600
+    assert result["usage"]["cache_write_tokens"] == 0
+
+
+def test_extraction_cache_key_changes_with_instructions():
+    default_key = OpenAIResponseService._extraction_cache_key(
+        "gpt-5.4", "default instructions"
+    )
+    custom_key = OpenAIResponseService._extraction_cache_key(
+        "gpt-5.4", "custom instructions"
+    )
+
+    assert default_key == OpenAIResponseService._extraction_cache_key(
+        "gpt-5.4", "default instructions"
+    )
+    assert default_key != custom_key

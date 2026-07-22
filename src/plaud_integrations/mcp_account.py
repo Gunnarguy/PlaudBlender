@@ -276,7 +276,11 @@ class PlaudMCPAccountAdapter:
                 "jsonrpc": "2.0", "id": 3, "method": "tools/call",
                 "params": {"name": tool_name, "arguments": arguments},
             })
-            raw = self._stdio_receive(process, 3)
+            # Browser authorization is human-paced. The default 45-second
+            # transport timeout is appropriate for normal tools but can report
+            # a false failure after OAuth has already persisted successfully.
+            response_timeout = 300 if tool_name == "login" else 45
+            raw = self._stdio_receive(process, 3, timeout=response_timeout)
             content = raw.get("content", []) or []
             text_content = "\n".join(
                 str(item.get("text", item)) for item in content if isinstance(item, dict)

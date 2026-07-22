@@ -8,35 +8,23 @@ struct GraphLayoutOption: Identifiable, Hashable, Sendable {
 
     static let lanes = GraphLayoutOption(
         id: "lanes",
-        title: "Lanes",
-        subtitle: "Topics grouped under their strongest category"
-    )
-
-    static let breadthfirst = GraphLayoutOption(
-        id: "breadthfirst",
-        title: "Levels",
-        subtitle: "Category hubs above the topics they anchor"
+        title: "Map",
+        subtitle: "Category → its most-mentioned topics"
     )
 
     static let concentric = GraphLayoutOption(
         id: "concentric",
-        title: "Orbit",
-        subtitle: "Large nodes centered, smaller ones around them"
+        title: "Most active",
+        subtitle: "Topics ranked by mentions"
     )
 
     static let circle = GraphLayoutOption(
         id: "circle",
-        title: "Circle",
-        subtitle: "Quick scan of the whole graph"
+        title: "Over time",
+        subtitle: "Topics ordered from earlier to later"
     )
 
-    static let force = GraphLayoutOption(
-        id: "cose",
-        title: "Force",
-        subtitle: "Freeform exploration of cross-category spillover"
-    )
-
-    static let all = [lanes, breadthfirst, concentric, circle, force]
+    static let all = [lanes, concentric, circle]
 }
 
 struct GraphConnection: Identifiable, Sendable {
@@ -48,6 +36,24 @@ struct GraphConnection: Identifiable, Sendable {
 
 @Observable
 final class GraphViewModel {
+    private static let lowValueTopicWords: Set<String> = [
+        "about", "actually", "after", "again", "also", "anything", "basically",
+        "before", "being", "can", "conversation", "could", "doing", "done", "dude",
+        "even", "everyone", "everything", "from", "fucking", "general", "get", "go",
+        "going", "good", "got", "guy", "guys", "have", "here", "hey", "how", "into",
+        "just", "know", "like", "make", "maybe", "misc", "more", "most", "not",
+        "nothing", "ok", "okay", "other", "people", "person", "really", "said", "say",
+        "saying", "should", "some", "someone", "something", "stuff", "take", "talk",
+        "talking", "tell", "that", "the", "them", "there", "they", "thing", "things",
+        "think", "thinking", "this", "thought", "through", "time", "today", "told",
+        "took", "unknown", "very", "want", "wanted", "was", "week", "well", "were",
+        "what", "when", "where", "which", "who", "why", "will", "with", "would",
+        "yeah", "yes", "your"
+    ]
+    private static let disallowedTopicWords: Set<String> = [
+        "damn", "fuck", "fucked", "fucking", "fucks", "shit", "shits", "shitty"
+    ]
+
     var graphData: GraphData?
     var nodes: [GraphNode] = []
     var edges: [GraphEdge] = []
@@ -120,8 +126,16 @@ final class GraphViewModel {
         do {
             let data: GraphData = try await api.get("/api/graph")
             graphData = data
-            nodes = data.nodes.map { GraphNode(from: $0) }
-            edges = data.edges.map { GraphEdge(from: $0) }
+            let parsedNodes = data.nodes.map { GraphNode(from: $0) }
+            nodes = parsedNodes.filter {
+                $0.type == "category" || ($0.type == "topic" && shouldDisplayTopic($0))
+            }
+            let visibleNodeIDs = Set(nodes.map(\.id))
+            edges = data.edges
+                .map { GraphEdge(from: $0) }
+                .filter {
+                    visibleNodeIDs.contains($0.source) && visibleNodeIDs.contains($0.target)
+                }
         } catch {
             self.error = error.localizedDescription
         }
@@ -156,6 +170,40 @@ final class GraphViewModel {
             }
             .prefix(limit)
             .map { $0 }
+    }
+
+    func topics(in category: GraphNode, limit: Int = 8) -> [GraphNode] {
+        let categoryKeys = Set([
+            normalizedCategoryKey(category.id),
+            normalizedCategoryKey(category.label)
+        ])
+
+        return topicNodes
+            .filter { node in
+                node.categories.contains { categoryKeys.contains(normalizedCategoryKey($0)) }
+            }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    private func shouldDisplayTopic(_ node: GraphNode) -> Bool {
+        let words = node.fullLabel
+            .lowercased()
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+
+        guard !words.isEmpty,
+              !words.contains(where: Self.disallowedTopicWords.contains),
+              words.contains(where: { $0.count >= 3 && !Self.lowValueTopicWords.contains($0) }) else {
+            return false
+        }
+        return true
+    }
+
+    private func normalizedCategoryKey(_ value: String) -> String {
+        value
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber }
     }
 
     private func sortNodes(lhs: GraphNode, rhs: GraphNode) -> Bool {

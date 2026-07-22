@@ -7,33 +7,106 @@ struct TimelineView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if viewModel.isLoading && viewModel.days.isEmpty {
-                    LoadingView(message: "Loading timeline...")
-                } else if viewModel.days.isEmpty {
-                    EmptyStateView(
-                        icon: "calendar",
-                        title: "No Recordings Yet",
-                        message: "Run the pipeline to ingest your Plaud recordings.",
-                        actionTitle: "Refresh",
-                        action: { Task { await viewModel.refresh() } }
-                    )
-                } else {
-                    daysList
+            VStack(spacing: 0) {
+                rangeControls
+
+                Group {
+                    if viewModel.isLoading && viewModel.days.isEmpty {
+                        LoadingView(message: "Loading timeline...")
+                    } else if viewModel.days.isEmpty && viewModel.selectedRange != .year {
+                        EmptyStateView(
+                            icon: "calendar",
+                            title: "Nothing in This Range",
+                            message: "Try another time range or refresh your recordings.",
+                            actionTitle: "Refresh",
+                            action: { Task { await viewModel.refresh() } }
+                        )
+                    } else if viewModel.selectedRange == .year {
+                        YearOverviewView(
+                            days: viewModel.days,
+                            year: Calendar.current.component(.year, from: viewModel.anchorDate),
+                            errorMessage: viewModel.error,
+                            onSelectMonth: { month in
+                                Task {
+                                    await viewModel.showMonth(
+                                        year: Calendar.current.component(.year, from: viewModel.anchorDate),
+                                        month: month
+                                    )
+                                }
+                            }
+                        )
+                    } else {
+                        daysList
+                    }
                 }
             }
             .navigationTitle("Timeline")
             .refreshable { await viewModel.refresh() }
-            .task { await viewModel.loadDays() }
+            .task { await viewModel.bootstrapIfNeeded() }
             .onChange(of: viewModel.api.isServerReachable) { _, reachable in
                 if reachable && viewModel.days.isEmpty {
-                    Task { await viewModel.loadDays() }
+                    Task { await viewModel.refresh() }
                 }
             }
             .navigationDestination(for: String.self) { recordingId in
                 RecordingDetailContainerView(recordingId: recordingId)
             }
         }
+    }
+
+    private var rangeControls: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 6) {
+                ForEach(TimelineRange.allCases) { range in
+                    Button {
+                        Task { await viewModel.selectRange(range) }
+                    } label: {
+                        Text(range.title)
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .background(
+                                viewModel.selectedRange == range
+                                    ? Color.accentColor
+                                    : Color.secondary.opacity(0.12)
+                            )
+                            .foregroundStyle(viewModel.selectedRange == range ? Color.white : Color.primary)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(viewModel.selectedRange == range ? .isSelected : [])
+                }
+            }
+
+            if viewModel.selectedRange != .all {
+                HStack {
+                    Button {
+                        Task { await viewModel.moveRange(by: -1) }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .frame(width: 36, height: 30)
+                    }
+                    .accessibilityLabel("Previous \(viewModel.selectedRange.title.lowercased())")
+
+                    Spacer()
+                    Text(viewModel.rangeTitle)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+
+                    Button {
+                        Task { await viewModel.moveRange(by: 1) }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .frame(width: 36, height: 30)
+                    }
+                    .accessibilityLabel("Next \(viewModel.selectedRange.title.lowercased())")
+                }
+                .foregroundStyle(.primary)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(.bar)
     }
 
     private var daysList: some View {
@@ -59,6 +132,158 @@ struct TimelineView: View {
             }
             .padding()
         }
+    }
+}
+
+// MARK: - Year Overview
+
+private struct YearOverviewView: View {
+    let days: [DaySummary]
+    let year: Int
+    let errorMessage: String?
+    let onSelectMonth: (Int) -> Void
+
+    private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+
+    private var yearDays: [DaySummary] {
+        days.filter { $0.timelineDateComponents?.year == year }
+    }
+    private var annualRecordings: Int { yearDays.reduce(0) { $0 + $1.recordingCount } }
+    private var annualEvents: Int { yearDays.reduce(0) { $0 + $1.eventCount } }
+    private var annualDuration: Double { yearDays.reduce(0) { $0 + $1.totalDurationSeconds } }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if let errorMessage {
+                    ErrorBanner(message: errorMessage)
+                }
+
+                HStack(spacing: 0) {
+                    YearMetric(value: "\(annualRecordings)", label: "Recordings")
+                    Divider().frame(height: 34)
+                    YearMetric(value: "\(annualEvents)", label: "Events")
+                    Divider().frame(height: 34)
+                    YearMetric(value: TimeInterval(annualDuration).durationFormatted, label: "Recorded")
+                }
+                .padding(.vertical, 12)
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                Text("Tap a month to see its days")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(1...12, id: \.self) { month in
+                        Button {
+                            onSelectMonth(month)
+                        } label: {
+                            YearMonthCard(year: year, month: month, days: daysForMonth(month))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+
+    private func daysForMonth(_ month: Int) -> [DaySummary] {
+        yearDays.filter { $0.timelineDateComponents?.month == month }
+    }
+}
+
+private struct YearMetric: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.headline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct YearMonthCard: View {
+    let year: Int
+    let month: Int
+    let days: [DaySummary]
+
+    private let heatmapColumns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 7)
+    private var recordingCount: Int { days.reduce(0) { $0 + $1.recordingCount } }
+    private var eventCount: Int { days.reduce(0) { $0 + $1.eventCount } }
+    private var maximumEvents: Int { max(1, days.map(\.eventCount).max() ?? 1) }
+
+    private var monthName: String {
+        Calendar.current.monthSymbols[month - 1]
+    }
+
+    private var calendarCells: [Int?] {
+        let calendar = Calendar.current
+        guard let first = calendar.date(from: DateComponents(year: year, month: month, day: 1)),
+              let dayRange = calendar.range(of: .day, in: .month, for: first) else { return [] }
+        let offset = calendar.component(.weekday, from: first) - 1
+        return Array(repeating: nil, count: offset) + dayRange.map { Optional($0) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text(monthName)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+
+            LazyVGrid(columns: heatmapColumns, spacing: 3) {
+                ForEach(Array(calendarCells.enumerated()), id: \.offset) { _, dayNumber in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(color(for: dayNumber))
+                        .aspectRatio(1, contentMode: .fit)
+                }
+            }
+
+            Text(recordingCount == 0
+                 ? "No activity"
+                 : "\(recordingCount) recording\(recordingCount == 1 ? "" : "s") · \(eventCount) events")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .padding(12)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 13))
+        .contentShape(RoundedRectangle(cornerRadius: 13))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(monthName), \(recordingCount) recordings, \(eventCount) events")
+    }
+
+    private func color(for dayNumber: Int?) -> Color {
+        guard let dayNumber else { return .clear }
+        guard let day = days.first(where: { $0.timelineDateComponents?.day == dayNumber }), day.eventCount > 0 else {
+            return Color.secondary.opacity(0.12)
+        }
+        let intensity = Double(day.eventCount) / Double(maximumEvents)
+        return Color.accentColor.opacity(0.28 + (intensity * 0.72))
+    }
+}
+
+private extension DaySummary {
+    var timelineDateComponents: DateComponents? {
+        let pieces = date.split(separator: "-").compactMap { Int($0) }
+        guard pieces.count == 3 else { return nil }
+        return DateComponents(year: pieces[0], month: pieces[1], day: pieces[2])
     }
 }
 

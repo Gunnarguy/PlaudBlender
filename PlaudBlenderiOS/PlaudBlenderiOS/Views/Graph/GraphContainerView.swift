@@ -105,9 +105,9 @@ struct GraphContainerView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Make It Legible")
+                    Text("Your knowledge map")
                         .font(.headline)
-                    Text("The default view groups topics into category lanes instead of throwing everything into a force blob. Tap any node to isolate its strongest links.")
+                    Text("Repeated, concrete subjects only. Each row is a category followed by the topics that consistently appeared in it.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -190,7 +190,7 @@ struct GraphContainerView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(selectedLayoutTitle)
                     .font(.caption.weight(.semibold))
-                Text("Drag to pan, pinch to zoom, and tap nodes to focus the graph.")
+                Text(interactionHint)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -210,8 +210,22 @@ struct GraphContainerView: View {
         viewModel.availableLayouts.first(where: { $0.id == viewModel.selectedLayout })?.title ?? "Graph"
     }
 
+    private var interactionHint: String {
+        switch viewModel.selectedLayout {
+        case GraphLayoutOption.lanes.id:
+            return "Swipe through categories; pinch to zoom. Tap a category or topic for details."
+        case GraphLayoutOption.concentric.id:
+            return "The higher the topic, the more often it appears. Tap for its connections."
+        case GraphLayoutOption.circle.id:
+            return "Topics run from earlier to later. Tap for its connections."
+        default:
+            return "Tap a category or topic to focus its relationships."
+        }
+    }
+
     private func selectedNodeInspector(_ node: GraphNode) -> some View {
         let connections = viewModel.strongestConnections(for: node)
+        let categoryTopics = node.type == "category" ? viewModel.topics(in: node) : []
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
@@ -246,6 +260,16 @@ struct GraphContainerView: View {
             Text(nodeInsight(for: node))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if !categoryTopics.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Top Topics in \(node.label)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    topicPills(categoryTopics)
+                }
+            }
 
             if !connections.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -282,6 +306,33 @@ struct GraphContainerView: View {
         .padding(16)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 22))
+    }
+
+    private func topicPills(_ topics: [GraphNode]) -> some View {
+        FlowLayout(spacing: 6) {
+            ForEach(topics) { topic in
+                Button {
+                    selectedNodeID = topic.id
+                } label: {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(Color(hex: topic.color))
+                            .frame(width: 6, height: 6)
+                        Text(topic.fullLabel)
+                            .lineLimit(1)
+                        Text("\(topic.metricValue ?? 0)")
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(Color.secondary.opacity(0.08))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(topic.fullLabel), \(topic.metricValue ?? 0) mentions")
+            }
+        }
     }
 
     private func metricBadge(title: String, value: String) -> some View {
@@ -328,14 +379,14 @@ struct GraphContainerView: View {
 
     private func nodeInsight(for node: GraphNode) -> String {
         if node.type == "category" {
-            return "This hub anchors the topics whose strongest link lands in \(node.label). Cross-lane edges show where those same ideas spill into the rest of your timeline."
+            return "This category groups the topics that most often show up in \(node.label). Its topic list below is ordered by mentions."
         }
 
         if let primaryCategory = node.categories.first {
             return "This topic is strongest in \(primaryCategory), but the linked categories below show where it crosses into the rest of your recordings."
         }
 
-        return "This topic node is positioned wherever its weighted links make the most sense for the active layout."
+        return "This topic is part of the map because it has meaningful relationships in your recordings."
     }
 }
 
