@@ -103,13 +103,18 @@ struct GraphContainerView: View {
 
     private var controlsCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Your knowledge map")
-                        .font(.headline)
-                    Text("Repeated, concrete subjects only. Each row is a category followed by the topics that consistently appeared in it.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            HStack(alignment: .center) {
+                HStack(spacing: 8) {
+                    Image(systemName: "cpu.fill")
+                        .font(.title3)
+                        .foregroundStyle(.cyan)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Knowledge Neural Map")
+                            .font(.headline.weight(.bold))
+                        Text("Concrete subjects & category relationships")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Spacer()
@@ -118,10 +123,13 @@ struct GraphContainerView: View {
                     rendererError = nil
                     Task { await viewModel.refresh() }
                 } label: {
-                    Label("Reload", systemImage: "arrow.clockwise")
-                        .font(.caption.weight(.semibold))
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption.weight(.bold))
+                        .padding(8)
+                        .background(Color.secondary.opacity(0.12))
+                        .clipShape(Circle())
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -138,35 +146,12 @@ struct GraphContainerView: View {
                     }
                 }
             }
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(viewModel.categoryNodes) { node in
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(Color(hex: node.color))
-                                .frame(width: 8, height: 8)
-                            Text(node.label)
-                                .font(.caption.weight(.semibold))
-                            if let count = node.count {
-                                Text("\(count)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.secondary.opacity(0.08))
-                        .clipShape(Capsule())
-                    }
-                }
-            }
         }
-        .padding(16)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .padding(14)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
         .overlay(
-            RoundedRectangle(cornerRadius: 22)
+            RoundedRectangle(cornerRadius: 20)
                 .stroke(Color.primary.opacity(0.06), lineWidth: 1)
         )
     }
