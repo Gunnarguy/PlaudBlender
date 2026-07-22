@@ -256,12 +256,17 @@ class EntityExtractor:
 {
   "people": [{"name": "Person Name", "role": "optional role/title"}],
   "projects": [{"name": "Project Name", "status": "optional status"}],
-  "topics": ["Topic 1", "Topic 2"],
+  "topics": ["Concrete Subject Noun 1", "Specific Subject 2"],
   "actions": [{"task": "Task description", "assignee": "Person (if mentioned)", "deadline": "Date (if mentioned)"}],
   "dates": ["2024-10-15", "Q3 2024"],
   "metrics": [{"value": "15%", "context": "revenue growth"}],
   "organizations": ["Company/Org Name"]
 }
+
+CRITICAL TOPIC RULES:
+- Topics MUST be concrete subject nouns, proper nouns, technologies, projects, or multi-word concept phrases (e.g., "Raspberry Pi", "Notion Sync", "API Billing", "iOS App", "Tailscale").
+- NEVER extract single verbs, action words, gerunds, or conversational filler as topics (e.g. NEVER output "going", "using", "swapping", "talking", "asking", "doing", "running", "wants").
+- Every topic must be a distinct, meaningful subject entity.
 
 Only include entities that are clearly mentioned. Be specific with names.
 If an entity is not found, use an empty array.

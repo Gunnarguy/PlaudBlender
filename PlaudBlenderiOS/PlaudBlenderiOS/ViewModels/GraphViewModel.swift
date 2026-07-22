@@ -37,18 +37,33 @@ struct GraphConnection: Identifiable, Sendable {
 @Observable
 final class GraphViewModel {
     private static let lowValueTopicWords: Set<String> = [
-        "about", "actually", "after", "again", "also", "anything", "basically",
-        "before", "being", "can", "conversation", "could", "doing", "done", "dude",
-        "even", "everyone", "everything", "from", "fucking", "general", "get", "go",
-        "going", "good", "got", "guy", "guys", "have", "here", "hey", "how", "into",
-        "just", "know", "like", "make", "maybe", "misc", "more", "most", "not",
-        "nothing", "ok", "okay", "other", "people", "person", "really", "said", "say",
-        "saying", "should", "some", "someone", "something", "stuff", "take", "talk",
-        "talking", "tell", "that", "the", "them", "there", "they", "thing", "things",
-        "think", "thinking", "this", "thought", "through", "time", "today", "told",
-        "took", "unknown", "very", "want", "wanted", "was", "week", "well", "were",
-        "what", "when", "where", "which", "who", "why", "will", "with", "would",
-        "yeah", "yes", "your"
+        "about", "actually", "after", "again", "all", "also", "anything", "ask",
+        "asked", "asking", "asks", "basically", "before", "being", "bought",
+        "bring", "bringing", "brings", "brought", "buy", "buying", "buys", "call",
+        "called", "calling", "calls", "can", "check", "checked", "checking", "checks",
+        "conversation", "could", "did", "do", "does", "doing", "done", "dude",
+        "even", "everyone", "everything", "feel", "feeling", "feels", "felt",
+        "from", "fucking", "gave", "general", "get", "gets", "getting", "give",
+        "given", "gives", "giving", "go", "goes", "going", "gone", "gonna", "good",
+        "got", "gotta", "guy", "guys", "had", "has", "have", "having", "held", "here",
+        "hey", "hold", "holding", "holds", "how", "into", "just", "keep", "keeping",
+        "keeps", "kept", "kind", "kinds", "knew", "know", "knowing", "knows", "like",
+        "literally", "look", "looked", "looking", "looks", "lot", "lots", "make",
+        "makes", "making", "maybe", "misc", "more", "most", "need", "needed",
+        "needing", "needs", "not", "nothing", "ok", "okay", "other", "part", "parts",
+        "people", "person", "point", "points", "put", "puts", "putting", "ran",
+        "really", "run", "running", "runs", "said", "saw", "say", "saying", "says",
+        "see", "seeing", "seen", "sees", "set", "sets", "setting", "should", "some",
+        "somebody", "someone", "something", "sort", "sorts", "stuff", "swap",
+        "swapped", "swapping", "swaps", "take", "taken", "takes", "taking", "talk",
+        "talked", "talking", "talks", "tell", "telling", "tells", "that", "the",
+        "them", "there", "they", "thing", "things", "think", "thinking", "thinks",
+        "this", "thought", "through", "time", "today", "told", "took", "tried",
+        "tries", "try", "trying", "turn", "turned", "turning", "turns", "type",
+        "types", "unknown", "use", "used", "uses", "using", "very", "want",
+        "wanted", "wanting", "wants", "wanna", "was", "way", "ways", "week", "well",
+        "went", "were", "what", "when", "where", "which", "who", "why", "will",
+        "with", "work", "worked", "working", "works", "would", "yeah", "yes", "your"
     ]
     private static let disallowedTopicWords: Set<String> = [
         "damn", "fuck", "fucked", "fucking", "fucks", "shit", "shits", "shitty"
