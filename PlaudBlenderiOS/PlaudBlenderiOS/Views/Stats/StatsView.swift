@@ -1072,6 +1072,9 @@ struct StatsView: View {
         if usd == 0 {
             return zeroAsFree ? "FREE" : "$0.00"
         }
+        if usd > 0 && usd < 0.0001 {
+            return "<$0.0001"
+        }
         if usd < 0.01 {
             return String(format: "$%.4f", usd)
         }
@@ -1388,6 +1391,9 @@ struct CostQuickLookSheet: View {
     private func formatCost(_ usd: Double, zeroAsFree: Bool = true) -> String {
         if usd == 0 {
             return zeroAsFree ? "FREE" : "$0.00"
+        }
+        if usd > 0 && usd < 0.0001 {
+            return "<$0.0001"
         }
         if usd < 0.01 {
             return String(format: "$%.4f", usd)

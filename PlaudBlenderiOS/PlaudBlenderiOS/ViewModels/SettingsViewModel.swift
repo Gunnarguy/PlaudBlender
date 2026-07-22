@@ -59,6 +59,34 @@ final class SettingsViewModel: NSObject {
         return AskChronosSettings.supportsTemperatureControl(for: model)
     }
 
+    var modelPricing: ModelPricing?
+
+    func availableModels(fallback: [String]) -> [String] {
+        var options = fallback
+        if let pricing = modelPricing {
+            let serverModels = pricing.models.compactMap { $0["model"]?.stringValue }
+            for m in serverModels {
+                if !m.contains("embedding") && !options.contains(m) {
+                    options.append(m)
+                }
+            }
+        }
+        return options
+    }
+
+    func availableEmbeddingModels(fallback: [String]) -> [String] {
+        var options = fallback
+        if let pricing = modelPricing {
+            let serverModels = pricing.models.compactMap { $0["model"]?.stringValue }
+            for m in serverModels {
+                if m.contains("embedding") && !options.contains(m) {
+                    options.append(m)
+                }
+            }
+        }
+        return options
+    }
+
     private let api: APIClient
     private let authManager: AuthManager
     @ObservationIgnored private var plaudStatusValidation = PlaudStatusValidationCache()
@@ -353,6 +381,14 @@ final class SettingsViewModel: NSObject {
         isSavingServerConfig = false
     }
 
+    func loadPricing() async {
+        do {
+            modelPricing = try await api.get("/api/costs/pricing")
+        } catch {
+            // pricing load is optional/best-effort for dynamic pickers
+        }
+    }
+
     func loadAll() async {
         await checkServer()
         await loadPlaudStatus()
@@ -360,6 +396,7 @@ final class SettingsViewModel: NSObject {
         await loadSystemStatus()
         await loadPlaudIntegrations()
         await loadServerSettings()
+        await loadPricing()
     }
 
     private func applyPlaudStatusValidation(_ result: PlaudStatusValidationResult) {

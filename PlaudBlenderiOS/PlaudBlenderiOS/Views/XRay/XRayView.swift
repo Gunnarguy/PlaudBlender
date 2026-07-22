@@ -637,6 +637,9 @@ struct XRayView: View {
         if usd == 0 {
             return "$0.00"
         }
+        if usd > 0 && usd < 0.0001 {
+            return "<$0.0001"
+        }
         if usd < 0.01 {
             return String(format: "$%.4f", usd)
         }

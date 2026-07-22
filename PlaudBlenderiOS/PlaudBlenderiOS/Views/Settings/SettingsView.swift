@@ -19,6 +19,8 @@ struct SettingsView: View {
 
     private let standardProviders = ["gemini", "openai"]
     private let standardModels = [
+        "gemini-3.5-flash-lite",
+        "gemini-3.6-flash",
         "gemini-3.5-flash",
         "gemini-2.5-flash",
         "gemini-2.5-pro",
@@ -257,10 +259,10 @@ struct SettingsView: View {
                     if viewModel.supportsServerSettingsEndpoint {
                         Section("Models") {
                             ModelSelectorView(title: "Processing Provider", selection: $viewModel.processingProvider, options: standardProviders)
-                            ModelSelectorView(title: "Cleaning Model", selection: $viewModel.cleaningModel, options: standardModels)
-                            ModelSelectorView(title: "Analyst Model", selection: $viewModel.analystModel, options: standardModels)
-                            ModelSelectorView(title: "Embedding Model", selection: $viewModel.embeddingModel, options: standardEmbeddingModels)
-                            ModelSelectorView(title: "OpenAI Model", selection: $viewModel.openAIModel, options: standardModels)
+                            ModelSelectorView(title: "Cleaning Model", selection: $viewModel.cleaningModel, options: viewModel.availableModels(fallback: standardModels))
+                            ModelSelectorView(title: "Analyst Model", selection: $viewModel.analystModel, options: viewModel.availableModels(fallback: standardModels))
+                            ModelSelectorView(title: "Embedding Model", selection: $viewModel.embeddingModel, options: viewModel.availableEmbeddingModels(fallback: standardEmbeddingModels))
+                            ModelSelectorView(title: "OpenAI Model", selection: $viewModel.openAIModel, options: viewModel.availableModels(fallback: standardModels))
                             ModelSelectorView(title: "Thinking Level", selection: $viewModel.thinkingLevel, options: standardThinkingLevels)
                         }
 
