@@ -36,6 +36,18 @@ _GEMINI_PRICING: dict[str, dict] = {
         "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
         "paid": {"input_per_mtok": 1.50, "output_per_mtok": 9.00},
     },
+    "gemini-3.5-flash-lite": {
+        "provider": "google",
+        "label": "Gemini 3.5 Flash-Lite",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 0.30, "output_per_mtok": 2.50},
+    },
+    "gemini-3.6-flash": {
+        "provider": "google",
+        "label": "Gemini 3.6 Flash",
+        "free": {"input_per_mtok": 0.00, "output_per_mtok": 0.00},
+        "paid": {"input_per_mtok": 1.50, "output_per_mtok": 7.50},
+    },
     "gemini-3-flash-preview": {
         "provider": "google",
         "label": "Gemini 3 Flash Preview",

@@ -215,7 +215,10 @@ BROKEN_JSON:
                     model_name,
                     "generate",
                     input_tokens=getattr(_repair_usage, "prompt_token_count", 0),
-                    output_tokens=getattr(_repair_usage, "candidates_token_count", 0),
+                    output_tokens=(
+                        getattr(_repair_usage, "candidates_token_count", 0) or 0
+                    )
+                    + (getattr(_repair_usage, "thoughts_token_count", 0) or 0),
                 )
             return repaired
         except Exception as e:
@@ -863,7 +866,9 @@ Extract events from this transcript following the schema exactly."""
                     usage = getattr(chunk, "usage_metadata", None)
                     if usage:
                         _in_tok = getattr(usage, "prompt_token_count", 0)
-                        _out_tok = getattr(usage, "candidates_token_count", 0)
+                        _out_tok = (getattr(usage, "candidates_token_count", 0) or 0) + (
+                            getattr(usage, "thoughts_token_count", 0) or 0
+                        )
                         print(
                             f"      📊 Tokens - Input: {_in_tok:,} | Output: {_out_tok:,}",
                             flush=True,
@@ -903,9 +908,10 @@ Extract events from this transcript following the schema exactly."""
                             engine.model_name,
                             "generate",
                             input_tokens=getattr(_nv_usage, "prompt_token_count", 0),
-                            output_tokens=getattr(
-                                _nv_usage, "candidates_token_count", 0
-                            ),
+                            output_tokens=(
+                                getattr(_nv_usage, "candidates_token_count", 0) or 0
+                            )
+                            + (getattr(_nv_usage, "thoughts_token_count", 0) or 0),
                             recording_id=recording_id,
                         )
 

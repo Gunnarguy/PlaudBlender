@@ -393,7 +393,10 @@ Return ONLY the JSON object, no other text."""
                         getattr(usage, "prompt_token_count", 0) if usage else 0
                     ),
                     output_tokens=(
-                        getattr(usage, "candidates_token_count", 0) if usage else 0
+                        (getattr(usage, "candidates_token_count", 0) or 0)
+                        + (getattr(usage, "thoughts_token_count", 0) or 0)
+                        if usage
+                        else 0
                     ),
                 )
 

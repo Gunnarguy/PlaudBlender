@@ -139,7 +139,8 @@ Answer using only the evidence above. If the evidence is thin or missing, say so
                     model_name,
                     "generate",
                     input_tokens=getattr(usage, "prompt_token_count", 0),
-                    output_tokens=getattr(usage, "candidates_token_count", 0),
+                    output_tokens=(getattr(usage, "candidates_token_count", 0) or 0)
+                    + (getattr(usage, "thoughts_token_count", 0) or 0),
                 )
 
             return {

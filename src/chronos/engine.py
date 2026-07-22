@@ -351,7 +351,8 @@ class ChronosEngine:
                         self.model_name,
                         "generate",
                         input_tokens=getattr(_usage, "prompt_token_count", 0),
-                        output_tokens=getattr(_usage, "candidates_token_count", 0),
+                        output_tokens=(getattr(_usage, "candidates_token_count", 0) or 0)
+                        + (getattr(_usage, "thoughts_token_count", 0) or 0),
                         recording_id=recording_id,
                     )
 
