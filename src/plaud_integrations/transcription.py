@@ -63,8 +63,11 @@ class PlaudTranscriptionClient:
             return payload
         except requests.RequestException as exc:
             error_name = type(exc).__name__
+            detail = ""
+            if getattr(exc, "response", None) is not None:
+                detail = f" body={exc.response.text[:300]}"
             raise PlaudIntegrationError(
-                f"PLAUD transcription {operation} failed: {exc}", code="transcription_http_error",
+                f"PLAUD transcription {operation} failed: {exc}{detail}", code="transcription_http_error",
                 retryable=isinstance(exc, (requests.Timeout, requests.ConnectionError)),
             ) from exc
         finally:

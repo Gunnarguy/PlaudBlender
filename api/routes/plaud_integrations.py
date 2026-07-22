@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.auth.jwt import require_auth
@@ -19,6 +20,10 @@ from src.plaud_integrations.errors import PlaudIntegrationError
 from src.plaud_integrations.mcp_account import EXPECTED_PUBLIC_TOOLS, PlaudMCPAccountAdapter, REVIEWED_TOOLS
 from src.plaud_integrations.redaction import redact
 from src.plaud_integrations.transcription import PlaudTranscriptionClient
+
+# Shared adapter so the persistent MCP subprocess survives across
+# requests — per-request construction re-spawned npx every call.
+_MCP_ADAPTER = PlaudMCPAccountAdapter()
 
 router = APIRouter(
     prefix="/api/v1/plaud/integrations",
@@ -122,11 +127,52 @@ async def capabilities(request: Request):
     return {**load_manifest(), "correlation_id": _correlation_id(request)}
 
 
+@router.get("/files/{file_id}/audio")
+async def stream_file_audio(file_id: str, request: Request):
+    """Stream a recording's audio through the broker. Presigned URLs are
+    redacted in every JSON surface (telemetry safety), so the broker
+    dereferences the URL server-side and streams the bytes instead."""
+    correlation_id = _correlation_id(request)
+    try:
+        result = await asyncio.to_thread(_MCP_ADAPTER.call_tool, "get_file", {"file_id": file_id})
+        payload = result.structured_content or {}
+        data = payload.get("data", payload) if isinstance(payload, dict) else {}
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        url = data.get("presigned_url") if isinstance(data, dict) else None
+        if not url:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": {"code": "no_audio", "message": "No presigned audio URL for this recording"},
+                        "correlation_id": correlation_id},
+            )
+        import urllib.request as _urllib_request
+        upstream = await asyncio.to_thread(_urllib_request.urlopen, url, None, 120)
+        content_type = upstream.headers.get("Content-Type", "audio/mpeg")
+
+        def _chunks():
+            try:
+                while True:
+                    block = upstream.read(1 << 16)
+                    if not block:
+                        break
+                    yield block
+            finally:
+                upstream.close()
+
+        return StreamingResponse(_chunks(), media_type=content_type,
+                                 headers={"X-Correlation-Id": correlation_id})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise(exc, correlation_id)
+
+
 @router.get("/mcp/tools")
 async def mcp_tools(request: Request):
     correlation_id = _correlation_id(request)
     try:
-        tools = await asyncio.to_thread(PlaudMCPAccountAdapter().discover_tools)
+        tools = await asyncio.to_thread(_MCP_ADAPTER.discover_tools)
         await asyncio.to_thread(lambda: write_manifest(discovered_mcp_tools=tools))
         return {"tools": [tool.to_dict() for tool in tools], "count": len(tools), "correlation_id": correlation_id}
     except Exception as exc:
@@ -141,7 +187,7 @@ async def invoke_mcp_tool(tool_name: str, body: MCPInvocationRequest, request: R
     if EXPECTED_PUBLIC_TOOLS[tool_name] == "auth" and not body.confirm_mutating:
         raise HTTPException(status_code=409, detail={"error": {"code": "confirmation_required", "message": "Set confirm_mutating=true for authentication-changing MCP calls"}, "correlation_id": correlation_id})
     try:
-        result = await asyncio.to_thread(PlaudMCPAccountAdapter().call_tool, tool_name, body.arguments)
+        result = await asyncio.to_thread(_MCP_ADAPTER.call_tool, tool_name, body.arguments)
         return {
             "tool_name": result.tool_name,
             "structured_content": redact(result.structured_content),

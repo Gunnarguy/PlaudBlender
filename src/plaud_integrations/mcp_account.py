@@ -70,6 +70,15 @@ class PlaudMCPAccountAdapter:
         self.args = list(args or (os.getenv("PLAUD_MCP_ARGS") or "-y @plaud-ai/mcp@latest --no-login").split())
         self.ledger = ledger
         self._capabilities: dict[str, PlaudIntegrationCapability] = {}
+        # Persistent stdio session: spawning npx per call cost 4-5 s of
+        # node startup + MCP handshake on every request. One long-lived
+        # process (guarded by the lock; restarted on failure) makes each
+        # call a single JSON-RPC round trip.
+        self._stdio_lock = threading.Lock()
+        self._stdio_proc: subprocess.Popen | None = None
+        self._stdio_discovered: dict[str, dict[str, Any]] = {}
+        self._stdio_server_version: str | None = None
+        self._stdio_next_id = 10
 
     def _stdio_process(self) -> subprocess.Popen:
         env = os.environ.copy()
@@ -174,14 +183,37 @@ class PlaudMCPAccountAdapter:
             capabilities.append(capability)
         return capabilities
 
-    def _discover_stdio(self) -> list[PlaudIntegrationCapability]:
+    def _ensure_stdio(self) -> subprocess.Popen:
+        """Return the live persistent process, starting and handshaking it
+        if needed. Caller must hold ``_stdio_lock``."""
+        if self._stdio_proc is not None and self._stdio_proc.poll() is None:
+            return self._stdio_proc
+        self._reset_stdio()
         process = self._stdio_process()
         try:
             initialized, tools = self._stdio_tools(process)
-            server_version = (initialized.get("serverInfo") or {}).get("version")
-            return self._capabilities_from_stdio(tools, server_version)
-        finally:
+        except BaseException:
             self._stop_stdio(process)
+            raise
+        self._stdio_proc = process
+        self._stdio_discovered = {str(tool.get("name")): tool for tool in tools}
+        self._stdio_server_version = (initialized.get("serverInfo") or {}).get("version")
+        self._stdio_next_id = 10
+        return process
+
+    def _reset_stdio(self) -> None:
+        """Tear down the persistent process. Caller must hold ``_stdio_lock``."""
+        if self._stdio_proc is not None:
+            self._stop_stdio(self._stdio_proc)
+        self._stdio_proc = None
+        self._stdio_discovered = {}
+
+    def _discover_stdio(self) -> list[PlaudIntegrationCapability]:
+        with self._stdio_lock:
+            self._ensure_stdio()
+            return self._capabilities_from_stdio(
+                list(self._stdio_discovered.values()), self._stdio_server_version
+            )
 
     @staticmethod
     def _mcp_imports():
@@ -263,42 +295,54 @@ class PlaudMCPAccountAdapter:
         return self._discover_stdio()
 
     def _call_stdio(self, tool_name: str, arguments: dict[str, Any]) -> MCPToolResult:
-        process = self._stdio_process()
         started = time.perf_counter()
-        try:
-            initialized, tools = self._stdio_tools(process)
-            discovered = {str(tool.get("name")): tool for tool in tools}
-            if tool_name not in REVIEWED_TOOLS or tool_name not in discovered:
-                raise PlaudUnknownToolError(tool_name)
-            tool = discovered[tool_name]
-            schema_hash = payload_hash({"input": tool.get("inputSchema"), "output": tool.get("outputSchema")})
-            self._stdio_send(process, {
-                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-                "params": {"name": tool_name, "arguments": arguments},
-            })
-            # Browser authorization is human-paced. The default 45-second
-            # transport timeout is appropriate for normal tools but can report
-            # a false failure after OAuth has already persisted successfully.
-            response_timeout = 300 if tool_name == "login" else 45
-            raw = self._stdio_receive(process, 3, timeout=response_timeout)
-            content = raw.get("content", []) or []
-            text_content = "\n".join(
-                str(item.get("text", item)) for item in content if isinstance(item, dict)
-            ).strip()
-            structured = raw.get("structuredContent")
-            if structured is None and text_content:
+        with self._stdio_lock:
+            # One transparent restart-and-retry: the persistent process (or
+            # its upstream MCP session) can die while idle between calls.
+            for attempt in (1, 2):
+                process = self._ensure_stdio()
+                if tool_name not in REVIEWED_TOOLS or tool_name not in self._stdio_discovered:
+                    raise PlaudUnknownToolError(tool_name)
+                tool = self._stdio_discovered[tool_name]
+                schema_hash = payload_hash({"input": tool.get("inputSchema"), "output": tool.get("outputSchema")})
+                request_id = self._stdio_next_id
+                self._stdio_next_id += 1
                 try:
-                    structured = json.loads(text_content)
-                except (TypeError, ValueError):
-                    pass
-            return MCPToolResult(
-                tool_name=tool_name, input_payload=arguments, raw_result=raw,
-                structured_content=structured, text_content=text_content,
-                duration_ms=int((time.perf_counter() - started) * 1000),
-                is_error=bool(raw.get("isError", False)), schema_hash=schema_hash,
-            )
-        finally:
-            self._stop_stdio(process)
+                    self._stdio_send(process, {
+                        "jsonrpc": "2.0", "id": request_id, "method": "tools/call",
+                        "params": {"name": tool_name, "arguments": arguments},
+                    })
+                    # Browser authorization is human-paced. The default 45-second
+                    # transport timeout is appropriate for normal tools but can report
+                    # a false failure after OAuth has already persisted successfully.
+                    response_timeout = 300 if tool_name == "login" else 45
+                    raw = self._stdio_receive(process, request_id, timeout=response_timeout)
+                except (PlaudIntegrationError, OSError, ValueError):
+                    # OSError/ValueError: writing to a process that died
+                    # while idle (broken pipe / closed stream).
+                    self._reset_stdio()
+                    if attempt == 2:
+                        raise
+                    continue
+                content = raw.get("content", []) or []
+                text_content = "\n".join(
+                    str(item.get("text", item)) for item in content if isinstance(item, dict)
+                ).strip()
+                structured = raw.get("structuredContent")
+                if structured is None and text_content:
+                    try:
+                        structured = json.loads(text_content)
+                    except (TypeError, ValueError):
+                        pass
+                return MCPToolResult(
+                    tool_name=tool_name, input_payload=arguments, raw_result=raw,
+                    structured_content=structured, text_content=text_content,
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                    is_error=bool(raw.get("isError", False)), schema_hash=schema_hash,
+                )
+        raise PlaudIntegrationError(  # pragma: no cover - loop always returns or raises
+            "PLAUD MCP call loop exited unexpectedly", code="mcp_transport_error"
+        )
 
     async def _call_async(self, tool_name: str, arguments: dict[str, Any]) -> MCPToolResult:
         ClientSession, StdioServerParameters, stdio_client = self._mcp_imports()

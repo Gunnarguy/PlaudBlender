@@ -247,8 +247,8 @@
         "type": "object"
       },
       "last_failure": null,
-      "last_latency_ms": null,
-      "last_successful_call_time": null,
+      "last_latency_ms": 366,
+      "last_successful_call_time": "2026-07-21T04:22:34.297834+00:00",
       "method": null,
       "operation_id": "mcp.list_files",
       "output_schema": null,
@@ -312,9 +312,9 @@
         ],
         "type": "object"
       },
-      "last_failure": null,
-      "last_latency_ms": null,
-      "last_successful_call_time": null,
+      "last_failure": "2026-07-21T00:36:00.021038+00:00: PlaudIntegrationError",
+      "last_latency_ms": 355,
+      "last_successful_call_time": "2026-07-21T00:36:03.790772+00:00",
       "method": null,
       "operation_id": "mcp.get_note",
       "output_schema": null,
@@ -345,9 +345,9 @@
         ],
         "type": "object"
       },
-      "last_failure": null,
-      "last_latency_ms": null,
-      "last_successful_call_time": null,
+      "last_failure": "2026-07-21T00:30:39.060854+00:00: PlaudIntegrationError",
+      "last_latency_ms": 54,
+      "last_successful_call_time": "2026-07-21T00:30:31.433918+00:00",
       "method": null,
       "operation_id": "mcp.get_transcript",
       "output_schema": null,
@@ -369,8 +369,8 @@
         "properties": {},
         "type": "object"
       },
-      "last_failure": "2026-07-15T23:51:55.966287+00:00: PlaudIntegrationError",
-      "last_latency_ms": 623,
+      "last_failure": null,
+      "last_latency_ms": null,
       "last_successful_call_time": null,
       "method": null,
       "operation_id": "mcp.get_current_user",
@@ -416,7 +416,7 @@
     "https://docs.plaud.ai/openapi/file.json",
     "https://docs.plaud.ai/openapi/transcription.json"
   ],
-  "generated_at": "2026-07-15T23:55:59.223897+00:00",
+  "generated_at": "2026-07-21T04:41:17.199896+00:00",
   "legacy_adapter_status": "Compatibility; current public documentation status awaiting verification",
   "mcp": {
     "discovered_server_versions": [
