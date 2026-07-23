@@ -492,7 +492,7 @@
               e.touches[0].clientY - e.touches[1].clientY
             );
             const factor = touchStartDist / Math.max(currentDist, 1);
-            targetCameraDist = Math.max(120, Math.min(1000, startCameraDist * factor));
+            targetCameraDist = Math.max(15, Math.min(2000, startCameraDist * factor));
           }
         }, { passive: true });
 
@@ -527,10 +527,11 @@
             selectedNodeId = clickedNode.id;
             showInspector(clickedNode);
 
-            // Smoothly focus camera on node
-            focusOffsetX = clickedNode.x3d * 0.6;
-            focusOffsetY = clickedNode.y3d * 0.6;
-            focusOffsetZ = clickedNode.z3d * 0.6;
+            // Smoothly focus camera directly on node up close
+            focusOffsetX = clickedNode.x3d;
+            focusOffsetY = clickedNode.y3d;
+            focusOffsetZ = clickedNode.z3d;
+            targetCameraDist = 60;
 
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nodeTapped) {
               window.webkit.messageHandlers.nodeTapped.postMessage(clickedNode.id);
@@ -552,14 +553,20 @@
           selectedNodeId = null;
         });
 
-        // HUD Controls Action Bindings
+        // HUD Controls Action Bindings (Ultra Zoom Range 15 to 2000)
         document.getElementById('btn-zoom-in').addEventListener('click', () => {
-          targetCameraDist = Math.max(120, targetCameraDist - 90);
+          targetCameraDist = Math.max(15, targetCameraDist - 120);
         });
 
         document.getElementById('btn-zoom-out').addEventListener('click', () => {
-          targetCameraDist = Math.min(1000, targetCameraDist + 90);
+          targetCameraDist = Math.min(2000, targetCameraDist + 120);
         });
+
+        // Mouse Wheel & Trackpad Zooming
+        container.addEventListener('wheel', e => {
+          targetCameraDist += e.deltaY * 0.4;
+          targetCameraDist = Math.max(15, Math.min(2000, targetCameraDist));
+        }, { passive: true });
 
         document.getElementById('btn-rotate').addEventListener('click', function() {
           isAutoRotating = !isAutoRotating;
