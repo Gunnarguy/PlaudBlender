@@ -25,45 +25,53 @@ struct GraphContainerView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                controlsCard
-                    .padding([.horizontal, .top])
+            ZStack {
+                Color(hex: "070a12")
+                    .ignoresSafeArea()
 
-                if viewModel.isLoading {
-                    Spacer()
-                    LoadingView(message: "Building knowledge graph...")
-                    Spacer()
-                } else if let error = activeError {
-                    Spacer()
-                    EmptyStateView(
-                        icon: "exclamationmark.triangle",
-                        title: "Graph Unavailable",
-                        message: error,
-                        actionTitle: "Retry",
-                        action: {
-                            rendererError = nil
-                            Task { await viewModel.refresh() }
-                        }
-                    )
-                    Spacer()
-                } else if viewModel.nodes.isEmpty {
-                    Spacer()
-                    EmptyStateView(
-                        icon: "point.3.connected.trianglepath.dotted",
-                        title: "No Graph Data",
-                        message: "Run the pipeline with --graph to build the knowledge graph.",
-                        actionTitle: "Refresh",
-                        action: { Task { await viewModel.refresh() } }
-                    )
-                    Spacer()
-                } else {
-                    graphWebView
-                        .padding(.horizontal)
-                        .padding(.top, 12)
-                        .padding(.bottom, 8)
+                VStack(spacing: 0) {
+                    controlsCard
+                        .padding([.horizontal, .top])
+
+                    if viewModel.isLoading {
+                        Spacer()
+                        LoadingView(message: "Building knowledge neural map...")
+                        Spacer()
+                    } else if let error = activeError {
+                        Spacer()
+                        EmptyStateView(
+                            icon: "exclamationmark.triangle",
+                            title: "Graph Unavailable",
+                            message: error,
+                            actionTitle: "Retry",
+                            action: {
+                                rendererError = nil
+                                Task { await viewModel.refresh() }
+                            }
+                        )
+                        Spacer()
+                    } else if viewModel.nodes.isEmpty {
+                        Spacer()
+                        EmptyStateView(
+                            icon: "point.3.connected.trianglepath.dotted",
+                            title: "No Graph Data",
+                            message: "Run the pipeline with --graph to build the knowledge graph.",
+                            actionTitle: "Refresh",
+                            action: { Task { await viewModel.refresh() } }
+                        )
+                        Spacer()
+                    } else {
+                        graphWebView
+                            .padding(.horizontal, 8)
+                            .padding(.top, 12)
+                            .padding(.bottom, 8)
+                    }
                 }
             }
             .navigationTitle("Knowledge Graph")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(Color(hex: "070a12"), for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: platformTrailingToolbarPlacement) {
                     HStack(spacing: 4) {

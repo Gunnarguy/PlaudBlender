@@ -4,58 +4,45 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <style>
-      :root { color-scheme: dark light; }
+      :root { color-scheme: dark; }
       * { box-sizing: border-box; }
       html, body, #graph-container { width: 100%; height: 100%; margin: 0; overflow: hidden; }
       body {
-        background: #0b0f19;
-        color: #f1f5f9;
+        background: #070a12;
+        color: #f8fafc;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif;
       }
       #graph-container {
         position: relative;
+        background-color: #070a12;
         background-image: 
-          radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.08) 0%, transparent 60%),
-          radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
-          radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+          radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.12) 0%, transparent 65%),
+          radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+          radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
         background-size: 100% 100%, 100% 100%, 24px 24px;
       }
       svg { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; }
-      .lane { fill: rgba(15, 23, 42, 0.65); stroke: rgba(51, 65, 85, 0.5); stroke-width: 1; rx: 16px; }
-      .lane-title { fill: #f8fafc; font-size: 13px; font-weight: 700; letter-spacing: -0.2px; }
+      .lane { fill: rgba(15, 23, 42, 0.85); stroke: rgba(51, 65, 85, 0.6); stroke-width: 1.2; rx: 18px; }
+      .lane-title { fill: #f8fafc; font-size: 13px; font-weight: 800; letter-spacing: -0.2px; }
       .lane-subtitle { fill: #94a3b8; font-size: 10px; }
-      .category-card { stroke-width: 1.5; filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3)); transition: all 0.2s ease; cursor: pointer; }
-      .category-label { fill: #ffffff; font-size: 12px; font-weight: 700; letter-spacing: -0.1px; }
-      .category-count { fill: rgba(255,255,255,0.85); font-size: 10px; font-weight: 600; }
-      .topic-card { fill: rgba(30, 41, 59, 0.85); stroke: rgba(71, 85, 105, 0.5); stroke-width: 1; transition: all 0.2s ease; cursor: pointer; }
-      .topic-label { fill: #f1f5f9; font-size: 11px; font-weight: 600; }
-      .topic-count { fill: #38bdf8; font-size: 10px; font-weight: 700; }
-      .topic-link { fill: none; stroke-width: 2.2; stroke-linecap: round; opacity: 0.5; filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.3)); }
-      .relationship { fill: none; stroke: #f59e0b; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 6 4; animation: dash 1.5s linear infinite; filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.6)); }
+      .category-card { stroke-width: 1.5; filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.4)); transition: all 0.25s ease; cursor: pointer; }
+      .category-label { fill: #ffffff; font-size: 12.5px; font-weight: 800; letter-spacing: -0.1px; }
+      .category-count { fill: rgba(255,255,255,0.9); font-size: 10px; font-weight: 700; }
+      .topic-card { fill: rgba(30, 41, 59, 0.95); stroke: rgba(71, 85, 105, 0.6); stroke-width: 1.2; transition: all 0.2s ease; cursor: pointer; }
+      .topic-label { fill: #f8fafc; font-size: 11.5px; font-weight: 700; }
+      .topic-count { fill: #38bdf8; font-size: 10.5px; font-weight: 800; }
+      .topic-link { fill: none; stroke-width: 2.5; stroke-linecap: round; opacity: 0.6; filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.4)); }
+      .relationship { fill: none; stroke: #f59e0b; stroke-width: 3.2; stroke-linecap: round; stroke-dasharray: 6 4; animation: dash 1.5s linear infinite; filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.7)); }
       @keyframes dash { to { stroke-dashoffset: -20; } }
       .topic-link, .relationship { pointer-events: none; }
-      .selected .topic-card { fill: rgba(14, 165, 233, 0.25); stroke: #38bdf8; stroke-width: 2.5; filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.5)); }
-      .selected .category-card { filter: drop-shadow(0 0 14px rgba(139, 92, 246, 0.6)); stroke-width: 2.5; }
+      .selected .topic-card { fill: rgba(14, 165, 233, 0.3); stroke: #38bdf8; stroke-width: 2.5; filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.6)); }
+      .selected .category-card { filter: drop-shadow(0 0 18px rgba(139, 92, 246, 0.7)); stroke-width: 2.5; }
       .selected .topic-label, .selected .category-label { font-weight: 800; }
-      .dimmed { opacity: 0.25; filter: grayscale(50%); }
+      .dimmed { opacity: 0.2; filter: grayscale(60%); }
       .more-label { fill: #64748b; font-size: 10.5px; font-weight: 600; }
       .rank-number { fill: #38bdf8; font-size: 12px; font-weight: 800; }
-      .axis-label { fill: #94a3b8; font-size: 10px; font-weight: 700; letter-spacing: 0.8px; }
+      .axis-label { fill: #94a3b8; font-size: 10px; font-weight: 800; letter-spacing: 1px; }
       .empty { fill: #64748b; font-size: 14px; font-weight: 500; }
-      @media (prefers-color-scheme: light) {
-        body { background: #f8fafc; color: #0f172a; }
-        #graph-container {
-          background-image: 
-            radial-gradient(circle at 50% 0%, rgba(14, 165, 233, 0.06) 0%, transparent 60%),
-            radial-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px);
-          background-size: 100% 100%, 20px 20px;
-        }
-        .lane { fill: #ffffff; stroke: #e2e8f0; }
-        .lane-title, .topic-label { fill: #0f172a; }
-        .lane-subtitle, .topic-count, .more-label, .axis-label { fill: #64748b; }
-        .topic-card { fill: #ffffff; stroke: #cbd5e1; }
-        .selected .topic-card { fill: rgba(14, 165, 233, 0.1); stroke: #0284c7; }
-      }
     </style>
   </head>
   <body>

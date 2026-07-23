@@ -109,18 +109,22 @@ struct ContentView: View {
 
     private var customTabBar: some View {
         VStack(spacing: 0) {
-            Divider()
-
             HStack(spacing: 4) {
                 ForEach(AppTab.allCases, id: \.self) { tab in
                     tabButton(for: tab)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 6)
+            .padding(.top, 6)
+            .padding(.bottom, 6)
         }
-        .background(.ultraThinMaterial)
+        .background(Color(hex: "070a12").opacity(0.95))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundStyle(Color.white.opacity(0.08)),
+            alignment: .top
+        )
     }
 
     private func tabButton(for tab: AppTab) -> some View {
@@ -128,37 +132,45 @@ struct ContentView: View {
 
         return Button {
             loadedTabs.insert(tab)
-            withAnimation(.easeInOut(duration: 0.18)) {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
                 selectedTab = tab
             }
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 3) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: tab.icon)
-                        .font(.system(size: 18, weight: isSelected ? .semibold : .regular))
+                        .font(.system(size: 19, weight: isSelected ? .bold : .medium))
+                        .foregroundStyle(isSelected ? Color.cyan : Color.secondary)
+                        .shadow(color: isSelected ? Color.cyan.opacity(0.6) : .clear, radius: 6)
+                        .scaleEffect(isSelected ? 1.1 : 1.0)
 
                     if let badge = badgeText(for: tab) {
                         Text(badge)
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 9, weight: .black))
                             .foregroundStyle(.white)
                             .padding(.horizontal, badge.count > 1 ? 5 : 4)
                             .padding(.vertical, 2)
-                            .background(.red)
+                            .background(Color.roseRed)
                             .clipShape(Capsule())
-                            .offset(x: 12, y: -8)
+                            .shadow(color: Color.roseRed.opacity(0.8), radius: 4)
+                            .offset(x: 12, y: -6)
                     }
                 }
 
                 Text(tab.title)
-                    .font(.system(size: 10, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 10, weight: isSelected ? .bold : .medium))
+                    .foregroundStyle(isSelected ? Color.white : Color.secondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
-            .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-            .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+            .background(isSelected ? Color.cyan.opacity(0.14) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isSelected ? Color.cyan.opacity(0.3) : Color.clear, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
     }
