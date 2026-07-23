@@ -13,7 +13,7 @@
       }
       canvas { display: block; width: 100%; height: 100%; }
 
-      /* HUD Overlay Controls */
+      /* HUD Controls Overlay */
       #hud-overlay {
         position: absolute;
         bottom: 16px;
@@ -24,7 +24,7 @@
       }
       .hud-btn {
         background: rgba(15, 23, 42, 0.85);
-        border: 1px solid rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.15);
         color: #38bdf8;
         padding: 8px 12px;
         border-radius: 20px;
@@ -42,13 +42,13 @@
         background: rgba(56, 189, 248, 0.2);
       }
 
-      /* Node Inspector Tooltip Card */
+      /* Inspector Tooltip Card */
       #inspector-card {
         position: absolute;
         top: 16px;
         left: 16px;
-        background: rgba(15, 23, 42, 0.9);
-        border: 1px solid rgba(56, 189, 248, 0.3);
+        background: rgba(15, 23, 42, 0.92);
+        border: 1px solid rgba(56, 189, 248, 0.35);
         border-radius: 14px;
         padding: 12px 16px;
         backdrop-filter: blur(16px);
@@ -68,13 +68,14 @@
       .inspector-type { font-size: 10px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.8px; }
       .inspector-meta { font-size: 11px; color: #94a3b8; margin-top: 6px; display: flex; justify-content: space-between; }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   </head>
   <body>
-    <div id="graph-container"></div>
+    <div id="graph-container">
+      <canvas id="3d-canvas"></canvas>
+    </div>
 
     <div id="inspector-card">
-      <div class="inspector-type" id="ins-type">Node</div>
+      <div class="inspector-type" id="ins-type">3D Node</div>
       <div class="inspector-title" id="ins-title">Topic Name</div>
       <div class="inspector-meta">
         <span id="ins-cat">Category</span>
@@ -87,360 +88,339 @@
         <span>🔄 Auto-Rotate</span>
       </button>
       <button class="hud-btn" id="btn-reset">
-        <span>🎯 Reset View</span>
+        <span>🎯 Reset 3D View</span>
       </button>
     </div>
 
     <script>
       (function() {
-        let scene, camera, renderer;
-        let nodeMeshes = [];
-        let edgeLines = [];
-        let particlesSystem;
+        const canvas = document.getElementById('3d-canvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('graph-container');
+
+        let width = window.innerWidth;
+        let height = window.innerHeight;
         let rawData = { nodes: [], edges: [] };
         let currentLayout = "constellation3d";
         let selectedNodeId = null;
+
+        // 3D Camera & Orbital Control State
         let isAutoRotating = true;
-
-        // Touch & Orbit Interaction state
         let isDragging = false;
-        let previousMousePosition = { x: 0, y: 0 };
-        let targetRotationX = 0.2;
-        let targetRotationY = 0.4;
-        let rotationX = 0.2;
-        let rotationY = 0.4;
-        let targetZoom = 180;
-        let zoom = 180;
+        let lastMouse = { x: 0, y: 0 };
+        let rotX = 0.2;
+        let rotY = 0.4;
+        let targetRotX = 0.2;
+        let targetRotY = 0.4;
+        let cameraDist = 320;
+        let targetCameraDist = 320;
 
-        const container = document.getElementById("graph-container");
+        let calculated3DNodes = [];
+        let calculated3DEdges = [];
 
-        function initScene() {
-          scene = new THREE.Scene();
-          scene.fog = new THREE.FogExp2(0x070a12, 0.0025);
-
-          camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
-          camera.position.set(0, 0, zoom);
-
-          renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-          renderer.setSize(window.innerWidth, window.innerHeight);
-          renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-          renderer.shadowMap.enabled = true;
-          container.appendChild(renderer.domElement);
-
-          // Lighting setup
-          const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-          scene.add(ambientLight);
-
-          const cyanLight = new THREE.PointLight(0x00f2fe, 2, 300);
-          cyanLight.position.set(100, 100, 100);
-          scene.add(cyanLight);
-
-          const purpleLight = new THREE.PointLight(0x7f00ff, 2, 300);
-          purpleLight.position.set(-100, -100, -50);
-          scene.add(purpleLight);
-
-          // 3D Background Star Field
-          const starsGeo = new THREE.BufferGeometry();
-          const count = 600;
-          const posArray = new Float32Array(count * 3);
-          for(let i=0; i<count*3; i++) {
-            posArray[i] = (Math.random() - 0.5) * 400;
-          }
-          starsGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-          const starsMat = new THREE.PointsMaterial({
-            size: 1.5,
-            color: 0x38bdf8,
-            transparent: true,
-            opacity: 0.6
-          });
-          particlesSystem = new THREE.Points(starsGeo, starsMat);
-          scene.add(particlesSystem);
-
-          setupEvents();
-          animate();
+        function resize() {
+          width = window.innerWidth;
+          height = window.innerHeight;
+          canvas.width = width * window.devicePixelRatio;
+          canvas.height = height * window.devicePixelRatio;
+          ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
         }
+        window.addEventListener('resize', resize);
+        resize();
 
-        // Color helpers
-        function getCategoryColor(type, cat) {
-          if (type === 'category') return 0x38bdf8;
+        function getCategoryHex(type, cat) {
+          if (type === 'category') return '#38bdf8';
           const c = (cat || '').toLowerCase();
-          if (c.includes('meeting')) return 0x8250df;
-          if (c.includes('personal')) return 0xbf3989;
-          if (c.includes('reflection')) return 0x1a7f37;
-          if (c.includes('idea')) return 0x9a6700;
-          return 0x0891b2;
+          if (c.includes('meeting')) return '#8250df';
+          if (c.includes('personal')) return '#bf3989';
+          if (c.includes('reflection')) return '#10b981';
+          if (c.includes('idea')) return '#f59e0b';
+          return '#06b6d4';
         }
 
-        function calculate3DPositions(nodes, layout) {
-          const count = nodes.length;
-          const positions = {};
+        // Generate 3D Positions based on View Mode
+        function build3DLayout(nodes, edges, layout) {
+          const count = nodes.length || 1;
+          const nodeMap = {};
+          const resultNodes = [];
 
           nodes.forEach((n, idx) => {
             let x = 0, y = 0, z = 0;
 
             if (layout === "vectorSpace3d") {
-              // Qdrant 3D vector space projection
-              const hash = (n.id || n.label).split('').reduce((a,b)=>((a<<5)-a)+b.charCodeAt(0),0);
-              const angleX = (hash % 360) * (Math.PI / 180);
-              const angleY = ((hash >> 3) % 360) * (Math.PI / 180);
-              const radius = 40 + (n.type === 'category' ? 0 : 35 * Math.sin(hash));
+              // Qdrant 3D vector space embedding projection
+              const hash = (n.id || n.label).split('').reduce((a,b)=>((a<<5)-a)+b.charCodeAt(0), 0);
+              const angleX = Math.abs(hash % 360) * (Math.PI / 180);
+              const angleY = Math.abs((hash >> 3) % 360) * (Math.PI / 180);
+              const radius = 60 + (n.type === 'category' ? 0 : 50 * Math.sin(hash));
 
               x = radius * Math.cos(angleX) * Math.sin(angleY);
               y = radius * Math.sin(angleX) * Math.sin(angleY);
               z = radius * Math.cos(angleY);
 
             } else if (layout === "isometric25d") {
-              // 2.5D elevated grid matrix
-              const cols = 5;
+              // 2.5D Isometric matrix plane with elevated 3D pillars
+              const cols = Math.ceil(Math.sqrt(count));
               const row = Math.floor(idx / cols);
               const col = idx % cols;
-              x = (col - cols/2) * 28;
-              z = (row - count/cols/2) * 28;
-              y = n.type === 'category' ? 15 : (n.metricValue || 10) * 0.4;
+              x = (col - cols/2) * 45;
+              z = (row - cols/2) * 45;
+              y = n.type === 'category' ? 30 : ((n.metricValue || n.count || 5) * 0.8);
 
             } else if (layout === "galaxyOrbit3d") {
-              // Gravitational category star hubs + orbital rings
+              // 3D Galaxy orbit around category star hubs
               if (n.type === 'category') {
                 const catIdx = nodes.filter(nd => nd.type === 'category').indexOf(n);
                 const totalCat = nodes.filter(nd => nd.type === 'category').length || 1;
                 const angle = (catIdx / totalCat) * Math.PI * 2;
-                x = Math.cos(angle) * 55;
-                z = Math.sin(angle) * 55;
-                y = Math.sin(angle * 2) * 15;
+                x = Math.cos(angle) * 90;
+                z = Math.sin(angle) * 90;
+                y = Math.sin(angle * 2) * 25;
               } else {
-                const parentCat = (n.categories && n.categories[0]) || 'misc';
                 const angle = (idx / count) * Math.PI * 2;
-                const dist = 25 + (idx % 3) * 12;
+                const dist = 35 + (idx % 4) * 20;
                 x = Math.cos(angle) * dist;
                 z = Math.sin(angle) * dist;
-                y = (Math.sin(angle * 3) * 12);
+                y = Math.sin(angle * 3) * 20;
               }
 
             } else if (layout === "volumetric3d") {
-              // 3D Bar matrix
+              // 3D Volumetric bar grid
               const phi = Math.acos(-1 + (2 * idx) / count);
               const theta = Math.sqrt(count * Math.PI) * phi;
-              const r = 60;
+              const r = 90;
               x = r * Math.cos(theta) * Math.sin(phi);
               y = r * Math.sin(theta) * Math.sin(phi);
               z = r * Math.cos(phi);
 
             } else {
-              // 3D Constellation (Force-directed spherical layout)
+              // 3D Neural Constellation (Spherical Force Layout)
               const phi = Math.acos(-1 + (2 * idx) / count);
               const theta = Math.sqrt(count * Math.PI) * phi;
-              const r = n.type === 'category' ? 35 : 65;
+              const r = n.type === 'category' ? 50 : 100;
               x = r * Math.cos(theta) * Math.sin(phi);
               y = r * Math.sin(theta) * Math.sin(phi);
               z = r * Math.cos(phi);
             }
 
-            positions[n.id] = { x, y, z };
+            const item = {
+              ...n,
+              x3d: x,
+              y3d: y,
+              z3d: z,
+              colorHex: getCategoryHex(n.type, n.categories && n.categories[0]),
+              radius: n.type === 'category' ? 12 : Math.max(5, Math.min(10, (n.metricValue || n.count || 1) * 0.2))
+            };
+            nodeMap[n.id] = item;
+            resultNodes.push(item);
           });
 
-          return positions;
-        }
-
-        function render3DGraph() {
-          // Clear existing meshes & lines
-          nodeMeshes.forEach(m => scene.remove(m));
-          edgeLines.forEach(l => scene.remove(l));
-          nodeMeshes = [];
-          edgeLines = [];
-
-          if (!rawData.nodes || rawData.nodes.length === 0) return;
-
-          const positions = calculate3DPositions(rawData.nodes, currentLayout);
-
-          // 1. Build 3D Node Spheres
-          rawData.nodes.forEach(n => {
-            const pos = positions[n.id] || { x: 0, y: 0, z: 0 };
-            const isCat = n.type === 'category';
-            const radius = isCat ? 5.5 : Math.max(2.5, Math.min(6.0, (n.metricValue || 1) * 0.15));
-            const hexColor = getCategoryColor(n.type, n.categories && n.categories[0]);
-
-            const geom = new THREE.SphereGeometry(radius, 24, 24);
-            const mat = new THREE.MeshStandardMaterial({
-              color: hexColor,
-              roughness: 0.2,
-              metalness: 0.8,
-              emissive: hexColor,
-              emissiveIntensity: isCat ? 0.4 : 0.2
-            });
-
-            const sphere = new THREE.Mesh(geom, mat);
-            sphere.position.set(pos.x, pos.y, pos.z);
-            sphere.userData = n;
-            scene.add(sphere);
-            nodeMeshes.push(sphere);
-
-            // Add 3D Outer Halo Ring for categories
-            if (isCat) {
-              const ringGeom = new THREE.RingGeometry(radius + 1.5, radius + 2.5, 32);
-              const ringMat = new THREE.MeshBasicMaterial({ color: hexColor, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
-              const ring = new THREE.Mesh(ringGeom, ringMat);
-              ring.position.set(pos.x, pos.y, pos.z);
-              ring.rotation.x = Math.PI / 2;
-              scene.add(ring);
-              nodeMeshes.push(ring);
+          const resultEdges = [];
+          edges.forEach(e => {
+            if (nodeMap[e.source] && nodeMap[e.target]) {
+              resultEdges.push({
+                ...e,
+                sourceNode: nodeMap[e.source],
+                targetNode: nodeMap[e.target]
+              });
             }
           });
 
-          // 2. Build 3D Laser Link Edges
-          rawData.edges.forEach(e => {
-            const p1 = positions[e.source];
-            const p2 = positions[e.target];
-            if (!p1 || !p2) return;
-
-            const edgeGeom = new THREE.BufferGeometry().setFromPoints([
-              new THREE.Vector3(p1.x, p1.y, p1.z),
-              new THREE.Vector3(p2.x, p2.y, p2.z)
-            ]);
-
-            const edgeMat = new THREE.LineBasicMaterial({
-              color: 0x38bdf8,
-              transparent: true,
-              opacity: 0.35,
-              linewidth: 1
-            });
-
-            const line = new THREE.Line(edgeGeom, edgeMat);
-            scene.add(line);
-            edgeLines.push(line);
-          });
+          calculated3DNodes = resultNodes;
+          calculated3DEdges = resultEdges;
         }
 
-        // Event Listeners
-        function setupEvents() {
-          window.addEventListener('resize', onWindowResize);
+        // 3D Math & Project to 2D Screen
+        function project3D(x, y, z) {
+          // Rotate around Y axis
+          const cosY = Math.cos(rotY);
+          const sinY = Math.sin(rotY);
+          let x1 = x * cosY - z * sinY;
+          let z1 = z * cosY + x * sinY;
 
-          // Touch Orbit & Pan
-          container.addEventListener('pointerdown', e => {
-            isDragging = true;
-            previousMousePosition = { x: e.clientX, y: e.clientY };
-            isAutoRotating = false;
+          // Rotate around X axis
+          const cosX = Math.cos(rotX);
+          const sinX = Math.sin(rotX);
+          let y2 = y * cosX - z1 * sinX;
+          let z2 = z1 * cosX + y * sinX;
+
+          // Perspective projection
+          const fov = 400;
+          const scale = fov / (fov + z2 + cameraDist);
+          const sx = width / 2 + x1 * scale;
+          const sy = height / 2 + y2 * scale;
+
+          return { sx, sy, scale, zDepth: z2 };
+        }
+
+        // Render Frame Loop
+        function renderFrame() {
+          ctx.clearRect(0, 0, width, height);
+
+          if (isAutoRotating) {
+            targetRotY += 0.003;
+          }
+
+          rotX += (targetRotX - rotX) * 0.08;
+          rotY += (targetRotY - rotY) * 0.08;
+          cameraDist += (targetCameraDist - cameraDist) * 0.08;
+
+          // Project nodes
+          const projectedNodes = calculated3DNodes.map(n => {
+            const p = project3D(n.x3d, n.y3d, n.z3d);
+            return { ...n, sx: p.sx, sy: p.sy, scale: p.scale, zDepth: p.zDepth };
           });
 
-          container.addEventListener('pointermove', e => {
-            if (!isDragging) return;
-            const deltaX = e.clientX - previousMousePosition.x;
-            const deltaY = e.clientY - previousMousePosition.y;
+          // Sort by zDepth so distant nodes render behind near nodes
+          projectedNodes.sort((a, b) => b.zDepth - a.zDepth);
 
-            targetRotationY += deltaX * 0.005;
-            targetRotationX += deltaY * 0.005;
+          // 1. Draw 3D Connecting Laser Edges
+          ctx.lineWidth = 1;
+          calculated3DEdges.forEach(e => {
+            const p1 = project3D(e.sourceNode.x3d, e.sourceNode.y3d, e.sourceNode.z3d);
+            const p2 = project3D(e.targetNode.x3d, e.targetNode.y3d, e.targetNode.z3d);
 
-            previousMousePosition = { x: e.clientX, y: e.clientY };
+            ctx.strokeStyle = (selectedNodeId === e.source || selectedNodeId === e.target)
+              ? 'rgba(56, 189, 248, 0.8)'
+              : 'rgba(56, 189, 248, 0.2)';
+            ctx.lineWidth = (selectedNodeId === e.source || selectedNodeId === e.target) ? 2 : 1;
+
+            ctx.beginPath();
+            ctx.moveTo(p1.sx, p1.sy);
+            ctx.lineTo(p2.sx, p2.sy);
+            ctx.stroke();
           });
 
-          window.addEventListener('pointerup', e => {
-            if (isDragging) {
-              isDragging = false;
-              // Raycast on tap
-              checkRaycast(e.clientX, e.clientY);
+          // 2. Draw 3D Glowing Nodes
+          projectedNodes.forEach(n => {
+            const r = Math.max(2, n.radius * n.scale);
+            const isSelected = selectedNodeId === n.id;
+
+            // Node Outer Glow Halo
+            const grad = ctx.createRadialGradient(n.sx, n.sy, 0, n.sx, n.sy, r * 2.5);
+            grad.addColorStop(0, n.colorHex);
+            grad.addColorStop(0.5, n.colorHex + '66');
+            grad.addColorStop(1, 'transparent');
+
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(n.sx, n.sy, r * 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Core Sphere
+            ctx.fillStyle = isSelected ? '#ffffff' : n.colorHex;
+            ctx.beginPath();
+            ctx.arc(n.sx, n.sy, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Node Text Label
+            if (n.scale > 0.75 || isSelected) {
+              ctx.font = `${Math.max(9, Math.round(11 * n.scale))}px -apple-system, sans-serif`;
+              ctx.fillStyle = isSelected ? '#38bdf8' : '#f8fafc';
+              ctx.fillText(n.label, n.sx + r + 4, n.sy + 4);
             }
           });
 
-          // Pinch zoom
-          container.addEventListener('wheel', e => {
-            targetZoom += e.deltaY * 0.15;
-            targetZoom = Math.max(50, Math.min(350, targetZoom));
-          });
-
-          document.getElementById('btn-rotate').addEventListener('click', () => {
-            isAutoRotating = !isAutoRotating;
-          });
-
-          document.getElementById('btn-reset').addEventListener('click', () => {
-            targetRotationX = 0.2;
-            targetRotationY = 0.4;
-            targetZoom = 180;
-            selectedNodeId = null;
-            document.getElementById('inspector-card').classList.remove('active');
-          });
+          requestAnimationFrame(renderFrame);
         }
 
-        function checkRaycast(clientX, clientY) {
-          const mouse = new THREE.Vector2(
-            (clientX / window.innerWidth) * 2 - 1,
-            -(clientY / window.innerHeight) * 2 + 1
-          );
+        // Pointer & Orbit Controls
+        container.addEventListener('pointerdown', e => {
+          isDragging = true;
+          lastMouse = { x: e.clientX, y: e.clientY };
+          isAutoRotating = false;
+        });
 
-          const raycaster = new THREE.Raycaster();
-          raycaster.setFromCamera(mouse, camera);
+        container.addEventListener('pointermove', e => {
+          if (!isDragging) return;
+          const dx = e.clientX - lastMouse.x;
+          const dy = e.clientY - lastMouse.y;
+          targetRotY += dx * 0.005;
+          targetRotX += dy * 0.005;
+          lastMouse = { x: e.clientX, y: e.clientY };
+        });
 
-          const intersects = raycaster.intersectObjects(nodeMeshes.filter(m => m.userData && m.userData.id));
-          if (intersects.length > 0) {
-            const node = intersects[0].object.userData;
-            selectedNodeId = node.id;
-            showInspector(node);
+        window.addEventListener('pointerup', e => {
+          if (isDragging) {
+            isDragging = false;
+            // Raycast click test
+            const clickX = e.clientX;
+            const clickY = e.clientY;
 
-            // Notify Swift WKWebView
-            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nodeSelected) {
-              window.webkit.messageHandlers.nodeSelected.postMessage(node.id);
+            let clickedNode = null;
+            let minDist = 9999;
+
+            calculated3DNodes.forEach(n => {
+              const p = project3D(n.x3d, n.y3d, n.z3d);
+              const dist = Math.hypot(p.sx - clickX, p.sy - clickY);
+              if (dist < Math.max(20, n.radius * p.scale) && dist < minDist) {
+                minDist = dist;
+                clickedNode = n;
+              }
+            });
+
+            if (clickedNode) {
+              selectedNodeId = clickedNode.id;
+              showInspector(clickedNode);
+              if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nodeTapped) {
+                window.webkit.messageHandlers.nodeTapped.postMessage(clickedNode.id);
+              }
             }
           }
-        }
+        });
 
         function showInspector(node) {
           const card = document.getElementById('inspector-card');
           document.getElementById('ins-title').innerText = node.fullLabel || node.label;
           document.getElementById('ins-type').innerText = node.type;
           document.getElementById('ins-cat').innerText = (node.categories && node.categories.join(', ')) || 'General';
-          document.getElementById('ins-count').innerText = `${node.metricValue || 0} mentions`;
+          document.getElementById('ins-count').innerText = `${node.metricValue || node.count || 0} mentions`;
           card.classList.add('active');
         }
 
-        function onWindowResize() {
-          camera.aspect = window.innerWidth / window.innerHeight;
-          camera.updateProjectionMatrix();
-          renderer.setSize(window.innerWidth, window.innerHeight);
-        }
+        document.getElementById('btn-rotate').addEventListener('click', () => {
+          isAutoRotating = !isAutoRotating;
+        });
 
-        function animate() {
-          requestAnimationFrame(animate);
+        document.getElementById('btn-reset').addEventListener('click', () => {
+          targetRotX = 0.2;
+          targetRotY = 0.4;
+          targetCameraDist = 320;
+          selectedNodeId = null;
+          document.getElementById('inspector-card').classList.remove('active');
+        });
 
-          if (isAutoRotating) {
-            targetRotationY += 0.002;
-          }
-
-          rotationX += (targetRotationX - rotationX) * 0.08;
-          rotationY += (targetRotationY - rotationY) * 0.08;
-          zoom += (targetZoom - zoom) * 0.08;
-
-          camera.position.x = zoom * Math.sin(rotationY) * Math.cos(rotationX);
-          camera.position.y = zoom * Math.sin(rotationX);
-          camera.position.z = zoom * Math.cos(rotationY) * Math.cos(rotationX);
-          camera.lookAt(0, 0, 0);
-
-          if (particlesSystem) {
-            particlesSystem.rotation.y += 0.0005;
-          }
-
-          renderer.render(scene, camera);
-        }
-
-        // Bridge methods called from Swift
-        window.renderGraph = function(dataJSON, layoutName) {
+        // Bridge functions for Swift WKWebView
+        window.updateGraph = function(payload, layoutName, selectedNodeIdParam) {
           try {
-            rawData = typeof dataJSON === 'string' ? JSON.parse(dataJSON) : dataJSON;
+            rawData = typeof payload === 'string' ? JSON.parse(payload) : payload;
             if (layoutName) currentLayout = layoutName;
-            render3DGraph();
-          } catch (e) {
-            console.error("3D Graph Render error:", e);
+            if (selectedNodeIdParam) selectedNodeId = selectedNodeIdParam;
+            build3DLayout(rawData.nodes || [], rawData.edges || [], currentLayout);
+
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.graphReady) {
+              window.webkit.messageHandlers.graphReady.postMessage("ready");
+            }
+          } catch (err) {
+            console.error("Graph render error:", err);
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.graphError) {
+              window.webkit.messageHandlers.graphError.postMessage(err.message || String(err));
+            }
           }
         };
 
+        window.renderGraph = window.updateGraph;
         window.setLayout = function(layoutName) {
           currentLayout = layoutName;
-          render3DGraph();
+          build3DLayout(rawData.nodes || [], rawData.edges || [], currentLayout);
         };
 
         window.setSelectedNode = function(nodeId) {
           selectedNodeId = nodeId;
         };
 
-        // Bootstrap scene
-        initScene();
+        // Start render loop
+        renderFrame();
       })();
     </script>
   </body>
