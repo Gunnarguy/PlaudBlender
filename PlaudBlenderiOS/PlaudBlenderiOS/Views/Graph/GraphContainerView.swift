@@ -257,24 +257,10 @@ struct GraphContainerView: View {
             }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.thickMaterial)
-        .overlay(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(selectedLayoutTitle)
-                    .font(.caption.weight(.semibold))
-                Text(interactionHint)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(12)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .padding(12)
-        }
         .clipShape(RoundedRectangle(cornerRadius: 26))
         .overlay(
             RoundedRectangle(cornerRadius: 26)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
     }
 

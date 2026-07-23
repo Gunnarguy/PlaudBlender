@@ -13,11 +13,11 @@
       }
       canvas { display: block; width: 100%; height: 100%; }
 
-      /* Top-Right Compact Mini HUD Controls Bar */
+      /* Bottom-Right Mini Floating Control Bar */
       #hud-overlay {
         position: absolute;
-        top: 14px;
-        right: 14px;
+        bottom: 12px;
+        right: 12px;
         display: flex;
         align-items: center;
         gap: 6px;
@@ -49,49 +49,11 @@
       .hud-btn:active {
         transform: scale(0.9);
       }
-
-      /* Inspector Tooltip Card */
-      #inspector-card {
-        position: absolute;
-        top: 14px;
-        left: 14px;
-        background: rgba(15, 23, 42, 0.94);
-        border: 1px solid rgba(56, 189, 248, 0.4);
-        border-radius: 16px;
-        padding: 10px 14px;
-        backdrop-filter: blur(20px);
-        box-shadow: 0 10px 36px rgba(0, 0, 0, 0.7);
-        max-width: 240px;
-        opacity: 0;
-        transform: translateY(-8px) scale(0.95);
-        transition: opacity 0.3s ease, transform 0.3s ease;
-        pointer-events: none;
-        z-index: 100;
-      }
-      #inspector-card.active {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-        pointer-events: auto;
-      }
-      .inspector-title { font-size: 13px; font-weight: 800; color: #ffffff; margin-bottom: 2px; }
-      .inspector-type { font-size: 9px; font-weight: 800; color: #38bdf8; text-transform: uppercase; letter-spacing: 1px; }
-      .inspector-meta { font-size: 10px; color: #94a3b8; margin-top: 4px; display: flex; justify-content: space-between; align-items: center; }
-      .inspector-close { font-size: 11px; color: #94a3b8; padding: 2px 4px; cursor: pointer; float: right; }
     </style>
   </head>
   <body>
     <div id="graph-container">
       <canvas id="3d-canvas"></canvas>
-    </div>
-
-    <div id="inspector-card">
-      <span class="inspector-close" id="ins-close">✕</span>
-      <div class="inspector-type" id="ins-type">3D Node</div>
-      <div class="inspector-title" id="ins-title">Topic Name</div>
-      <div class="inspector-meta">
-        <span id="ins-cat">Category</span>
-        <strong id="ins-count" style="color: #38bdf8;">0 mentions</strong>
-      </div>
     </div>
 
     <div id="hud-overlay">
@@ -512,7 +474,6 @@
 
           if (clickedNode) {
             selectedNodeId = clickedNode.id;
-            showInspector(clickedNode);
 
             // Smoothly focus camera directly on node up close
             focusOffsetX = clickedNode.x3d;
@@ -525,20 +486,6 @@
             }
           }
         }
-
-        function showInspector(node) {
-          const card = document.getElementById('inspector-card');
-          document.getElementById('ins-title').innerText = node.fullLabel || node.label;
-          document.getElementById('ins-type').innerText = node.type;
-          document.getElementById('ins-cat').innerText = (node.categories && node.categories.join(', ')) || 'General';
-          document.getElementById('ins-count').innerText = `${node.metricValue || node.count || 0} mentions`;
-          card.classList.add('active');
-        }
-
-        document.getElementById('ins-close').addEventListener('click', () => {
-          document.getElementById('inspector-card').classList.remove('active');
-          selectedNodeId = null;
-        });
 
         // HUD Controls Action Bindings (Ultra Zoom Range 15 to 2500)
         document.getElementById('btn-zoom-in').addEventListener('click', () => {
@@ -572,7 +519,6 @@
           focusOffsetY = 0;
           focusOffsetZ = 0;
           selectedNodeId = null;
-          document.getElementById('inspector-card').classList.remove('active');
         });
 
         // Bridge functions for Swift WKWebView
