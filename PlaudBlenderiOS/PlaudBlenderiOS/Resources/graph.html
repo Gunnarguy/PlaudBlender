@@ -13,63 +13,58 @@
       }
       canvas { display: block; width: 100%; height: 100%; }
 
-      /* HUD Controls Overlay */
+      /* Top-Right Compact Mini HUD Controls Bar */
       #hud-overlay {
         position: absolute;
-        bottom: 16px;
-        left: 50%;
-        transform: translateX(-50%);
+        top: 14px;
+        right: 14px;
         display: flex;
         align-items: center;
         gap: 6px;
         z-index: 100;
-        max-width: 95%;
-        flex-wrap: wrap;
-        justify-content: center;
       }
       .hud-btn {
-        background: rgba(15, 23, 42, 0.88);
-        border: 1px solid rgba(56, 189, 248, 0.25);
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.3);
         color: #f8fafc;
-        padding: 8px 14px;
-        border-radius: 20px;
-        font-size: 11px;
-        font-weight: 700;
+        width: 34px;
+        height: 34px;
+        border-radius: 17px;
+        font-size: 13px;
+        font-weight: 800;
         backdrop-filter: blur(16px);
         box-shadow: 0 4px 16px rgba(0,0,0,0.6);
         cursor: pointer;
         display: flex;
         align-items: center;
-        gap: 6px;
+        justify-content: center;
         transition: all 0.2s ease;
       }
       .hud-btn.active {
-        background: rgba(56, 189, 248, 0.25);
+        background: rgba(56, 189, 248, 0.3);
         border-color: #38bdf8;
         color: #38bdf8;
-        box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
       }
       .hud-btn:active {
-        transform: scale(0.92);
+        transform: scale(0.9);
       }
 
       /* Inspector Tooltip Card */
       #inspector-card {
         position: absolute;
-        top: 16px;
-        left: 16px;
-        right: 16px;
-        margin: 0 auto;
-        background: rgba(15, 23, 42, 0.92);
+        top: 14px;
+        left: 14px;
+        background: rgba(15, 23, 42, 0.94);
         border: 1px solid rgba(56, 189, 248, 0.4);
         border-radius: 16px;
-        padding: 12px 16px;
+        padding: 10px 14px;
         backdrop-filter: blur(20px);
         box-shadow: 0 10px 36px rgba(0, 0, 0, 0.7);
-        max-width: 320px;
+        max-width: 240px;
         opacity: 0;
-        transform: translateY(-12px) scale(0.95);
-        transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        transform: translateY(-8px) scale(0.95);
+        transition: opacity 0.3s ease, transform 0.3s ease;
         pointer-events: none;
         z-index: 100;
       }
@@ -78,10 +73,10 @@
         transform: translateY(0) scale(1);
         pointer-events: auto;
       }
-      .inspector-title { font-size: 14px; font-weight: 800; color: #ffffff; margin-bottom: 2px; }
-      .inspector-type { font-size: 10px; font-weight: 800; color: #38bdf8; text-transform: uppercase; letter-spacing: 1px; }
-      .inspector-meta { font-size: 11px; color: #94a3b8; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; }
-      .inspector-close { font-size: 12px; color: #94a3b8; padding: 2px 6px; cursor: pointer; float: right; }
+      .inspector-title { font-size: 13px; font-weight: 800; color: #ffffff; margin-bottom: 2px; }
+      .inspector-type { font-size: 9px; font-weight: 800; color: #38bdf8; text-transform: uppercase; letter-spacing: 1px; }
+      .inspector-meta { font-size: 10px; color: #94a3b8; margin-top: 4px; display: flex; justify-content: space-between; align-items: center; }
+      .inspector-close { font-size: 11px; color: #94a3b8; padding: 2px 4px; cursor: pointer; float: right; }
     </style>
   </head>
   <body>
@@ -100,18 +95,10 @@
     </div>
 
     <div id="hud-overlay">
-      <button class="hud-btn" id="btn-zoom-in">
-        <span>➕ Zoom In</span>
-      </button>
-      <button class="hud-btn" id="btn-zoom-out">
-        <span>➖ Zoom Out</span>
-      </button>
-      <button class="hud-btn active" id="btn-rotate">
-        <span>🔄 Auto-Orbit</span>
-      </button>
-      <button class="hud-btn" id="btn-reset">
-        <span>🎯 Recenter</span>
-      </button>
+      <button class="hud-btn" id="btn-zoom-in" title="Zoom In">🔍+</button>
+      <button class="hud-btn" id="btn-zoom-out" title="Zoom Out">🔍-</button>
+      <button class="hud-btn active" id="btn-rotate" title="Auto Orbit">🔄</button>
+      <button class="hud-btn" id="btn-reset" title="Recenter">🎯</button>
     </div>
 
     <script>
@@ -132,8 +119,8 @@
         let rotY = 0.45;
         let targetRotX = 0.25;
         let targetRotY = 0.45;
-        let cameraDist = 550; // Increased base distance for spacious view
-        let targetCameraDist = 550;
+        let cameraDist = 450;
+        let targetCameraDist = 450;
         let focusOffsetX = 0;
         let focusOffsetY = 0;
         let focusOffsetZ = 0;
@@ -154,11 +141,11 @@
         resize();
 
         // 3D Background Star Field
-        for (let i = 0; i < 300; i++) {
+        for (let i = 0; i < 250; i++) {
           stars.push({
-            x: (Math.random() - 0.5) * 1600,
-            y: (Math.random() - 0.5) * 1600,
-            z: (Math.random() - 0.5) * 1600,
+            x: (Math.random() - 0.5) * 2000,
+            y: (Math.random() - 0.5) * 2000,
+            z: (Math.random() - 0.5) * 2000,
             size: Math.random() * 1.8 + 0.5,
             opacity: Math.random() * 0.5 + 0.2
           });
@@ -174,13 +161,13 @@
           return '#06b6d4';
         }
 
-        // Distinct Category Hub Octant Coordinates in 3D Space
+        // Spatially Segregated Category Galaxies (3x Distance Separation)
         const categoryHubCenters = {
-          'meeting': { x: -280, y: 140, z: -220 },
-          'personal': { x: 300, y: -120, z: -180 },
-          'reflection': { x: -260, y: -180, z: 260 },
-          'idea': { x: 280, y: 200, z: 220 },
-          'misc': { x: 0, y: 320, z: -50 }
+          'meeting': { x: -600, y: 300, z: -450 },
+          'personal': { x: 650, y: -250, z: -400 },
+          'reflection': { x: -550, y: -400, z: 550 },
+          'idea': { x: 600, y: 450, z: 450 },
+          'misc': { x: 0, y: 700, z: -100 }
         };
 
         function getHubCenter(cat) {
@@ -205,11 +192,11 @@
             const hub = getHubCenter(primaryCat);
 
             if (layout === "vectorSpace3d") {
-              // Qdrant 3D vector space embedding projection (Radius 450)
+              // Qdrant 3D vector space embedding projection (Radius 600)
               const hash = (n.id || n.label).split('').reduce((a,b)=>((a<<5)-a)+b.charCodeAt(0), 0);
               const angleX = Math.abs(hash % 360) * (Math.PI / 180);
               const angleY = Math.abs((hash >> 3) % 360) * (Math.PI / 180);
-              const radius = 120 + (n.type === 'category' ? 0 : 250 * Math.sin(hash));
+              const radius = 200 + (n.type === 'category' ? 0 : 380 * Math.sin(hash));
 
               x = radius * Math.cos(angleX) * Math.sin(angleY);
               y = radius * Math.sin(angleX) * Math.sin(angleY);
@@ -220,9 +207,9 @@
               const cols = Math.ceil(Math.sqrt(count));
               const row = Math.floor(idx / cols);
               const col = idx % cols;
-              x = (col - cols/2) * 110;
-              z = (row - cols/2) * 110;
-              y = n.type === 'category' ? 60 : ((n.metricValue || n.count || 5) * 2.2);
+              x = (col - cols/2) * 180;
+              z = (row - cols/2) * 180;
+              y = n.type === 'category' ? 90 : ((n.metricValue || n.count || 5) * 3.0);
 
             } else if (layout === "galaxyOrbit3d") {
               // 3D Galaxy Orbit around category star hubs
@@ -232,10 +219,10 @@
                 z = hub.z;
               } else {
                 const angle = (idx / count) * Math.PI * 2;
-                const dist = 70 + (idx % 5) * 35;
+                const dist = 140 + (idx % 5) * 60;
                 x = hub.x + Math.cos(angle) * dist;
                 z = hub.z + Math.sin(angle) * dist;
-                y = hub.y + Math.sin(angle * 3) * 35;
+                y = hub.y + Math.sin(angle * 3) * 60;
               }
 
             } else if (layout === "volumetric3d") {
@@ -243,22 +230,22 @@
               const cols = Math.ceil(Math.sqrt(count));
               const row = Math.floor(idx / cols);
               const col = idx % cols;
-              x = (col - cols/2) * 90;
-              z = (row - cols/2) * 90;
-              y = Math.sin(idx) * 60;
+              x = (col - cols/2) * 160;
+              z = (row - cols/2) * 160;
+              y = Math.sin(idx) * 120;
 
             } else {
               // 3D Neural Constellation (Spatially Segregated Category Systems)
               if (n.type === 'category') {
-                x = hub.x * 1.3;
-                y = hub.y * 1.3;
-                z = hub.z * 1.3;
+                x = hub.x;
+                y = hub.y;
+                z = hub.z;
               } else {
                 const angle = (idx / count) * Math.PI * 2;
-                const offsetRadius = 60 + (idx % 6) * 30;
-                x = hub.x + Math.cos(angle) * offsetRadius + (Math.random() - 0.5) * 30;
-                y = hub.y + Math.sin(angle) * offsetRadius + (Math.random() - 0.5) * 30;
-                z = hub.z + Math.sin(angle * 2) * offsetRadius + (Math.random() - 0.5) * 30;
+                const offsetRadius = 120 + (idx % 6) * 55;
+                x = hub.x + Math.cos(angle) * offsetRadius + (Math.random() - 0.5) * 40;
+                y = hub.y + Math.sin(angle) * offsetRadius + (Math.random() - 0.5) * 40;
+                z = hub.z + Math.sin(angle * 2) * offsetRadius + (Math.random() - 0.5) * 40;
               }
             }
 
@@ -268,14 +255,14 @@
               y3d: y,
               z3d: z,
               colorHex: getCategoryHex(n.type, primaryCat),
-              radius: n.type === 'category' ? 16 : Math.max(8, Math.min(15, (n.metricValue || n.count || 1) * 0.3))
+              radius: n.type === 'category' ? 18 : Math.max(9, Math.min(16, (n.metricValue || n.count || 1) * 0.35))
             };
             nodeMap[n.id] = item;
             resultNodes.push(item);
           });
 
-          // 2. Iterative Coulomb Force Repulsion Physics to prevent overlapping
-          for (let iter = 0; iter < 8; iter++) {
+          // 2. Iterative Coulomb Force Repulsion Physics
+          for (let iter = 0; iter < 10; iter++) {
             for (let i = 0; i < resultNodes.length; i++) {
               for (let j = i + 1; j < resultNodes.length; j++) {
                 const n1 = resultNodes[i];
@@ -284,10 +271,10 @@
                 const dy = n2.y3d - n1.y3d;
                 const dz = n2.z3d - n1.z3d;
                 const dist = Math.hypot(dx, dy, dz) || 1;
-                const minDist = (n1.radius + n2.radius) * 4.5;
+                const minDist = (n1.radius + n2.radius) * 6.0;
 
                 if (dist < minDist) {
-                  const force = (minDist - dist) / dist * 0.3;
+                  const force = (minDist - dist) / dist * 0.35;
                   n1.x3d -= dx * force;
                   n1.y3d -= dy * force;
                   n1.z3d -= dz * force;
@@ -378,8 +365,8 @@
             const p2 = project3D(e.targetNode.x3d, e.targetNode.y3d, e.targetNode.z3d);
             const isHighlighted = (selectedNodeId === e.source || selectedNodeId === e.target);
 
-            ctx.strokeStyle = isHighlighted ? 'rgba(56, 189, 248, 0.9)' : 'rgba(56, 189, 248, 0.18)';
-            ctx.lineWidth = isHighlighted ? 2.5 : 1.0;
+            ctx.strokeStyle = isHighlighted ? 'rgba(56, 189, 248, 0.95)' : 'rgba(56, 189, 248, 0.22)';
+            ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
 
             ctx.beginPath();
             ctx.moveTo(p1.sx, p1.sy);
@@ -387,7 +374,7 @@
             ctx.stroke();
 
             // Animated Energy Pulse Particle along line
-            if (isHighlighted || Math.random() < 0.25) {
+            if (isHighlighted || Math.random() < 0.2) {
               const t = (pulseTime + (e.source.charCodeAt(0) || 0) * 0.1) % 1.0;
               const px = p1.sx + (p2.sx - p1.sx) * t;
               const py = p1.sy + (p2.sy - p1.sy) * t;
@@ -400,7 +387,7 @@
           });
 
           // 2. Draw 3D Glowing Nodes & Selective Adaptive Text Labels
-          projectedNodes.forEach((n, idx) => {
+          projectedNodes.forEach(n => {
             const r = Math.max(5, n.radius * n.scale);
             const isSelected = selectedNodeId === n.id;
             const isCategory = n.type === 'category';
@@ -428,8 +415,8 @@
               ctx.stroke();
             }
 
-            // Adaptive Label LOD: Only render text for Category Star Hubs, Selected Nodes, or Top 12 nodes when zoomed in!
-            const shouldShowText = isCategory || isSelected || (n.scale > 0.75 && (n.metricValue || 0) > 40);
+            // Adaptive Label LOD: Text for Category Star Hubs, Selected Nodes, or Top nodes when zoomed in!
+            const shouldShowText = isCategory || isSelected || n.scale > 0.65;
 
             if (shouldShowText) {
               const fontSize = Math.max(10, Math.round((isCategory ? 13 : 11) * n.scale));
@@ -456,7 +443,7 @@
 
         // --- NATIVE IOS MULTI-TOUCH GESTURE ENGINE ---
         let touchStartDist = 0;
-        let startCameraDist = 550;
+        let startCameraDist = 450;
         let touchStartTime = 0;
         let touchStartPos = { x: 0, y: 0 };
 
@@ -492,7 +479,7 @@
               e.touches[0].clientY - e.touches[1].clientY
             );
             const factor = touchStartDist / Math.max(currentDist, 1);
-            targetCameraDist = Math.max(15, Math.min(2000, startCameraDist * factor));
+            targetCameraDist = Math.max(15, Math.min(2500, startCameraDist * factor));
           }
         }, { passive: true });
 
@@ -553,19 +540,19 @@
           selectedNodeId = null;
         });
 
-        // HUD Controls Action Bindings (Ultra Zoom Range 15 to 2000)
+        // HUD Controls Action Bindings (Ultra Zoom Range 15 to 2500)
         document.getElementById('btn-zoom-in').addEventListener('click', () => {
           targetCameraDist = Math.max(15, targetCameraDist - 120);
         });
 
         document.getElementById('btn-zoom-out').addEventListener('click', () => {
-          targetCameraDist = Math.min(2000, targetCameraDist + 120);
+          targetCameraDist = Math.min(2500, targetCameraDist + 120);
         });
 
         // Mouse Wheel & Trackpad Zooming
         container.addEventListener('wheel', e => {
           targetCameraDist += e.deltaY * 0.4;
-          targetCameraDist = Math.max(15, Math.min(2000, targetCameraDist));
+          targetCameraDist = Math.max(15, Math.min(2500, targetCameraDist));
         }, { passive: true });
 
         document.getElementById('btn-rotate').addEventListener('click', function() {
@@ -580,7 +567,7 @@
         document.getElementById('btn-reset').addEventListener('click', () => {
           targetRotX = 0.25;
           targetRotY = 0.45;
-          targetCameraDist = 550;
+          targetCameraDist = 450;
           focusOffsetX = 0;
           focusOffsetY = 0;
           focusOffsetZ = 0;

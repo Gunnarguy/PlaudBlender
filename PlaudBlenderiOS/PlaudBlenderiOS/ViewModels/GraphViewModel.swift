@@ -136,8 +136,22 @@ final class GraphViewModel {
 
     var displayedEdges: [GraphEdge] {
         let visibleIDs = Set(displayedNodes.map(\.id))
-        return edges.filter {
+        let validEdges = edges.filter {
             visibleIDs.contains($0.source) && visibleIDs.contains($0.target)
+        }
+
+        // Structural Edge Pruning: Keep top 2 strongest edges per node to avoid 957-edge web clutter
+        var nodeEdgeCounts: [String: Int] = [:]
+        let sortedEdges = validEdges.sorted(by: { $0.weight > $1.weight })
+        return sortedEdges.filter { edge in
+            let c1 = nodeEdgeCounts[edge.source, default: 0]
+            let c2 = nodeEdgeCounts[edge.target, default: 0]
+            if c1 < 2 || c2 < 2 {
+                nodeEdgeCounts[edge.source] = c1 + 1
+                nodeEdgeCounts[edge.target] = c2 + 1
+                return true
+            }
+            return false
         }
     }
 
