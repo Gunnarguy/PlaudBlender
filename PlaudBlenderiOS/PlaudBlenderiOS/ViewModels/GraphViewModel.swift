@@ -5,26 +5,44 @@ struct GraphLayoutOption: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let subtitle: String
+    let icon: String
 
-    static let lanes = GraphLayoutOption(
-        id: "lanes",
-        title: "Map",
-        subtitle: "Category → its most-mentioned topics"
+    static let constellation3d = GraphLayoutOption(
+        id: "constellation3d",
+        title: "3D Constellation",
+        subtitle: "3D neural graph floating in deep space",
+        icon: "point.3.connected.trianglepath.dotted"
     )
 
-    static let concentric = GraphLayoutOption(
-        id: "concentric",
-        title: "Most active",
-        subtitle: "Topics ranked by mentions"
+    static let vectorSpace3d = GraphLayoutOption(
+        id: "vectorSpace3d",
+        title: "3D Vector Space",
+        subtitle: "Qdrant semantic vector embedding point cloud",
+        icon: "cube.transparent"
     )
 
-    static let circle = GraphLayoutOption(
-        id: "circle",
-        title: "Over time",
-        subtitle: "Topics ordered from earlier to later"
+    static let isometric25d = GraphLayoutOption(
+        id: "isometric25d",
+        title: "2.5D Isometric",
+        subtitle: "Elevated spatial grid & 3D pillar matrix",
+        icon: "square.3.layers.3d"
     )
 
-    static let all = [lanes, concentric, circle]
+    static let galaxyOrbit3d = GraphLayoutOption(
+        id: "galaxyOrbit3d",
+        title: "3D Galaxy Orbit",
+        subtitle: "Gravitational category star hubs & orbiting topics",
+        icon: "globe.americas.fill"
+    )
+
+    static let volumetric3d = GraphLayoutOption(
+        id: "volumetric3d",
+        title: "3D Volumetric",
+        subtitle: "3D frequency & sentiment bar matrix",
+        icon: "chart.bar.xaxis"
+    )
+
+    static let all = [constellation3d, vectorSpace3d, isometric25d, galaxyOrbit3d, volumetric3d]
 }
 
 struct GraphConnection: Identifiable, Sendable {
@@ -74,7 +92,7 @@ final class GraphViewModel {
     var edges: [GraphEdge] = []
     var isLoading = false
     var error: String?
-    var selectedLayout = GraphLayoutOption.lanes.id
+    var selectedLayout = GraphLayoutOption.constellation3d.id
 
     let availableLayouts = GraphLayoutOption.all
 

@@ -200,19 +200,23 @@ struct GraphContainerView: View {
     }
 
     private var selectedLayoutTitle: String {
-        viewModel.availableLayouts.first(where: { $0.id == viewModel.selectedLayout })?.title ?? "Graph"
+        viewModel.availableLayouts.first(where: { $0.id == viewModel.selectedLayout })?.title ?? "3D Graph"
     }
 
     private var interactionHint: String {
         switch viewModel.selectedLayout {
-        case GraphLayoutOption.lanes.id:
-            return "Swipe through categories; pinch to zoom. Tap a category or topic for details."
-        case GraphLayoutOption.concentric.id:
-            return "The higher the topic, the more often it appears. Tap for its connections."
-        case GraphLayoutOption.circle.id:
-            return "Topics run from earlier to later. Tap for its connections."
+        case GraphLayoutOption.constellation3d.id:
+            return "3D Neural Constellation: Touch drag to orbit 360°, pinch to zoom, tap any node sphere."
+        case GraphLayoutOption.vectorSpace3d.id:
+            return "Qdrant Vector Embedding Space: Semantic similarity distance projection in 3D."
+        case GraphLayoutOption.isometric25d.id:
+            return "2.5D Isometric Matrix: Elevated category grid with 3D frequency pillars."
+        case GraphLayoutOption.galaxyOrbit3d.id:
+            return "3D Galaxy Orbit: Category star hubs with orbiting topic nodes."
+        case GraphLayoutOption.volumetric3d.id:
+            return "3D Volumetric Matrix: Translucent 3D frequency & sentiment bars."
         default:
-            return "Tap a category or topic to focus its relationships."
+            return "Touch drag to rotate space 360°, pinch to zoom."
         }
     }
 
@@ -344,22 +348,29 @@ struct GraphContainerView: View {
     }
 
     private func layoutOptionCard(_ option: GraphLayoutOption, isSelected: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(option.title)
-                .font(.subheadline.weight(.semibold))
-            Text(option.subtitle)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.leading)
+        HStack(spacing: 8) {
+            Image(systemName: option.icon)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(isSelected ? Color.cyan : Color.secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(option.title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(isSelected ? .white : .secondary)
+                Text(option.subtitle)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
-        .frame(width: 150, alignment: .leading)
-        .padding(12)
-        .background(isSelected ? Color.accentPrimary.opacity(0.14) : Color.secondary.opacity(0.08))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(isSelected ? Color.cyan.opacity(0.18) : Color.white.opacity(0.04))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(isSelected ? Color.accentPrimary : Color.primary.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(isSelected ? Color.cyan.opacity(0.5) : Color.white.opacity(0.08), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     private func metricTitle(for node: GraphNode) -> String {
