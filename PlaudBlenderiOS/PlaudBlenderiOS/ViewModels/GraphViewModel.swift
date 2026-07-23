@@ -94,24 +94,67 @@ final class GraphViewModel {
     var error: String?
     var selectedLayout = GraphLayoutOption.constellation3d.id
 
+    // Smart Density & Filter Controls
+    var selectedCategoryFilter: String = "all"
+    var selectedDensityLimit: Int = 20 // Default to top 20 key concepts so it's NEVER crammed!
+    var searchText: String = ""
+
+    let availableCategories = ["all", "meeting", "personal", "reflection", "idea"]
+    let availableDensityLimits = [15, 25, 40, 100]
     let availableLayouts = GraphLayoutOption.all
 
     private let api: APIClient
 
+    var displayedNodes: [GraphNode] {
+        var result = nodes
+
+        // 1. Category Filter
+        if selectedCategoryFilter != "all" {
+            let catKey = selectedCategoryFilter.lowercased()
+            result = result.filter { node in
+                (node.type == "category" && node.id.lowercased().contains(catKey))
+                || (node.type == "topic" && node.categories.contains(where: { $0.lowercased().contains(catKey) }))
+            }
+        }
+
+        // 2. Search Text Filter
+        if !searchText.isEmpty {
+            let query = searchText.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            result = result.filter { node in
+                node.fullLabel.lowercased().contains(query) || node.label.lowercased().contains(query)
+            }
+        }
+
+        // 3. Density Limit (Keep all categories + top N most mentioned topic nodes)
+        let catNodes = result.filter { $0.type == "category" }
+        let topTopics = result.filter { $0.type == "topic" }
+            .sorted(by: { ($0.metricValue ?? 0) > ($1.metricValue ?? 0) })
+            .prefix(selectedDensityLimit)
+
+        return catNodes + Array(topTopics)
+    }
+
+    var displayedEdges: [GraphEdge] {
+        let visibleIDs = Set(displayedNodes.map(\.id))
+        return edges.filter {
+            visibleIDs.contains($0.source) && visibleIDs.contains($0.target)
+        }
+    }
+
     var categoryNodes: [GraphNode] {
-        nodes
+        displayedNodes
             .filter { $0.type == "category" }
             .sorted(by: sortNodes)
     }
 
     var topicNodes: [GraphNode] {
-        nodes
+        displayedNodes
             .filter { $0.type == "topic" }
             .sorted(by: sortNodes)
     }
 
     var graphSignature: String {
-        let nodePart = nodes
+        let nodePart = displayedNodes
             .sorted { $0.id < $1.id }
             .map {
                 [
@@ -129,7 +172,7 @@ final class GraphViewModel {
             }
             .joined(separator: ";")
 
-        let edgePart = edges
+        let edgePart = displayedEdges
             .sorted { lhs, rhs in
                 if lhs.source != rhs.source { return lhs.source < rhs.source }
                 if lhs.target != rhs.target { return lhs.target < rhs.target }
@@ -146,7 +189,7 @@ final class GraphViewModel {
             }
             .joined(separator: ";")
 
-        return "\(nodePart)#\(edgePart)"
+        return "\(selectedCategoryFilter)#\(selectedDensityLimit)#\(searchText)#\(nodePart)#\(edgePart)"
     }
 
     init(api: APIClient) {
