@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <style>
       :root { color-scheme: dark; }
-      * { box-sizing: border-box; touch-action: none; user-select: none; }
+      * { box-sizing: border-box; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
       html, body, #graph-container { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #070a12; }
       body {
         color: #f8fafc;
@@ -17,29 +17,40 @@
       #hud-overlay {
         position: absolute;
         bottom: 16px;
-        right: 16px;
+        left: 50%;
+        transform: translateX(-50%);
         display: flex;
-        gap: 8px;
+        align-items: center;
+        gap: 6px;
         z-index: 100;
+        max-width: 95%;
+        flex-wrap: wrap;
+        justify-content: center;
       }
       .hud-btn {
-        background: rgba(15, 23, 42, 0.85);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        color: #38bdf8;
-        padding: 8px 12px;
+        background: rgba(15, 23, 42, 0.88);
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        color: #f8fafc;
+        padding: 8px 14px;
         border-radius: 20px;
         font-size: 11px;
         font-weight: 700;
-        backdrop-filter: blur(12px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.6);
         cursor: pointer;
         display: flex;
         align-items: center;
         gap: 6px;
+        transition: all 0.2s ease;
+      }
+      .hud-btn.active {
+        background: rgba(56, 189, 248, 0.25);
+        border-color: #38bdf8;
+        color: #38bdf8;
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
       }
       .hud-btn:active {
-        transform: scale(0.95);
-        background: rgba(56, 189, 248, 0.2);
+        transform: scale(0.92);
       }
 
       /* Inspector Tooltip Card */
@@ -47,26 +58,30 @@
         position: absolute;
         top: 16px;
         left: 16px;
+        right: 16px;
+        margin: 0 auto;
         background: rgba(15, 23, 42, 0.92);
-        border: 1px solid rgba(56, 189, 248, 0.35);
-        border-radius: 14px;
+        border: 1px solid rgba(56, 189, 248, 0.4);
+        border-radius: 16px;
         padding: 12px 16px;
-        backdrop-filter: blur(16px);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-        max-width: 260px;
+        backdrop-filter: blur(20px);
+        box-shadow: 0 10px 36px rgba(0, 0, 0, 0.7);
+        max-width: 320px;
         opacity: 0;
-        transform: translateY(-8px);
-        transition: opacity 0.3s ease, transform 0.3s ease;
+        transform: translateY(-12px) scale(0.95);
+        transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         pointer-events: none;
         z-index: 100;
       }
       #inspector-card.active {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateY(0) scale(1);
+        pointer-events: auto;
       }
-      .inspector-title { font-size: 13px; font-weight: 800; color: #ffffff; margin-bottom: 2px; }
-      .inspector-type { font-size: 10px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.8px; }
-      .inspector-meta { font-size: 11px; color: #94a3b8; margin-top: 6px; display: flex; justify-content: space-between; }
+      .inspector-title { font-size: 14px; font-weight: 800; color: #ffffff; margin-bottom: 2px; }
+      .inspector-type { font-size: 10px; font-weight: 800; color: #38bdf8; text-transform: uppercase; letter-spacing: 1px; }
+      .inspector-meta { font-size: 11px; color: #94a3b8; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; }
+      .inspector-close { font-size: 12px; color: #94a3b8; padding: 2px 6px; cursor: pointer; float: right; }
     </style>
   </head>
   <body>
@@ -75,6 +90,7 @@
     </div>
 
     <div id="inspector-card">
+      <span class="inspector-close" id="ins-close">✕</span>
       <div class="inspector-type" id="ins-type">3D Node</div>
       <div class="inspector-title" id="ins-title">Topic Name</div>
       <div class="inspector-meta">
@@ -84,11 +100,17 @@
     </div>
 
     <div id="hud-overlay">
-      <button class="hud-btn" id="btn-rotate">
-        <span>🔄 Auto-Rotate</span>
+      <button class="hud-btn" id="btn-zoom-in">
+        <span>➕ Zoom In</span>
+      </button>
+      <button class="hud-btn" id="btn-zoom-out">
+        <span>➖ Zoom Out</span>
+      </button>
+      <button class="hud-btn active" id="btn-rotate">
+        <span>🔄 Auto-Orbit</span>
       </button>
       <button class="hud-btn" id="btn-reset">
-        <span>🎯 Reset 3D View</span>
+        <span>🎯 Recenter</span>
       </button>
     </div>
 
@@ -106,17 +128,20 @@
 
         // 3D Camera & Orbital Control State
         let isAutoRotating = true;
-        let isDragging = false;
-        let lastMouse = { x: 0, y: 0 };
         let rotX = 0.2;
         let rotY = 0.4;
         let targetRotX = 0.2;
         let targetRotY = 0.4;
-        let cameraDist = 320;
-        let targetCameraDist = 320;
+        let cameraDist = 300;
+        let targetCameraDist = 300;
+        let focusOffsetX = 0;
+        let focusOffsetY = 0;
+        let focusOffsetZ = 0;
 
         let calculated3DNodes = [];
         let calculated3DEdges = [];
+        let stars = [];
+        let pulseTime = 0;
 
         function resize() {
           width = window.innerWidth;
@@ -128,11 +153,22 @@
         window.addEventListener('resize', resize);
         resize();
 
+        // 3D Background Star Field
+        for (let i = 0; i < 200; i++) {
+          stars.push({
+            x: (Math.random() - 0.5) * 800,
+            y: (Math.random() - 0.5) * 800,
+            z: (Math.random() - 0.5) * 800,
+            size: Math.random() * 1.5 + 0.5,
+            opacity: Math.random() * 0.5 + 0.3
+          });
+        }
+
         function getCategoryHex(type, cat) {
           if (type === 'category') return '#38bdf8';
           const c = (cat || '').toLowerCase();
-          if (c.includes('meeting')) return '#8250df';
-          if (c.includes('personal')) return '#bf3989';
+          if (c.includes('meeting')) return '#a855f7';
+          if (c.includes('personal')) return '#ec4899';
           if (c.includes('reflection')) return '#10b981';
           if (c.includes('idea')) return '#f59e0b';
           return '#06b6d4';
@@ -152,7 +188,7 @@
               const hash = (n.id || n.label).split('').reduce((a,b)=>((a<<5)-a)+b.charCodeAt(0), 0);
               const angleX = Math.abs(hash % 360) * (Math.PI / 180);
               const angleY = Math.abs((hash >> 3) % 360) * (Math.PI / 180);
-              const radius = 60 + (n.type === 'category' ? 0 : 50 * Math.sin(hash));
+              const radius = 65 + (n.type === 'category' ? 0 : 55 * Math.sin(hash));
 
               x = radius * Math.cos(angleX) * Math.sin(angleY);
               y = radius * Math.sin(angleX) * Math.sin(angleY);
@@ -163,9 +199,9 @@
               const cols = Math.ceil(Math.sqrt(count));
               const row = Math.floor(idx / cols);
               const col = idx % cols;
-              x = (col - cols/2) * 45;
-              z = (row - cols/2) * 45;
-              y = n.type === 'category' ? 30 : ((n.metricValue || n.count || 5) * 0.8);
+              x = (col - cols/2) * 50;
+              z = (row - cols/2) * 50;
+              y = n.type === 'category' ? 35 : ((n.metricValue || n.count || 5) * 1.2);
 
             } else if (layout === "galaxyOrbit3d") {
               // 3D Galaxy orbit around category star hubs
@@ -173,22 +209,22 @@
                 const catIdx = nodes.filter(nd => nd.type === 'category').indexOf(n);
                 const totalCat = nodes.filter(nd => nd.type === 'category').length || 1;
                 const angle = (catIdx / totalCat) * Math.PI * 2;
-                x = Math.cos(angle) * 90;
-                z = Math.sin(angle) * 90;
-                y = Math.sin(angle * 2) * 25;
+                x = Math.cos(angle) * 100;
+                z = Math.sin(angle) * 100;
+                y = Math.sin(angle * 2) * 30;
               } else {
                 const angle = (idx / count) * Math.PI * 2;
-                const dist = 35 + (idx % 4) * 20;
+                const dist = 40 + (idx % 4) * 22;
                 x = Math.cos(angle) * dist;
                 z = Math.sin(angle) * dist;
-                y = Math.sin(angle * 3) * 20;
+                y = Math.sin(angle * 3) * 25;
               }
 
             } else if (layout === "volumetric3d") {
               // 3D Volumetric bar grid
               const phi = Math.acos(-1 + (2 * idx) / count);
               const theta = Math.sqrt(count * Math.PI) * phi;
-              const r = 90;
+              const r = 100;
               x = r * Math.cos(theta) * Math.sin(phi);
               y = r * Math.sin(theta) * Math.sin(phi);
               z = r * Math.cos(phi);
@@ -197,7 +233,7 @@
               // 3D Neural Constellation (Spherical Force Layout)
               const phi = Math.acos(-1 + (2 * idx) / count);
               const theta = Math.sqrt(count * Math.PI) * phi;
-              const r = n.type === 'category' ? 50 : 100;
+              const r = n.type === 'category' ? 55 : 110;
               x = r * Math.cos(theta) * Math.sin(phi);
               y = r * Math.sin(theta) * Math.sin(phi);
               z = r * Math.cos(phi);
@@ -209,7 +245,7 @@
               y3d: y,
               z3d: z,
               colorHex: getCategoryHex(n.type, n.categories && n.categories[0]),
-              radius: n.type === 'category' ? 12 : Math.max(5, Math.min(10, (n.metricValue || n.count || 1) * 0.2))
+              radius: n.type === 'category' ? 14 : Math.max(7, Math.min(13, (n.metricValue || n.count || 1) * 0.25))
             };
             nodeMap[n.id] = item;
             resultNodes.push(item);
@@ -232,20 +268,24 @@
 
         // 3D Math & Project to 2D Screen
         function project3D(x, y, z) {
+          const fx = x - focusOffsetX;
+          const fy = y - focusOffsetY;
+          const fz = z - focusOffsetZ;
+
           // Rotate around Y axis
           const cosY = Math.cos(rotY);
           const sinY = Math.sin(rotY);
-          let x1 = x * cosY - z * sinY;
-          let z1 = z * cosY + x * sinY;
+          let x1 = fx * cosY - fz * sinY;
+          let z1 = fz * cosY + fx * sinY;
 
           // Rotate around X axis
           const cosX = Math.cos(rotX);
           const sinX = Math.sin(rotX);
-          let y2 = y * cosX - z1 * sinX;
-          let z2 = z1 * cosX + y * sinX;
+          let y2 = fy * cosX - z1 * sinX;
+          let z2 = z1 * cosX + fy * sinX;
 
           // Perspective projection
-          const fov = 400;
+          const fov = 350;
           const scale = fov / (fov + z2 + cameraDist);
           const sx = width / 2 + x1 * scale;
           const sy = height / 2 + y2 * scale;
@@ -256,6 +296,7 @@
         // Render Frame Loop
         function renderFrame() {
           ctx.clearRect(0, 0, width, height);
+          pulseTime += 0.03;
 
           if (isAutoRotating) {
             targetRotY += 0.003;
@@ -264,6 +305,15 @@
           rotX += (targetRotX - rotX) * 0.08;
           rotY += (targetRotY - rotY) * 0.08;
           cameraDist += (targetCameraDist - cameraDist) * 0.08;
+
+          // 0. Render Background Star Dust
+          stars.forEach(st => {
+            const p = project3D(st.x, st.y, st.z);
+            if (p.scale > 0) {
+              ctx.fillStyle = `rgba(56, 189, 248, ${st.opacity * p.scale})`;
+              ctx.fillRect(p.sx, p.sy, st.size * p.scale, st.size * p.scale);
+            }
+          });
 
           // Project nodes
           const projectedNodes = calculated3DNodes.map(n => {
@@ -274,37 +324,47 @@
           // Sort by zDepth so distant nodes render behind near nodes
           projectedNodes.sort((a, b) => b.zDepth - a.zDepth);
 
-          // 1. Draw 3D Connecting Laser Edges
-          ctx.lineWidth = 1;
+          // 1. Draw 3D Connecting Laser Edges with Pulsing Data Particles
           calculated3DEdges.forEach(e => {
             const p1 = project3D(e.sourceNode.x3d, e.sourceNode.y3d, e.sourceNode.z3d);
             const p2 = project3D(e.targetNode.x3d, e.targetNode.y3d, e.targetNode.z3d);
+            const isHighlighted = (selectedNodeId === e.source || selectedNodeId === e.target);
 
-            ctx.strokeStyle = (selectedNodeId === e.source || selectedNodeId === e.target)
-              ? 'rgba(56, 189, 248, 0.8)'
-              : 'rgba(56, 189, 248, 0.2)';
-            ctx.lineWidth = (selectedNodeId === e.source || selectedNodeId === e.target) ? 2 : 1;
+            ctx.strokeStyle = isHighlighted ? 'rgba(56, 189, 248, 0.85)' : 'rgba(56, 189, 248, 0.25)';
+            ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
 
             ctx.beginPath();
             ctx.moveTo(p1.sx, p1.sy);
             ctx.lineTo(p2.sx, p2.sy);
             ctx.stroke();
+
+            // Animated Energy Pulse Particle along line
+            if (isHighlighted || Math.random() < 0.3) {
+              const t = (pulseTime + (e.source.charCodeAt(0) || 0) * 0.1) % 1.0;
+              const px = p1.sx + (p2.sx - p1.sx) * t;
+              const py = p1.sy + (p2.sy - p1.sy) * t;
+
+              ctx.fillStyle = '#38bdf8';
+              ctx.beginPath();
+              ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+              ctx.fill();
+            }
           });
 
-          // 2. Draw 3D Glowing Nodes
+          // 2. Draw 3D Glowing Nodes & Text Labels
           projectedNodes.forEach(n => {
-            const r = Math.max(2, n.radius * n.scale);
+            const r = Math.max(4, n.radius * n.scale);
             const isSelected = selectedNodeId === n.id;
 
             // Node Outer Glow Halo
-            const grad = ctx.createRadialGradient(n.sx, n.sy, 0, n.sx, n.sy, r * 2.5);
+            const grad = ctx.createRadialGradient(n.sx, n.sy, 0, n.sx, n.sy, r * (isSelected ? 3.5 : 2.5));
             grad.addColorStop(0, n.colorHex);
-            grad.addColorStop(0.5, n.colorHex + '66');
+            grad.addColorStop(0.4, n.colorHex + '88');
             grad.addColorStop(1, 'transparent');
 
             ctx.fillStyle = grad;
             ctx.beginPath();
-            ctx.arc(n.sx, n.sy, r * 2.5, 0, Math.PI * 2);
+            ctx.arc(n.sx, n.sy, r * (isSelected ? 3.5 : 2.5), 0, Math.PI * 2);
             ctx.fill();
 
             // Core Sphere
@@ -313,61 +373,119 @@
             ctx.arc(n.sx, n.sy, r, 0, Math.PI * 2);
             ctx.fill();
 
-            // Node Text Label
-            if (n.scale > 0.75 || isSelected) {
-              ctx.font = `${Math.max(9, Math.round(11 * n.scale))}px -apple-system, sans-serif`;
-              ctx.fillStyle = isSelected ? '#38bdf8' : '#f8fafc';
-              ctx.fillText(n.label, n.sx + r + 4, n.sy + 4);
+            if (isSelected) {
+              ctx.strokeStyle = '#38bdf8';
+              ctx.lineWidth = 2.5;
+              ctx.stroke();
+            }
+
+            // Node Text Label with Glass Capsule Backdrop
+            if (n.scale > 0.6 || isSelected) {
+              const fontSize = Math.max(10, Math.round(12 * n.scale));
+              ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
+              const textWidth = ctx.measureText(n.label).width;
+
+              // Capsule background
+              ctx.fillStyle = 'rgba(7, 10, 18, 0.75)';
+              ctx.beginPath();
+              ctx.roundRect(n.sx + r + 4, n.sy - fontSize/2 - 3, textWidth + 10, fontSize + 6, 6);
+              ctx.fill();
+              ctx.strokeStyle = isSelected ? '#38bdf8' : 'rgba(255, 255, 255, 0.15)';
+              ctx.lineWidth = 1;
+              ctx.stroke();
+
+              // Text
+              ctx.fillStyle = isSelected ? '#38bdf8' : '#ffffff';
+              ctx.fillText(n.label, n.sx + r + 9, n.sy + fontSize/2 - 2);
             }
           });
 
           requestAnimationFrame(renderFrame);
         }
 
-        // Pointer & Orbit Controls
-        container.addEventListener('pointerdown', e => {
-          isDragging = true;
-          lastMouse = { x: e.clientX, y: e.clientY };
-          isAutoRotating = false;
-        });
+        // --- NATIVE IOS MULTI-TOUCH GESTURE ENGINE ---
+        let touchStartDist = 0;
+        let startCameraDist = 300;
+        let touchStartTime = 0;
+        let touchStartPos = { x: 0, y: 0 };
 
-        container.addEventListener('pointermove', e => {
-          if (!isDragging) return;
-          const dx = e.clientX - lastMouse.x;
-          const dy = e.clientY - lastMouse.y;
-          targetRotY += dx * 0.005;
-          targetRotX += dy * 0.005;
-          lastMouse = { x: e.clientX, y: e.clientY };
-        });
+        container.addEventListener('touchstart', e => {
+          touchStartTime = Date.now();
 
-        window.addEventListener('pointerup', e => {
-          if (isDragging) {
+          if (e.touches.length === 1) {
+            isDragging = true;
+            lastMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            isAutoRotating = false;
+            document.getElementById('btn-rotate').classList.remove('active');
+          } else if (e.touches.length === 2) {
             isDragging = false;
-            // Raycast click test
-            const clickX = e.clientX;
-            const clickY = e.clientY;
+            touchStartDist = Math.hypot(
+              e.touches[0].clientX - e.touches[1].clientX,
+              e.touches[0].clientY - e.touches[1].clientY
+            );
+            startCameraDist = targetCameraDist;
+          }
+        }, { passive: true });
 
-            let clickedNode = null;
-            let minDist = 9999;
+        container.addEventListener('touchmove', e => {
+          if (e.touches.length === 1 && isDragging) {
+            const dx = e.touches[0].clientX - lastMouse.x;
+            const dy = e.touches[0].clientY - lastMouse.y;
+            targetRotY += dx * 0.008;
+            targetRotX += dy * 0.008;
+            lastMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+          } else if (e.touches.length === 2 && touchStartDist > 0) {
+            const currentDist = Math.hypot(
+              e.touches[0].clientX - e.touches[1].clientX,
+              e.touches[0].clientY - e.touches[1].clientY
+            );
+            const factor = touchStartDist / Math.max(currentDist, 1);
+            targetCameraDist = Math.max(80, Math.min(600, startCameraDist * factor));
+          }
+        }, { passive: true });
 
-            calculated3DNodes.forEach(n => {
-              const p = project3D(n.x3d, n.y3d, n.z3d);
-              const dist = Math.hypot(p.sx - clickX, p.sy - clickY);
-              if (dist < Math.max(20, n.radius * p.scale) && dist < minDist) {
-                minDist = dist;
-                clickedNode = n;
-              }
-            });
+        container.addEventListener('touchend', e => {
+          if (e.touches.length === 0) {
+            const touchDuration = Date.now() - touchStartTime;
+            const moveDist = Math.hypot(lastMouse.x - touchStartPos.x, lastMouse.y - touchStartPos.y);
 
-            if (clickedNode) {
-              selectedNodeId = clickedNode.id;
-              showInspector(clickedNode);
-              if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nodeTapped) {
-                window.webkit.messageHandlers.nodeTapped.postMessage(clickedNode.id);
-              }
+            // Generous Touch Tap Hit-Testing (36px Radius)
+            if (touchDuration < 300 && moveDist < 15) {
+              handleTouchTap(lastMouse.x, lastMouse.y);
+            }
+            isDragging = false;
+          }
+        }, { passive: true });
+
+        function handleTouchTap(tapX, tapY) {
+          let clickedNode = null;
+          let minDist = 9999;
+
+          calculated3DNodes.forEach(n => {
+            const p = project3D(n.x3d, n.y3d, n.z3d);
+            const dist = Math.hypot(p.sx - tapX, p.sy - tapY);
+            // Generous 36px touch radius
+            if (dist < Math.max(36, n.radius * p.scale * 1.8) && dist < minDist) {
+              minDist = dist;
+              clickedNode = n;
+            }
+          });
+
+          if (clickedNode) {
+            selectedNodeId = clickedNode.id;
+            showInspector(clickedNode);
+
+            // Smoothly focus camera on node
+            focusOffsetX = clickedNode.x3d * 0.5;
+            focusOffsetY = clickedNode.y3d * 0.5;
+            focusOffsetZ = clickedNode.z3d * 0.5;
+
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nodeTapped) {
+              window.webkit.messageHandlers.nodeTapped.postMessage(clickedNode.id);
             }
           }
-        });
+        }
 
         function showInspector(node) {
           const card = document.getElementById('inspector-card');
@@ -378,14 +496,36 @@
           card.classList.add('active');
         }
 
-        document.getElementById('btn-rotate').addEventListener('click', () => {
+        document.getElementById('ins-close').addEventListener('click', () => {
+          document.getElementById('inspector-card').classList.remove('active');
+          selectedNodeId = null;
+        });
+
+        // HUD Controls Action Bindings
+        document.getElementById('btn-zoom-in').addEventListener('click', () => {
+          targetCameraDist = Math.max(80, targetCameraDist - 50);
+        });
+
+        document.getElementById('btn-zoom-out').addEventListener('click', () => {
+          targetCameraDist = Math.min(600, targetCameraDist + 50);
+        });
+
+        document.getElementById('btn-rotate').addEventListener('click', function() {
           isAutoRotating = !isAutoRotating;
+          if (isAutoRotating) {
+            this.classList.add('active');
+          } else {
+            this.classList.remove('active');
+          }
         });
 
         document.getElementById('btn-reset').addEventListener('click', () => {
           targetRotX = 0.2;
           targetRotY = 0.4;
-          targetCameraDist = 320;
+          targetCameraDist = 300;
+          focusOffsetX = 0;
+          focusOffsetY = 0;
+          focusOffsetZ = 0;
           selectedNodeId = null;
           document.getElementById('inspector-card').classList.remove('active');
         });
