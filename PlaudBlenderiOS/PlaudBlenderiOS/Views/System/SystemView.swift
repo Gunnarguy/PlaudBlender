@@ -69,7 +69,7 @@ struct SystemView: View {
                         .shadow(color: (api.isServerReachable ? Color.emeraldGreen : Color.roseRed).opacity(0.8), radius: 6)
 
                     Text("RUNTIME STATUS")
-                        .font(.caption.weight(.extrabold))
+                        .font(.caption.weight(.heavy))
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.cyan, .purple],
@@ -293,7 +293,7 @@ struct SystemView: View {
                                     .foregroundStyle(.white)
                                 Spacer()
                                 Text(service.state.uppercased())
-                                    .font(.caption2.weight(.extrabold))
+                                    .font(.caption2.weight(.heavy))
                                     .foregroundStyle(service.isHealthy ? Color.emeraldGreen : Color.roseRed)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -446,7 +446,7 @@ struct SystemView: View {
                     .shadow(color: (ok ? Color.emeraldGreen : Color.roseRed).opacity(0.8), radius: 6)
 
                 Text(state)
-                    .font(.subheadline.weight(.extrabold))
+                    .font(.subheadline.weight(.heavy))
                     .foregroundStyle(ok ? Color.emeraldGreen : Color.roseRed)
             }
 
