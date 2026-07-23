@@ -14,6 +14,7 @@ struct GraphContainerView: View {
     let viewModel: GraphViewModel
     @State private var selectedNodeID: String?
     @State private var rendererError: String?
+    @State private var isControlsExpanded: Bool = false
 
     private var selectedNode: GraphNode? {
         viewModel.node(withID: selectedNodeID)
@@ -68,6 +69,7 @@ struct GraphContainerView: View {
                     // Floating Glass Controls Header
                     controlsCard
                         .padding([.horizontal, .top], 10)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isControlsExpanded)
                 }
             }
             .navigationTitle("Knowledge Graph")
@@ -100,6 +102,9 @@ struct GraphContainerView: View {
                     .presentationDragIndicator(.visible)
                     .presentationBackgroundInteraction(.enabled(upThrough: .height(340)))
             }
+            .sensoryFeedback(.impact(weight: .medium), trigger: selectedNodeID)
+            .sensoryFeedback(.selection, trigger: viewModel.selectedLayout)
+            .sensoryFeedback(.selection, trigger: viewModel.selectedCategoryFilter)
             .task {
                 await viewModel.loadGraph()
             }
@@ -108,20 +113,31 @@ struct GraphContainerView: View {
 
     private var controlsCard: some View {
         @Bindable var vm = viewModel
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
-                HStack(spacing: 8) {
-                    Image(systemName: "cpu.fill")
-                        .font(.title3)
-                        .foregroundStyle(.cyan)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Knowledge Neural Map")
-                            .font(.headline.weight(.bold))
-                        Text("Showing \(viewModel.displayedNodes.count) key nodes in 3D space")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                Button {
+                    isControlsExpanded.toggle()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "cpu.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.cyan)
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 4) {
+                                Text("3D Neural Map")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(.white)
+                                Image(systemName: isControlsExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("\(viewModel.displayedNodes.count) key nodes in 3D space")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
 
                 Spacer()
 
@@ -138,105 +154,107 @@ struct GraphContainerView: View {
                 .buttonStyle(.plain)
             }
 
-            // Search Bar
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField("Search 3D concepts & categories...", text: $vm.searchText)
-                    .font(.caption)
-                if !viewModel.searchText.isEmpty {
-                    Button {
-                        viewModel.searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.white.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-
-            // Density Limit & Category Filters Row
-            HStack(spacing: 8) {
-                // Density Limit Menu
-                Menu {
-                    ForEach(viewModel.availableDensityLimits, id: \.self) { limit in
+            if isControlsExpanded {
+                // Search Bar
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Search 3D concepts & categories...", text: $vm.searchText)
+                        .font(.caption)
+                    if !viewModel.searchText.isEmpty {
                         Button {
-                            viewModel.selectedDensityLimit = limit
+                            viewModel.searchText = ""
                         } label: {
-                            HStack {
-                                Text(limit >= 100 ? "All Nodes (\(viewModel.nodes.count))" : "Top \(limit) Key Concepts")
-                                if viewModel.selectedDensityLimit == limit {
-                                    Image(systemName: "checkmark")
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                // Density Limit & Category Filters Row
+                HStack(spacing: 8) {
+                    // Density Limit Menu
+                    Menu {
+                        ForEach(viewModel.availableDensityLimits, id: \.self) { limit in
+                            Button {
+                                viewModel.selectedDensityLimit = limit
+                            } label: {
+                                HStack {
+                                    Text(limit >= 100 ? "All Nodes (\(viewModel.nodes.count))" : "Top \(limit) Key Concepts")
+                                    if viewModel.selectedDensityLimit == limit {
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
                         }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.caption2)
+                            Text(viewModel.selectedDensityLimit >= 100 ? "All Nodes" : "Top \(viewModel.selectedDensityLimit)")
+                                .font(.caption.weight(.bold))
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.cyan.opacity(0.15))
+                        .foregroundStyle(.cyan)
+                        .clipShape(Capsule())
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.caption2)
-                        Text(viewModel.selectedDensityLimit >= 100 ? "All Nodes" : "Top \(viewModel.selectedDensityLimit)")
-                            .font(.caption.weight(.bold))
-                        Image(systemName: "chevron.down")
-                            .font(.caption2)
+
+                    // Category Chips
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(viewModel.availableCategories, id: \.self) { cat in
+                                let isSelected = viewModel.selectedCategoryFilter == cat
+                                Button {
+                                    viewModel.selectedCategoryFilter = cat
+                                } label: {
+                                    Text(cat.capitalized)
+                                        .font(.caption2.weight(.bold))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(isSelected ? Color.cyan : Color.white.opacity(0.06))
+                                        .foregroundStyle(isSelected ? .black : .secondary)
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.cyan.opacity(0.15))
-                    .foregroundStyle(.cyan)
-                    .clipShape(Capsule())
                 }
 
-                // Category Chips
+                // 3D View Mode Selector
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(viewModel.availableCategories, id: \.self) { cat in
-                            let isSelected = viewModel.selectedCategoryFilter == cat
+                    HStack(spacing: 10) {
+                        ForEach(viewModel.availableLayouts) { option in
+                            let isSelected = viewModel.selectedLayout == option.id
                             Button {
-                                viewModel.selectedCategoryFilter = cat
+                                rendererError = nil
+                                viewModel.selectedLayout = option.id
                             } label: {
-                                Text(cat.capitalized)
-                                    .font(.caption2.weight(.bold))
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(isSelected ? Color.cyan : Color.white.opacity(0.06))
-                                    .foregroundStyle(isSelected ? .black : .secondary)
-                                    .clipShape(Capsule())
+                                layoutOptionCard(option, isSelected: isSelected)
                             }
                             .buttonStyle(.plain)
                         }
                     }
                 }
             }
-
-            // 3D View Mode Selector
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(viewModel.availableLayouts) { option in
-                        let isSelected = viewModel.selectedLayout == option.id
-                        Button {
-                            rendererError = nil
-                            viewModel.selectedLayout = option.id
-                        } label: {
-                            layoutOptionCard(option, isSelected: isSelected)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
         }
-        .padding(14)
-        .background(Color(hex: "0f172a").opacity(0.85))
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(12)
+        .background(Color(hex: "0f172a").opacity(0.88))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
     }
 
