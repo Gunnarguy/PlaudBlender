@@ -128,12 +128,12 @@
 
         // 3D Camera & Orbital Control State
         let isAutoRotating = true;
-        let rotX = 0.2;
-        let rotY = 0.4;
-        let targetRotX = 0.2;
-        let targetRotY = 0.4;
-        let cameraDist = 300;
-        let targetCameraDist = 300;
+        let rotX = 0.25;
+        let rotY = 0.45;
+        let targetRotX = 0.25;
+        let targetRotY = 0.45;
+        let cameraDist = 550; // Increased base distance for spacious view
+        let targetCameraDist = 550;
         let focusOffsetX = 0;
         let focusOffsetY = 0;
         let focusOffsetZ = 0;
@@ -154,13 +154,13 @@
         resize();
 
         // 3D Background Star Field
-        for (let i = 0; i < 200; i++) {
+        for (let i = 0; i < 300; i++) {
           stars.push({
-            x: (Math.random() - 0.5) * 800,
-            y: (Math.random() - 0.5) * 800,
-            z: (Math.random() - 0.5) * 800,
-            size: Math.random() * 1.5 + 0.5,
-            opacity: Math.random() * 0.5 + 0.3
+            x: (Math.random() - 0.5) * 1600,
+            y: (Math.random() - 0.5) * 1600,
+            z: (Math.random() - 0.5) * 1600,
+            size: Math.random() * 1.8 + 0.5,
+            opacity: Math.random() * 0.5 + 0.2
           });
         }
 
@@ -174,69 +174,92 @@
           return '#06b6d4';
         }
 
-        // Generate 3D Positions based on View Mode
+        // Distinct Category Hub Octant Coordinates in 3D Space
+        const categoryHubCenters = {
+          'meeting': { x: -280, y: 140, z: -220 },
+          'personal': { x: 300, y: -120, z: -180 },
+          'reflection': { x: -260, y: -180, z: 260 },
+          'idea': { x: 280, y: 200, z: 220 },
+          'misc': { x: 0, y: 320, z: -50 }
+        };
+
+        function getHubCenter(cat) {
+          const c = (cat || 'misc').toLowerCase();
+          if (c.includes('meeting')) return categoryHubCenters['meeting'];
+          if (c.includes('personal')) return categoryHubCenters['personal'];
+          if (c.includes('reflection')) return categoryHubCenters['reflection'];
+          if (c.includes('idea')) return categoryHubCenters['idea'];
+          return categoryHubCenters['misc'];
+        }
+
+        // Generate Spacious 3D Positions with Repulsion Physics
         function build3DLayout(nodes, edges, layout) {
           const count = nodes.length || 1;
           const nodeMap = {};
           const resultNodes = [];
 
+          // 1. Initial Position Assignment per View Mode
           nodes.forEach((n, idx) => {
             let x = 0, y = 0, z = 0;
+            const primaryCat = (n.categories && n.categories[0]) || n.label;
+            const hub = getHubCenter(primaryCat);
 
             if (layout === "vectorSpace3d") {
-              // Qdrant 3D vector space embedding projection
+              // Qdrant 3D vector space embedding projection (Radius 450)
               const hash = (n.id || n.label).split('').reduce((a,b)=>((a<<5)-a)+b.charCodeAt(0), 0);
               const angleX = Math.abs(hash % 360) * (Math.PI / 180);
               const angleY = Math.abs((hash >> 3) % 360) * (Math.PI / 180);
-              const radius = 65 + (n.type === 'category' ? 0 : 55 * Math.sin(hash));
+              const radius = 120 + (n.type === 'category' ? 0 : 250 * Math.sin(hash));
 
               x = radius * Math.cos(angleX) * Math.sin(angleY);
               y = radius * Math.sin(angleX) * Math.sin(angleY);
               z = radius * Math.cos(angleY);
 
             } else if (layout === "isometric25d") {
-              // 2.5D Isometric matrix plane with elevated 3D pillars
+              // 2.5D Isometric spacious grid matrix
               const cols = Math.ceil(Math.sqrt(count));
               const row = Math.floor(idx / cols);
               const col = idx % cols;
-              x = (col - cols/2) * 50;
-              z = (row - cols/2) * 50;
-              y = n.type === 'category' ? 35 : ((n.metricValue || n.count || 5) * 1.2);
+              x = (col - cols/2) * 110;
+              z = (row - cols/2) * 110;
+              y = n.type === 'category' ? 60 : ((n.metricValue || n.count || 5) * 2.2);
 
             } else if (layout === "galaxyOrbit3d") {
-              // 3D Galaxy orbit around category star hubs
+              // 3D Galaxy Orbit around category star hubs
               if (n.type === 'category') {
-                const catIdx = nodes.filter(nd => nd.type === 'category').indexOf(n);
-                const totalCat = nodes.filter(nd => nd.type === 'category').length || 1;
-                const angle = (catIdx / totalCat) * Math.PI * 2;
-                x = Math.cos(angle) * 100;
-                z = Math.sin(angle) * 100;
-                y = Math.sin(angle * 2) * 30;
+                x = hub.x;
+                y = hub.y;
+                z = hub.z;
               } else {
                 const angle = (idx / count) * Math.PI * 2;
-                const dist = 40 + (idx % 4) * 22;
-                x = Math.cos(angle) * dist;
-                z = Math.sin(angle) * dist;
-                y = Math.sin(angle * 3) * 25;
+                const dist = 70 + (idx % 5) * 35;
+                x = hub.x + Math.cos(angle) * dist;
+                z = hub.z + Math.sin(angle) * dist;
+                y = hub.y + Math.sin(angle * 3) * 35;
               }
 
             } else if (layout === "volumetric3d") {
-              // 3D Volumetric bar grid
-              const phi = Math.acos(-1 + (2 * idx) / count);
-              const theta = Math.sqrt(count * Math.PI) * phi;
-              const r = 100;
-              x = r * Math.cos(theta) * Math.sin(phi);
-              y = r * Math.sin(theta) * Math.sin(phi);
-              z = r * Math.cos(phi);
+              // 3D Volumetric City Matrix
+              const cols = Math.ceil(Math.sqrt(count));
+              const row = Math.floor(idx / cols);
+              const col = idx % cols;
+              x = (col - cols/2) * 90;
+              z = (row - cols/2) * 90;
+              y = Math.sin(idx) * 60;
 
             } else {
-              // 3D Neural Constellation (Spherical Force Layout)
-              const phi = Math.acos(-1 + (2 * idx) / count);
-              const theta = Math.sqrt(count * Math.PI) * phi;
-              const r = n.type === 'category' ? 55 : 110;
-              x = r * Math.cos(theta) * Math.sin(phi);
-              y = r * Math.sin(theta) * Math.sin(phi);
-              z = r * Math.cos(phi);
+              // 3D Neural Constellation (Spatially Segregated Category Systems)
+              if (n.type === 'category') {
+                x = hub.x * 1.3;
+                y = hub.y * 1.3;
+                z = hub.z * 1.3;
+              } else {
+                const angle = (idx / count) * Math.PI * 2;
+                const offsetRadius = 60 + (idx % 6) * 30;
+                x = hub.x + Math.cos(angle) * offsetRadius + (Math.random() - 0.5) * 30;
+                y = hub.y + Math.sin(angle) * offsetRadius + (Math.random() - 0.5) * 30;
+                z = hub.z + Math.sin(angle * 2) * offsetRadius + (Math.random() - 0.5) * 30;
+              }
             }
 
             const item = {
@@ -244,12 +267,37 @@
               x3d: x,
               y3d: y,
               z3d: z,
-              colorHex: getCategoryHex(n.type, n.categories && n.categories[0]),
-              radius: n.type === 'category' ? 14 : Math.max(7, Math.min(13, (n.metricValue || n.count || 1) * 0.25))
+              colorHex: getCategoryHex(n.type, primaryCat),
+              radius: n.type === 'category' ? 16 : Math.max(8, Math.min(15, (n.metricValue || n.count || 1) * 0.3))
             };
             nodeMap[n.id] = item;
             resultNodes.push(item);
           });
+
+          // 2. Iterative Coulomb Force Repulsion Physics to prevent overlapping
+          for (let iter = 0; iter < 8; iter++) {
+            for (let i = 0; i < resultNodes.length; i++) {
+              for (let j = i + 1; j < resultNodes.length; j++) {
+                const n1 = resultNodes[i];
+                const n2 = resultNodes[j];
+                const dx = n2.x3d - n1.x3d;
+                const dy = n2.y3d - n1.y3d;
+                const dz = n2.z3d - n1.z3d;
+                const dist = Math.hypot(dx, dy, dz) || 1;
+                const minDist = (n1.radius + n2.radius) * 4.5;
+
+                if (dist < minDist) {
+                  const force = (minDist - dist) / dist * 0.3;
+                  n1.x3d -= dx * force;
+                  n1.y3d -= dy * force;
+                  n1.z3d -= dz * force;
+                  n2.x3d += dx * force;
+                  n2.y3d += dy * force;
+                  n2.z3d += dz * force;
+                }
+              }
+            }
+          }
 
           const resultEdges = [];
           edges.forEach(e => {
@@ -285,7 +333,7 @@
           let z2 = z1 * cosX + fy * sinX;
 
           // Perspective projection
-          const fov = 350;
+          const fov = 400;
           const scale = fov / (fov + z2 + cameraDist);
           const sx = width / 2 + x1 * scale;
           const sy = height / 2 + y2 * scale;
@@ -299,7 +347,7 @@
           pulseTime += 0.03;
 
           if (isAutoRotating) {
-            targetRotY += 0.003;
+            targetRotY += 0.002;
           }
 
           rotX += (targetRotX - rotX) * 0.08;
@@ -330,8 +378,8 @@
             const p2 = project3D(e.targetNode.x3d, e.targetNode.y3d, e.targetNode.z3d);
             const isHighlighted = (selectedNodeId === e.source || selectedNodeId === e.target);
 
-            ctx.strokeStyle = isHighlighted ? 'rgba(56, 189, 248, 0.85)' : 'rgba(56, 189, 248, 0.25)';
-            ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
+            ctx.strokeStyle = isHighlighted ? 'rgba(56, 189, 248, 0.9)' : 'rgba(56, 189, 248, 0.18)';
+            ctx.lineWidth = isHighlighted ? 2.5 : 1.0;
 
             ctx.beginPath();
             ctx.moveTo(p1.sx, p1.sy);
@@ -339,7 +387,7 @@
             ctx.stroke();
 
             // Animated Energy Pulse Particle along line
-            if (isHighlighted || Math.random() < 0.3) {
+            if (isHighlighted || Math.random() < 0.25) {
               const t = (pulseTime + (e.source.charCodeAt(0) || 0) * 0.1) % 1.0;
               const px = p1.sx + (p2.sx - p1.sx) * t;
               const py = p1.sy + (p2.sy - p1.sy) * t;
@@ -351,10 +399,11 @@
             }
           });
 
-          // 2. Draw 3D Glowing Nodes & Text Labels
-          projectedNodes.forEach(n => {
-            const r = Math.max(4, n.radius * n.scale);
+          // 2. Draw 3D Glowing Nodes & Selective Adaptive Text Labels
+          projectedNodes.forEach((n, idx) => {
+            const r = Math.max(5, n.radius * n.scale);
             const isSelected = selectedNodeId === n.id;
+            const isCategory = n.type === 'category';
 
             // Node Outer Glow Halo
             const grad = ctx.createRadialGradient(n.sx, n.sy, 0, n.sx, n.sy, r * (isSelected ? 3.5 : 2.5));
@@ -373,30 +422,32 @@
             ctx.arc(n.sx, n.sy, r, 0, Math.PI * 2);
             ctx.fill();
 
-            if (isSelected) {
+            if (isSelected || isCategory) {
               ctx.strokeStyle = '#38bdf8';
-              ctx.lineWidth = 2.5;
+              ctx.lineWidth = isCategory ? 2 : 2.5;
               ctx.stroke();
             }
 
-            // Node Text Label with Glass Capsule Backdrop
-            if (n.scale > 0.6 || isSelected) {
-              const fontSize = Math.max(10, Math.round(12 * n.scale));
-              ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
+            // Adaptive Label LOD: Only render text for Category Star Hubs, Selected Nodes, or Top 12 nodes when zoomed in!
+            const shouldShowText = isCategory || isSelected || (n.scale > 0.75 && (n.metricValue || 0) > 40);
+
+            if (shouldShowText) {
+              const fontSize = Math.max(10, Math.round((isCategory ? 13 : 11) * n.scale));
+              ctx.font = `${isCategory ? '800' : '600'} ${fontSize}px -apple-system, sans-serif`;
               const textWidth = ctx.measureText(n.label).width;
 
-              // Capsule background
-              ctx.fillStyle = 'rgba(7, 10, 18, 0.75)';
+              // Glass Capsule backdrop
+              ctx.fillStyle = isCategory ? 'rgba(15, 23, 42, 0.9)' : 'rgba(7, 10, 18, 0.75)';
               ctx.beginPath();
-              ctx.roundRect(n.sx + r + 4, n.sy - fontSize/2 - 3, textWidth + 10, fontSize + 6, 6);
+              ctx.roundRect(n.sx + r + 4, n.sy - fontSize/2 - 3, textWidth + 12, fontSize + 6, 6);
               ctx.fill();
-              ctx.strokeStyle = isSelected ? '#38bdf8' : 'rgba(255, 255, 255, 0.15)';
+              ctx.strokeStyle = isSelected ? '#38bdf8' : (isCategory ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255, 255, 255, 0.12)');
               ctx.lineWidth = 1;
               ctx.stroke();
 
               // Text
-              ctx.fillStyle = isSelected ? '#38bdf8' : '#ffffff';
-              ctx.fillText(n.label, n.sx + r + 9, n.sy + fontSize/2 - 2);
+              ctx.fillStyle = isSelected ? '#38bdf8' : (isCategory ? '#ffffff' : '#e2e8f0');
+              ctx.fillText(n.label, n.sx + r + 10, n.sy + fontSize/2 - 2);
             }
           });
 
@@ -405,7 +456,7 @@
 
         // --- NATIVE IOS MULTI-TOUCH GESTURE ENGINE ---
         let touchStartDist = 0;
-        let startCameraDist = 300;
+        let startCameraDist = 550;
         let touchStartTime = 0;
         let touchStartPos = { x: 0, y: 0 };
 
@@ -441,7 +492,7 @@
               e.touches[0].clientY - e.touches[1].clientY
             );
             const factor = touchStartDist / Math.max(currentDist, 1);
-            targetCameraDist = Math.max(80, Math.min(600, startCameraDist * factor));
+            targetCameraDist = Math.max(120, Math.min(1000, startCameraDist * factor));
           }
         }, { passive: true });
 
@@ -450,7 +501,7 @@
             const touchDuration = Date.now() - touchStartTime;
             const moveDist = Math.hypot(lastMouse.x - touchStartPos.x, lastMouse.y - touchStartPos.y);
 
-            // Generous Touch Tap Hit-Testing (36px Radius)
+            // Generous Touch Tap Hit-Testing (40px Radius)
             if (touchDuration < 300 && moveDist < 15) {
               handleTouchTap(lastMouse.x, lastMouse.y);
             }
@@ -465,8 +516,8 @@
           calculated3DNodes.forEach(n => {
             const p = project3D(n.x3d, n.y3d, n.z3d);
             const dist = Math.hypot(p.sx - tapX, p.sy - tapY);
-            // Generous 36px touch radius
-            if (dist < Math.max(36, n.radius * p.scale * 1.8) && dist < minDist) {
+            // Generous 40px touch radius
+            if (dist < Math.max(40, n.radius * p.scale * 2.0) && dist < minDist) {
               minDist = dist;
               clickedNode = n;
             }
@@ -477,9 +528,9 @@
             showInspector(clickedNode);
 
             // Smoothly focus camera on node
-            focusOffsetX = clickedNode.x3d * 0.5;
-            focusOffsetY = clickedNode.y3d * 0.5;
-            focusOffsetZ = clickedNode.z3d * 0.5;
+            focusOffsetX = clickedNode.x3d * 0.6;
+            focusOffsetY = clickedNode.y3d * 0.6;
+            focusOffsetZ = clickedNode.z3d * 0.6;
 
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nodeTapped) {
               window.webkit.messageHandlers.nodeTapped.postMessage(clickedNode.id);
@@ -503,11 +554,11 @@
 
         // HUD Controls Action Bindings
         document.getElementById('btn-zoom-in').addEventListener('click', () => {
-          targetCameraDist = Math.max(80, targetCameraDist - 50);
+          targetCameraDist = Math.max(120, targetCameraDist - 90);
         });
 
         document.getElementById('btn-zoom-out').addEventListener('click', () => {
-          targetCameraDist = Math.min(600, targetCameraDist + 50);
+          targetCameraDist = Math.min(1000, targetCameraDist + 90);
         });
 
         document.getElementById('btn-rotate').addEventListener('click', function() {
@@ -520,9 +571,9 @@
         });
 
         document.getElementById('btn-reset').addEventListener('click', () => {
-          targetRotX = 0.2;
-          targetRotY = 0.4;
-          targetCameraDist = 300;
+          targetRotX = 0.25;
+          targetRotY = 0.45;
+          targetCameraDist = 550;
           focusOffsetX = 0;
           focusOffsetY = 0;
           focusOffsetZ = 0;
