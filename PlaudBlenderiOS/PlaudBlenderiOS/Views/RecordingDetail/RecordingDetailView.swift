@@ -302,7 +302,7 @@ struct RecordingDetailView: View {
                         .fill(Color.forCategory(cat))
                         .frame(height: 6)
                         .frame(maxWidth: .infinity)
-                        .scaleEffect(x: pct, anchor: .leading)
+                        .scaleEffect(x: pct / 100, anchor: .leading)
                 }
             }
             .clipShape(Capsule())
@@ -311,7 +311,7 @@ struct RecordingDetailView: View {
                 ForEach(percentages.sorted(by: { $0.value > $1.value }).prefix(4), id: \.key) { cat, pct in
                     HStack(spacing: 3) {
                         Circle().fill(Color.forCategory(cat)).frame(width: 6, height: 6)
-                        Text("\(cat.capitalized) \(Int(pct * 100))%")
+                        Text("\(cat.capitalized) \(Int(pct))%")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
