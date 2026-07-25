@@ -481,13 +481,37 @@ class PlaudMCPAccountAdapter:
         data = data.get("data", data) if isinstance(data, dict) else {}
         return self._normalize_file(data, result)
 
+    @staticmethod
+    def _note_markdown(blocks: Sequence[Any]) -> str | None:
+        """Join the markdown out of MCP note blocks (auto_sum_note and friends)."""
+        parts = [
+            str(block["data_content"])
+            for block in blocks
+            if isinstance(block, dict) and block.get("data_content")
+        ]
+        return "\n\n".join(parts) or None
+
     def get_note(self, file_id: str) -> PlaudNote:
         result = self.call_tool("get_note", {"file_id": file_id})
         data = self._payload(result)
-        data = data.get("data", data) if isinstance(data, dict) else {}
+        # The server returns a list of note blocks whose markdown lives under
+        # data_content. Dict-shaped responses are kept for older servers.
+        markdown: str | None = None
+        action_items: list[Any] = []
+        topics: list[Any] = []
+        if isinstance(data, list):
+            markdown = self._note_markdown(data)
+        elif isinstance(data, dict):
+            inner = data.get("data", data)
+            if isinstance(inner, list):
+                markdown = self._note_markdown(inner)
+            elif isinstance(inner, dict):
+                markdown = _first(inner, "markdown", "text", "content", "summary")
+                action_items = inner.get("action_items", []) or []
+                topics = inner.get("topics", []) or []
         return PlaudNote(
-            file_id=file_id, markdown=_first(data, "markdown", "text", "content", "summary"),
-            action_items=data.get("action_items", []) or [], topics=data.get("topics", []) or [],
+            file_id=file_id, markdown=markdown,
+            action_items=action_items, topics=topics,
             **self._provenance(result),
         )
 
