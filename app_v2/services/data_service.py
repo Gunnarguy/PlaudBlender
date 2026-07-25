@@ -50,25 +50,40 @@ _GRAPH_LOW_VALUE_KEYWORDS = frozenset(
     {
         "a", "about", "actually", "after", "again", "all", "also", "am", "an",
         "and", "any", "anyone", "anything", "are", "aren", "around", "as", "at",
-        "away", "back", "basically", "be", "because", "been", "before", "being",
-        "but", "by", "can", "come", "conversation", "could", "day", "did", "do",
-        "does", "doing", "done", "down", "dude", "even", "everyone", "everything",
-        "feel", "felt", "few", "for", "from", "general", "get", "gets", "getting",
-        "go", "going", "good", "got", "guy", "guys", "had", "has", "have",
-        "having", "he", "her", "here", "hey", "him", "his", "how", "i", "if",
-        "in", "into", "is", "isn", "it", "its", "just", "kind", "know", "like",
-        "lot", "make", "makes", "many", "maybe", "me", "misc", "more", "most",
-        "much", "my", "n", "na", "not", "nothing", "now", "of", "off", "ok",
-        "okay", "on", "one", "or", "other", "our", "out", "over", "people",
-        "person", "please", "really", "right", "said", "say", "saying", "she",
-        "should", "so", "some", "someone", "something", "sort", "stuff", "take",
-        "talk", "talked", "talking", "tell", "than", "thank", "thanks", "that",
-        "the", "their", "them", "then", "there", "these", "they", "thing",
-        "things", "think", "thinking", "this", "those", "thought", "through",
-        "time", "to", "today", "told", "too", "took", "up", "us", "very", "want",
-        "wanted", "was", "wasn", "way", "we", "week", "well", "were", "weren",
-        "what", "when", "where", "which", "while", "who", "why", "will", "with",
-        "work", "would", "yeah", "yes", "you", "your", "unknown", "none", "n/a",
+        "ask", "asked", "asking", "asks", "away", "back", "basically", "be",
+        "because", "been", "before", "being", "bought", "bring", "bringing",
+        "brings", "brought", "but", "buy", "buying", "buys", "by", "call",
+        "called", "calling", "calls", "can", "check", "checked", "checking",
+        "checks", "come", "conversation", "could", "day", "did", "do", "does",
+        "doing", "done", "down", "dude", "even", "everyone", "everything",
+        "feel", "feeling", "feels", "felt", "few", "for", "from", "gave",
+        "general", "get", "gets", "getting", "give", "given", "gives", "giving",
+        "go", "goes", "going", "gone", "gonna", "good", "got", "gotta", "guy",
+        "guys", "had", "has", "have", "having", "he", "held", "her", "here",
+        "hey", "him", "his", "hold", "holding", "holds", "how", "i", "if", "in",
+        "into", "is", "isn", "it", "its", "just", "keep", "keeping", "keeps",
+        "kept", "kind", "kinds", "knew", "know", "knowing", "knows", "like",
+        "literally", "look", "looked", "looking", "looks", "lot", "lots",
+        "make", "makes", "making", "many", "maybe", "me", "misc", "more",
+        "most", "much", "my", "n", "na", "need", "needed", "needing", "needs",
+        "not", "nothing", "now", "of", "off", "ok", "okay", "on", "one", "or",
+        "other", "our", "out", "over", "part", "parts", "people", "person",
+        "please", "point", "points", "put", "puts", "putting", "ran", "really",
+        "right", "run", "running", "runs", "said", "saw", "say", "saying",
+        "says", "see", "seeing", "seen", "sees", "set", "sets", "setting", "she",
+        "should", "so", "some", "somebody", "someone", "something", "sort",
+        "sorts", "stuff", "swap", "swapped", "swapping", "swaps", "take",
+        "taken", "takes", "taking", "talk", "talked", "talking", "talks", "tell",
+        "telling", "tells", "than", "thank", "thanks", "that", "the", "their",
+        "them", "then", "there", "these", "they", "thing", "things", "think",
+        "thinking", "thinks", "this", "those", "thought", "through", "time",
+        "to", "today", "told", "too", "took", "tried", "tries", "try", "tryin",
+        "trying", "turn", "turned", "turning", "turns", "type", "types", "up",
+        "us", "use", "used", "uses", "using", "very", "want", "wanted",
+        "wanting", "wants", "was", "wasn", "wanna", "way", "ways", "we", "week",
+        "well", "went", "were", "weren", "what", "when", "where", "which",
+        "while", "who", "why", "will", "with", "work", "worked", "working",
+        "works", "would", "yeah", "yes", "you", "your", "unknown", "none", "n/a",
     }
 )
 _GRAPH_DISALLOWED_TOKENS = frozenset(
@@ -77,7 +92,7 @@ _GRAPH_DISALLOWED_TOKENS = frozenset(
 
 
 def _normalize_graph_keyword(value: Any) -> Optional[str]:
-    """Return a stable, useful graph subject or None for transcript debris."""
+    """Return a stable, useful graph subject noun phrase or None for verbs/debris."""
     raw = " ".join(str(value or "").strip().lower().split())
     tokens = re.findall(r"[a-z0-9][a-z0-9+#._-]*", raw)
 
@@ -87,6 +102,10 @@ def _normalize_graph_keyword(value: Any) -> Optional[str]:
         tokens.pop()
 
     if not tokens or any(token in _GRAPH_DISALLOWED_TOKENS for token in tokens):
+        return None
+
+    # Single word topics must not be weak low-value words or single verb tokens
+    if len(tokens) == 1 and tokens[0] in _GRAPH_LOW_VALUE_KEYWORDS:
         return None
 
     content_tokens = [
