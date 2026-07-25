@@ -214,6 +214,22 @@ final class APIClient: Sendable {
 
     // MARK: - Private
 
+    /// AVURLAsset cannot consume a URLRequest, so streaming callers need the
+    /// resolved URL and auth headers handed back separately.
+    func streamingTarget(_ path: String) -> (url: URL, headers: [String: String])? {
+        let cleanBase = baseURL.absoluteString
+        let versioned = versionedPath(path)
+        let cleanPath = versioned.hasPrefix("/") ? String(versioned.dropFirst()) : versioned
+        let full = cleanBase.hasSuffix("/") ? "\(cleanBase)\(cleanPath)" : "\(cleanBase)/\(cleanPath)"
+
+        guard let url = URL(string: full) else { return nil }
+        var headers = ["ngrok-skip-browser-warning": "true"]
+        if let token = authManager.getToken() {
+            headers["Authorization"] = "Bearer \(token)"
+        }
+        return (url, headers)
+    }
+
     private func buildRequest(
         path: String,
         method: String,

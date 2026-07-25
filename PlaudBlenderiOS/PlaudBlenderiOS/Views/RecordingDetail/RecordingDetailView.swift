@@ -35,6 +35,7 @@ struct RecordingDetailContainerView: View {
 struct RecordingDetailView: View {
     let detail: RecordingDetail
     let viewModel: RecordingDetailViewModel
+    @Environment(APIClient.self) private var api
     @State private var selectedTab = 0
     @State private var isShowingWorkflowSheet = false
     @State private var isDownloadingAudio = false
@@ -52,6 +53,11 @@ struct RecordingDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 // Header
                 headerSection
+
+                RecordingAudioPlayerView(
+                    recordingId: detail.summary.recordingId,
+                    apiClient: api
+                )
 
                 if let processing = detail.processing {
                     processingLineageSection(processing)

@@ -147,7 +147,13 @@ async def stream_file_audio(file_id: str, request: Request):
                         "correlation_id": correlation_id},
             )
         import urllib.request as _urllib_request
-        upstream = await asyncio.to_thread(_urllib_request.urlopen, url, None, 120)
+        # AVPlayer will not scrub without byte-range support, so forward the
+        # client's Range header to S3 and mirror the 206 back verbatim.
+        upstream_request = _urllib_request.Request(url)
+        range_header = request.headers.get("Range")
+        if range_header:
+            upstream_request.add_header("Range", range_header)
+        upstream = await asyncio.to_thread(_urllib_request.urlopen, upstream_request, None, 120)
         # S3 serves these as binary/octet-stream, which leaves clients unable to
         # tell what the file is. Plaud stores audiofiles/{id}.mp3.
         content_type = upstream.headers.get("Content-Type", "") or ""
@@ -164,13 +170,21 @@ async def stream_file_audio(file_id: str, request: Request):
             finally:
                 upstream.close()
 
+        stream_headers = {
+            "X-Correlation-Id": correlation_id,
+            "Content-Disposition": f'inline; filename="{file_id}.mp3"',
+            "Accept-Ranges": "bytes",
+        }
+        for passthrough in ("Content-Range", "Content-Length"):
+            value = upstream.headers.get(passthrough)
+            if value:
+                stream_headers[passthrough] = value
+
         return StreamingResponse(
             _chunks(),
+            status_code=206 if upstream.status == 206 else 200,
             media_type=content_type,
-            headers={
-                "X-Correlation-Id": correlation_id,
-                "Content-Disposition": f'attachment; filename="{file_id}.mp3"',
-            },
+            headers=stream_headers,
         )
     except HTTPException:
         raise
