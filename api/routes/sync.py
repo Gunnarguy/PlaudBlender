@@ -161,6 +161,17 @@ def _argv_runs_chronos_pipeline(argv: list[bytes]) -> bool:
     return False
 
 
+def _reject_workflow_error(result) -> None:
+    """Surface upstream workflow failures instead of reporting them as success.
+
+    The service layer returns {"error": ...} rather than raising, so without
+    this every failed submission — including the 404 the Plaud workflow
+    endpoint currently returns — came back as {"success": true}.
+    """
+    if isinstance(result, dict) and result.get("error"):
+        raise HTTPException(status_code=502, detail=str(result["error"]))
+
+
 @router.post("/workflows/submit", response_model=SuccessResponse)
 async def submit_workflows(
     body: WorkflowSubmitRequest,
@@ -173,6 +184,7 @@ async def submit_workflows(
         template_id=body.template_id,
         model=body.model,
     )
+    _reject_workflow_error(result)
     return SuccessResponse(
         message=(
             f"Submitted {result.get('submitted', 0)} workflows"
@@ -192,6 +204,7 @@ async def refresh_workflows(
         days_back=body.days_back,
         limit=body.limit,
     )
+    _reject_workflow_error(result)
     return SuccessResponse(
         message=(
             f"Refreshed {result.get('refreshed', 0)} workflows"
@@ -216,6 +229,7 @@ async def submit_single_workflow(
         template_id=body.template_id,
         model=body.model,
     )
+    _reject_workflow_error(result)
     return SuccessResponse(message=str(result) if result else "Workflow submitted")
 
 
