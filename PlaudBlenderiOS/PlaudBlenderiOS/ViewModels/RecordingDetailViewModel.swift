@@ -24,6 +24,13 @@ final class RecordingDetailViewModel {
         isLoading = false
     }
 
+    /// Plaud file IDs are identical to our recording IDs, so the broker can be
+    /// addressed directly. It streams the bytes rather than handing back the
+    /// presigned URL, which is redacted from every JSON surface.
+    func downloadAudio(recordingId: String) async throws -> URL {
+        try await api.downloadFile("/api/plaud/integrations/files/\(recordingId)/audio")
+    }
+
     func overrideCategory(eventId: String, newCategory: String) async -> Bool {
         Haptics.selectionChanged()
         guard let rid = detail?.summary.recordingId else {

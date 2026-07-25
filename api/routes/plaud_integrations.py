@@ -148,7 +148,11 @@ async def stream_file_audio(file_id: str, request: Request):
             )
         import urllib.request as _urllib_request
         upstream = await asyncio.to_thread(_urllib_request.urlopen, url, None, 120)
-        content_type = upstream.headers.get("Content-Type", "audio/mpeg")
+        # S3 serves these as binary/octet-stream, which leaves clients unable to
+        # tell what the file is. Plaud stores audiofiles/{id}.mp3.
+        content_type = upstream.headers.get("Content-Type", "") or ""
+        if content_type in ("", "binary/octet-stream", "application/octet-stream"):
+            content_type = "audio/mpeg"
 
         def _chunks():
             try:
@@ -160,8 +164,14 @@ async def stream_file_audio(file_id: str, request: Request):
             finally:
                 upstream.close()
 
-        return StreamingResponse(_chunks(), media_type=content_type,
-                                 headers={"X-Correlation-Id": correlation_id})
+        return StreamingResponse(
+            _chunks(),
+            media_type=content_type,
+            headers={
+                "X-Correlation-Id": correlation_id,
+                "Content-Disposition": f'attachment; filename="{file_id}.mp3"',
+            },
+        )
     except HTTPException:
         raise
     except Exception as exc:

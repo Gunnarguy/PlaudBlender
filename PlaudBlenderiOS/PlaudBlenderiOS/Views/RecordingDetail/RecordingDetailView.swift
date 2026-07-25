@@ -37,6 +37,15 @@ struct RecordingDetailView: View {
     let viewModel: RecordingDetailViewModel
     @State private var selectedTab = 0
     @State private var isShowingWorkflowSheet = false
+    @State private var isDownloadingAudio = false
+    @State private var downloadedAudio: AudioExport?
+    @State private var audioErrorMessage: String?
+
+    /// ShareLink needs an Identifiable payload to drive .sheet(item:).
+    private struct AudioExport: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
 
     var body: some View {
         ScrollView {
@@ -89,6 +98,18 @@ struct RecordingDetailView: View {
         .toolbar {
             ToolbarItem(placement: platformTrailingToolbarPlacement) {
                 Button {
+                    Task { await exportAudio() }
+                } label: {
+                    if isDownloadingAudio {
+                        ProgressView()
+                    } else {
+                        Label("Export Audio", systemImage: "square.and.arrow.down")
+                    }
+                }
+                .disabled(isDownloadingAudio)
+            }
+            ToolbarItem(placement: platformTrailingToolbarPlacement) {
+                Button {
                     isShowingWorkflowSheet = true
                 } label: {
                     Label("Run AI", systemImage: "wand.and.stars")
@@ -98,6 +119,47 @@ struct RecordingDetailView: View {
         .sheet(isPresented: $isShowingWorkflowSheet) {
             RunWorkflowSheet(recordingId: detail.summary.recordingId, viewModel: viewModel)
                 .presentationDetents([.medium])
+        }
+        .sheet(item: $downloadedAudio) { export in
+            VStack(spacing: 16) {
+                Image(systemName: "waveform")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+                Text(export.url.lastPathComponent)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                ShareLink(item: export.url) {
+                    Label("Share Audio", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding()
+            .presentationDetents([.height(220)])
+        }
+        .alert(
+            "Audio export failed",
+            isPresented: Binding(
+                get: { audioErrorMessage != nil },
+                set: { if !$0 { audioErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { audioErrorMessage = nil }
+        } message: {
+            Text(audioErrorMessage ?? "")
+        }
+    }
+
+    // MARK: - Actions
+
+    private func exportAudio() async {
+        isDownloadingAudio = true
+        defer { isDownloadingAudio = false }
+        do {
+            let url = try await viewModel.downloadAudio(recordingId: detail.summary.recordingId)
+            downloadedAudio = AudioExport(url: url)
+        } catch {
+            audioErrorMessage = error.localizedDescription
         }
     }
 

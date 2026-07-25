@@ -1,8 +1,10 @@
 """
 Chronos Transcript Processor - Process Plaud transcripts without audio.
 
-Since Plaud API doesn't provide audio downloads (presigned_url is null),
-this module processes transcripts directly through Gemini for event extraction.
+The third-party REST API returns a null presigned_url, so this module works
+from transcript text rather than audio. Audio *is* retrievable, just from a
+different surface: the MCP `get_file` tool returns a 24-hour presigned URL,
+which api/routes/plaud_integrations.py streams via /files/{id}/audio.
 """
 
 import json
