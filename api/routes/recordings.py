@@ -1,5 +1,7 @@
 """Recording and event detail endpoints."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.auth.jwt import require_auth
@@ -15,6 +17,8 @@ from api.schemas.responses import (
     TraceSpanOut,
 )
 from app_v2.services.data_service import ChronosDataService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/v1/recordings",
@@ -184,6 +188,37 @@ async def recording_processing(recording_id: str):
         total_output = sum(int(getattr(span, "output_tokens", 0) or 0) for span in spans)
         providers = sorted({str(span.provider) for span in spans if getattr(span, "provider", None)})
         models = sorted({str(span.model) for span in spans if getattr(span, "model", None)})
+
+        # Execution spans are only tagged with a recording_id by the pipeline
+        # entrypoint, so for recordings processed by auto_sync the span query
+        # returns nothing. api_usage_log is tagged per recording and is the
+        # only source that carries real cost, so fall back to it.
+        if not models and total_cost == 0:
+            try:
+                from sqlalchemy import text
+
+                rows = session.execute(
+                    text(
+                        "SELECT model, SUM(input_tokens), SUM(output_tokens), SUM(cost_usd) "
+                        "FROM api_usage_log WHERE recording_id = :rid GROUP BY model"
+                    ),
+                    {"rid": recording_id},
+                ).all()
+                ledger_models = set()
+                ledger_providers = set()
+                for model_name, inp, outp, cost in rows:
+                    total_input += int(inp or 0)
+                    total_output += int(outp or 0)
+                    total_cost += float(cost or 0)
+                    if model_name:
+                        ledger_models.add(str(model_name))
+                        ledger_providers.add(
+                            "google" if str(model_name).startswith("gemini") else "openai"
+                        )
+                models = sorted(ledger_models)
+                providers = sorted(ledger_providers)
+            except Exception:
+                logger.debug("api_usage_log lineage fallback failed", exc_info=True)
 
         return RecordingProcessingOut(
             recording_id=recording_id,
