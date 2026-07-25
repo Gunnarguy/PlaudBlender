@@ -7,7 +7,6 @@ import SwiftUI
 /// The broker honors byte ranges, so AVPlayer seeks without downloading the
 /// whole file. Auth travels through AVURLAsset's header options because the
 /// endpoint requires a bearer token and AVURLAsset cannot take a URLRequest.
-@MainActor
 @Observable
 final class RecordingAudioPlayerModel {
     var duration: Double = 0
@@ -51,11 +50,10 @@ final class RecordingAudioPlayerModel {
             forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
+            // Delivered on .main, so direct mutation is already main-thread safe.
+            guard let self, !self.isScrubbing else { return }
             let seconds = CMTimeGetSeconds(time)
-            Task { @MainActor [weak self] in
-                guard let self, !self.isScrubbing, seconds.isFinite else { return }
-                self.currentTime = seconds
-            }
+            if seconds.isFinite { self.currentTime = seconds }
         }
         player = newPlayer
         isReady = true
