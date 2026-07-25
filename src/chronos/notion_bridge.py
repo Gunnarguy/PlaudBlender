@@ -80,10 +80,21 @@ def _extract_date_from_title(title: str, year_hint: str = "") -> Optional[str]:
     try:
         from datetime import date as _date
 
-        _date(year, month, day)  # validate
-        return f"{year:04d}-{month:02d}-{day:02d}"
+        resolved = _date(year, month, day)  # validate
     except ValueError:
         return None
+
+    # An MM-DD title carries no year. Defaulting to the current one puts every
+    # month later than today into the future, so a recording titled "12-18" in
+    # July lands five months out. Recordings are always in the past.
+    if not year_hint and resolved > datetime.utcnow().date():
+        try:
+            resolved = _date(year - 1, month, day)
+        except ValueError:  # Feb 29 in a non-leap year
+            return None
+        year -= 1
+
+    return f"{year:04d}-{month:02d}-{day:02d}"
 
 
 def _parse_transcript_duration(transcript: str) -> Optional[int]:
