@@ -384,7 +384,7 @@ struct NotionView: View {
                                 }
 
                                 if let summary = rec.summary, !summary.isEmpty {
-                                    Text(summary)
+                                    Text(summary.markdownPlainPreview)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(2)

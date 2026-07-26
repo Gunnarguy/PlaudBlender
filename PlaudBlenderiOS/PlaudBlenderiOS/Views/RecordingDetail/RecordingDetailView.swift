@@ -225,8 +225,7 @@ struct RecordingDetailView: View {
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
-            Text(summary)
-                .font(.subheadline)
+            MarkdownText(summary, baseFont: .subheadline)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -241,8 +240,7 @@ struct RecordingDetailView: View {
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
-            Text(summary)
-                .font(.subheadline)
+            MarkdownText(summary, baseFont: .subheadline)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -425,8 +423,7 @@ struct RecordingDetailView: View {
                             Label("Plaud AI Summary", systemImage: "brain")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
-                            Text(plaudSummary)
-                                .font(.body)
+                            MarkdownText(plaudSummary, baseFont: .body)
                         }
                     }
 

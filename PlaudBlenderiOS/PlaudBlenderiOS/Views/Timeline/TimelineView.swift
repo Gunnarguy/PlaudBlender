@@ -327,7 +327,7 @@ struct DayCardView: View {
             if !isDayExpanded {
                 // AI Summary snippet
                 if let summary = day.aiSummary, !summary.isEmpty {
-                    Text(summary)
+                    Text(summary.markdownPlainPreview)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -367,8 +367,7 @@ struct DayCardView: View {
                             .font(.caption2)
                             .fontWeight(.semibold)
                             .foregroundStyle(.purple)
-                        Text(summary)
-                            .font(.subheadline)
+                        MarkdownText(summary, baseFont: .subheadline)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -530,8 +529,7 @@ struct RecordingQuickDetailView: View {
                         .font(.caption2)
                         .fontWeight(.semibold)
                         .foregroundStyle(.purple)
-                    Text(plaudSummary)
-                        .font(.caption)
+                    MarkdownText(plaudSummary, baseFont: .caption)
                         .foregroundStyle(.secondary)
                 }
             }

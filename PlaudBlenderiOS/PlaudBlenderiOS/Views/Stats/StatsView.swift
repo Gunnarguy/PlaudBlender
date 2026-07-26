@@ -333,7 +333,7 @@ struct StatsView: View {
                                     .foregroundStyle(.secondary)
                             }
                             if let summary = day.summary, !summary.isEmpty {
-                                Text(summary)
+                                Text(summary.markdownPlainPreview)
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
                                     .lineLimit(2)

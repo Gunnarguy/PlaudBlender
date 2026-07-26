@@ -132,6 +132,65 @@ def _utc_naive_to_local_date_key(value: datetime) -> str:
     return utc_value.astimezone(_LOCAL_TZ).strftime("%Y-%m-%d")
 
 
+# Metadata rows Plaud puts at the top of every summary. These are labels, not
+# prose, so they make a poor day headline — except the themes row, which is
+# exactly the one-line gist we want.
+_SUMMARY_THEME_LABELS = ("primary contexts/themes", "primary contexts", "themes")
+_SUMMARY_SKIP_LABELS = ("date", "total duration", "duration", "header metadata")
+
+
+def _summary_headline(text: str, limit: int = 160) -> str:
+    """Pull a one-line gist out of a Plaud/Chronos Markdown summary.
+
+    Plaud summaries open with a ``# Header Metadata`` block of ``**Date:**``
+    style rows. Splitting on the first "." used to swallow that entire block —
+    newlines and all — and then cut it mid-word, which is why the timeline read
+    "Morning oper." instead of prose.
+
+    Prefers the summary's own themes row, falls back to the first real prose
+    line, and only ever truncates on a word boundary.
+    """
+    theme: str = ""
+    fallback: str = ""
+
+    for raw_line in (text or "").replace("\r\n", "\n").split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        # Skip headings and `---` rules.
+        if line.startswith("#") or (len(line) >= 3 and set(line) <= {"-", "*", "_"}):
+            continue
+        # Strip a leading list marker, then inline emphasis.
+        if line[:2] in ("- ", "* ", "+ "):
+            line = line[2:].strip()
+        plain = line.replace("**", "").replace("`", "").strip()
+        if not plain:
+            continue
+
+        label, _, value = plain.partition(":")
+        label = label.strip().lower()
+        value = value.strip()
+
+        if value and label in _SUMMARY_THEME_LABELS:
+            theme = value
+            break
+        if label in _SUMMARY_SKIP_LABELS:
+            continue
+        if not fallback:
+            # First sentence of the first prose line.
+            fallback = plain.split(". ")[0].strip()
+
+    headline = theme or fallback
+    if not headline:
+        return ""
+
+    headline = headline.rstrip(" .")
+    if len(headline) > limit:
+        headline = headline[:limit].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+        return headline
+    return headline + "."
+
+
 def classify_sync_failure_row(
     rec: _ChronosRecordingModel,
 ) -> Tuple[str, str]:
@@ -1349,13 +1408,11 @@ class ChronosDataService:
                 for rec in day_recordings:
                     text = _summaries_by_id.get(rec.recording_id)
                     if text:
-                        first_sentence = text.split(".")[0].strip()
-                        if first_sentence:
-                            snippets.append(first_sentence[:120])
+                        headline = _summary_headline(text)
+                        if headline:
+                            snippets.append(headline)
                 if snippets:
-                    day_ai_summary = ". ".join(snippets[:3])
-                    if not day_ai_summary.endswith("."):
-                        day_ai_summary += "."
+                    day_ai_summary = " ".join(snippets[:3])
             except Exception as e:
                 logger.debug("AI summary aggregation failed for %s: %s", day_key, e)
 
