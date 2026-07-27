@@ -5,26 +5,44 @@ struct GraphLayoutOption: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let subtitle: String
+    let icon: String
 
-    static let lanes = GraphLayoutOption(
-        id: "lanes",
-        title: "Map",
-        subtitle: "Category → its most-mentioned topics"
+    static let constellation3d = GraphLayoutOption(
+        id: "constellation3d",
+        title: "3D Constellation",
+        subtitle: "3D neural graph floating in deep space",
+        icon: "point.3.connected.trianglepath.dotted"
     )
 
-    static let concentric = GraphLayoutOption(
-        id: "concentric",
-        title: "Most active",
-        subtitle: "Topics ranked by mentions"
+    static let vectorSpace3d = GraphLayoutOption(
+        id: "vectorSpace3d",
+        title: "3D Vector Space",
+        subtitle: "Qdrant semantic vector embedding point cloud",
+        icon: "cube.transparent"
     )
 
-    static let circle = GraphLayoutOption(
-        id: "circle",
-        title: "Over time",
-        subtitle: "Topics ordered from earlier to later"
+    static let isometric25d = GraphLayoutOption(
+        id: "isometric25d",
+        title: "2.5D Isometric",
+        subtitle: "Elevated spatial grid & 3D pillar matrix",
+        icon: "square.3.layers.3d"
     )
 
-    static let all = [lanes, concentric, circle]
+    static let galaxyOrbit3d = GraphLayoutOption(
+        id: "galaxyOrbit3d",
+        title: "3D Galaxy Orbit",
+        subtitle: "Gravitational category star hubs & orbiting topics",
+        icon: "globe.americas.fill"
+    )
+
+    static let volumetric3d = GraphLayoutOption(
+        id: "volumetric3d",
+        title: "3D Volumetric",
+        subtitle: "3D frequency & sentiment bar matrix",
+        icon: "chart.bar.xaxis"
+    )
+
+    static let all = [constellation3d, vectorSpace3d, isometric25d, galaxyOrbit3d, volumetric3d]
 }
 
 struct GraphConnection: Identifiable, Sendable {
@@ -37,18 +55,33 @@ struct GraphConnection: Identifiable, Sendable {
 @Observable
 final class GraphViewModel {
     private static let lowValueTopicWords: Set<String> = [
-        "about", "actually", "after", "again", "also", "anything", "basically",
-        "before", "being", "can", "conversation", "could", "doing", "done", "dude",
-        "even", "everyone", "everything", "from", "fucking", "general", "get", "go",
-        "going", "good", "got", "guy", "guys", "have", "here", "hey", "how", "into",
-        "just", "know", "like", "make", "maybe", "misc", "more", "most", "not",
-        "nothing", "ok", "okay", "other", "people", "person", "really", "said", "say",
-        "saying", "should", "some", "someone", "something", "stuff", "take", "talk",
-        "talking", "tell", "that", "the", "them", "there", "they", "thing", "things",
-        "think", "thinking", "this", "thought", "through", "time", "today", "told",
-        "took", "unknown", "very", "want", "wanted", "was", "week", "well", "were",
-        "what", "when", "where", "which", "who", "why", "will", "with", "would",
-        "yeah", "yes", "your"
+        "about", "actually", "after", "again", "all", "also", "anything", "ask",
+        "asked", "asking", "asks", "basically", "before", "being", "bought",
+        "bring", "bringing", "brings", "brought", "buy", "buying", "buys", "call",
+        "called", "calling", "calls", "can", "check", "checked", "checking", "checks",
+        "conversation", "could", "did", "do", "does", "doing", "done", "dude",
+        "even", "everyone", "everything", "feel", "feeling", "feels", "felt",
+        "from", "fucking", "gave", "general", "get", "gets", "getting", "give",
+        "given", "gives", "giving", "go", "goes", "going", "gone", "gonna", "good",
+        "got", "gotta", "guy", "guys", "had", "has", "have", "having", "held", "here",
+        "hey", "hold", "holding", "holds", "how", "into", "just", "keep", "keeping",
+        "keeps", "kept", "kind", "kinds", "knew", "know", "knowing", "knows", "like",
+        "literally", "look", "looked", "looking", "looks", "lot", "lots", "make",
+        "makes", "making", "maybe", "misc", "more", "most", "need", "needed",
+        "needing", "needs", "not", "nothing", "ok", "okay", "other", "part", "parts",
+        "people", "person", "point", "points", "put", "puts", "putting", "ran",
+        "really", "run", "running", "runs", "said", "saw", "say", "saying", "says",
+        "see", "seeing", "seen", "sees", "set", "sets", "setting", "should", "some",
+        "somebody", "someone", "something", "sort", "sorts", "stuff", "swap",
+        "swapped", "swapping", "swaps", "take", "taken", "takes", "taking", "talk",
+        "talked", "talking", "talks", "tell", "telling", "tells", "that", "the",
+        "them", "there", "they", "thing", "things", "think", "thinking", "thinks",
+        "this", "thought", "through", "time", "today", "told", "took", "tried",
+        "tries", "try", "trying", "turn", "turned", "turning", "turns", "type",
+        "types", "unknown", "use", "used", "uses", "using", "very", "want",
+        "wanted", "wanting", "wants", "wanna", "was", "way", "ways", "week", "well",
+        "went", "were", "what", "when", "where", "which", "who", "why", "will",
+        "with", "work", "worked", "working", "works", "would", "yeah", "yes", "your"
     ]
     private static let disallowedTopicWords: Set<String> = [
         "damn", "fuck", "fucked", "fucking", "fucks", "shit", "shits", "shitty"
@@ -59,26 +92,83 @@ final class GraphViewModel {
     var edges: [GraphEdge] = []
     var isLoading = false
     var error: String?
-    var selectedLayout = GraphLayoutOption.lanes.id
+    var selectedLayout = GraphLayoutOption.constellation3d.id
 
+    // Smart Density & Filter Controls
+    var selectedCategoryFilter: String = "all"
+    var selectedDensityLimit: Int = 20 // Default to top 20 key concepts so it's NEVER crammed!
+    var searchText: String = ""
+
+    let availableCategories = ["all", "meeting", "personal", "reflection", "idea"]
+    let availableDensityLimits = [15, 25, 40, 100]
     let availableLayouts = GraphLayoutOption.all
 
     private let api: APIClient
 
+    var displayedNodes: [GraphNode] {
+        var result = nodes
+
+        // 1. Category Filter
+        if selectedCategoryFilter != "all" {
+            let catKey = selectedCategoryFilter.lowercased()
+            result = result.filter { node in
+                (node.type == "category" && node.id.lowercased().contains(catKey))
+                || (node.type == "topic" && node.categories.contains(where: { $0.lowercased().contains(catKey) }))
+            }
+        }
+
+        // 2. Search Text Filter
+        if !searchText.isEmpty {
+            let query = searchText.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            result = result.filter { node in
+                node.fullLabel.lowercased().contains(query) || node.label.lowercased().contains(query)
+            }
+        }
+
+        // 3. Density Limit (Keep all categories + top N most mentioned topic nodes)
+        let catNodes = result.filter { $0.type == "category" }
+        let topTopics = result.filter { $0.type == "topic" }
+            .sorted(by: { ($0.metricValue ?? 0) > ($1.metricValue ?? 0) })
+            .prefix(selectedDensityLimit)
+
+        return catNodes + Array(topTopics)
+    }
+
+    var displayedEdges: [GraphEdge] {
+        let visibleIDs = Set(displayedNodes.map(\.id))
+        let validEdges = edges.filter {
+            visibleIDs.contains($0.source) && visibleIDs.contains($0.target)
+        }
+
+        // Structural Edge Pruning: Keep top 2 strongest edges per node to avoid 957-edge web clutter
+        var nodeEdgeCounts: [String: Int] = [:]
+        let sortedEdges = validEdges.sorted(by: { $0.weight > $1.weight })
+        return sortedEdges.filter { edge in
+            let c1 = nodeEdgeCounts[edge.source, default: 0]
+            let c2 = nodeEdgeCounts[edge.target, default: 0]
+            if c1 < 2 || c2 < 2 {
+                nodeEdgeCounts[edge.source] = c1 + 1
+                nodeEdgeCounts[edge.target] = c2 + 1
+                return true
+            }
+            return false
+        }
+    }
+
     var categoryNodes: [GraphNode] {
-        nodes
+        displayedNodes
             .filter { $0.type == "category" }
             .sorted(by: sortNodes)
     }
 
     var topicNodes: [GraphNode] {
-        nodes
+        displayedNodes
             .filter { $0.type == "topic" }
             .sorted(by: sortNodes)
     }
 
     var graphSignature: String {
-        let nodePart = nodes
+        let nodePart = displayedNodes
             .sorted { $0.id < $1.id }
             .map {
                 [
@@ -96,7 +186,7 @@ final class GraphViewModel {
             }
             .joined(separator: ";")
 
-        let edgePart = edges
+        let edgePart = displayedEdges
             .sorted { lhs, rhs in
                 if lhs.source != rhs.source { return lhs.source < rhs.source }
                 if lhs.target != rhs.target { return lhs.target < rhs.target }
@@ -113,7 +203,7 @@ final class GraphViewModel {
             }
             .joined(separator: ";")
 
-        return "\(nodePart)#\(edgePart)"
+        return "\(selectedCategoryFilter)#\(selectedDensityLimit)#\(searchText)#\(nodePart)#\(edgePart)"
     }
 
     init(api: APIClient) {

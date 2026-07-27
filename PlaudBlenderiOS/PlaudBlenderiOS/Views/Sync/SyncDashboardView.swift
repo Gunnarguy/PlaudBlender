@@ -461,16 +461,18 @@ struct SyncDashboardView: View {
     }
 
     private struct RotatingRing: View {
-        @State private var isAnimating = false
         let color: Color
         
         var body: some View {
-            Circle()
-                .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: [4, 3]))
-                .frame(width: 34, height: 34)
-                .rotationEffect(.degrees(isAnimating ? 360 : 0))
-                .animation(.linear(duration: 4).repeatForever(autoreverses: false), value: isAnimating)
-                .onAppear { isAnimating = true }
+            SwiftUI.TimelineView(.animation) { context in
+                let seconds = context.date.timeIntervalSince1970
+                let degrees = (seconds.truncatingRemainder(dividingBy: 4.0) / 4.0) * 360.0
+                
+                Circle()
+                    .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: [4, 3]))
+                    .frame(width: 34, height: 34)
+                    .rotationEffect(.degrees(degrees))
+            }
         }
     }
 
@@ -1692,15 +1694,18 @@ struct SyncDashboardView: View {
 // MARK: - Pulsing Dot
 
 private struct PulsingDot: View {
-    @State private var isAnimating = false
-
     var body: some View {
-        Circle()
-            .fill(.green)
-            .frame(width: 8, height: 8)
-            .scaleEffect(isAnimating ? 1.3 : 1.0)
-            .opacity(isAnimating ? 0.6 : 1.0)
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isAnimating)
-            .onAppear { isAnimating = true }
+        SwiftUI.TimelineView(.animation) { context in
+            let seconds = context.date.timeIntervalSince1970
+            let phase = (sin(seconds * 5.0) + 1.0) / 2.0
+            let scale = 1.0 + (phase * 0.25)
+            let opacity = 1.0 - (phase * 0.4)
+
+            Circle()
+                .fill(Color.emeraldGreen)
+                .frame(width: 8, height: 8)
+                .scaleEffect(scale)
+                .opacity(opacity)
+        }
     }
 }

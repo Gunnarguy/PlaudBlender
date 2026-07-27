@@ -20,6 +20,8 @@ extension Color {
     static let accentOrange = Color(hex: "bc4c00")
     static let accentPink = Color(hex: "bf3989")
     static let accentCyan = Color(hex: "0891b2")
+    static let emeraldGreen = Color(hex: "10b981")
+    static let roseRed = Color(hex: "f43f5e")
 
     /// Get category color by name string.
     static func forCategory(_ category: String) -> Color {

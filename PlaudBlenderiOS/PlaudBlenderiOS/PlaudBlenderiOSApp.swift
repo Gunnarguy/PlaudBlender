@@ -29,6 +29,7 @@ struct PlaudBlenderiOSApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .preferredColorScheme(.dark)
                 .environment(apiClient)
                 .environment(notionViewModel)
                 .environment(syncViewModel)

@@ -14,6 +14,7 @@ struct GraphContainerView: View {
     let viewModel: GraphViewModel
     @State private var selectedNodeID: String?
     @State private var rendererError: String?
+    @State private var isControlsExpanded: Bool = false
 
     private var selectedNode: GraphNode? {
         viewModel.node(withID: selectedNodeID)
@@ -23,18 +24,23 @@ struct GraphContainerView: View {
         rendererError ?? viewModel.error
     }
 
+    private var selectedNodeBinding: Binding<GraphNode?> {
+        Binding(
+            get: { selectedNode },
+            set: { selectedNodeID = $0?.id }
+        )
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                controlsCard
-                    .padding([.horizontal, .top])
+            ZStack(alignment: .top) {
+                Color(hex: "070a12")
+                    .ignoresSafeArea()
 
                 if viewModel.isLoading {
-                    Spacer()
-                    LoadingView(message: "Building knowledge graph...")
-                    Spacer()
+                    LoadingView(message: "Building knowledge neural map...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = activeError {
-                    Spacer()
                     EmptyStateView(
                         icon: "exclamationmark.triangle",
                         title: "Graph Unavailable",
@@ -45,9 +51,8 @@ struct GraphContainerView: View {
                             Task { await viewModel.refresh() }
                         }
                     )
-                    Spacer()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if viewModel.nodes.isEmpty {
-                    Spacer()
                     EmptyStateView(
                         icon: "point.3.connected.trianglepath.dotted",
                         title: "No Graph Data",
@@ -55,15 +60,22 @@ struct GraphContainerView: View {
                         actionTitle: "Refresh",
                         action: { Task { await viewModel.refresh() } }
                     )
-                    Spacer()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
+                    // Full-Screen 3D WebGL Canvas
                     graphWebView
-                        .padding(.horizontal)
-                        .padding(.top, 12)
-                        .padding(.bottom, 8)
+                        .ignoresSafeArea(edges: .bottom)
+
+                    // Floating Glass Controls Header
+                    controlsCard
+                        .padding([.horizontal, .top], 10)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isControlsExpanded)
                 }
             }
             .navigationTitle("Knowledge Graph")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(Color(hex: "070a12"), for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: platformTrailingToolbarPlacement) {
                     HStack(spacing: 4) {
@@ -80,21 +92,19 @@ struct GraphContainerView: View {
                         Button("Clear") {
                             selectedNodeID = nil
                         }
-                        .font(.caption)
+                        .font(.caption.weight(.bold))
                     }
                 }
             }
-            .safeAreaInset(edge: .bottom) {
-                if let node = selectedNode,
-                   !viewModel.isLoading,
-                   activeError == nil,
-                   !viewModel.nodes.isEmpty {
-                    selectedNodeInspector(node)
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-                        .padding(.bottom, 10)
-                }
+            .sheet(item: selectedNodeBinding) { node in
+                selectedNodeInspector(node)
+                    .presentationDetents([.height(340), .medium, .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackgroundInteraction(.enabled(upThrough: .height(340)))
             }
+            .sensoryFeedback(.impact(weight: .medium), trigger: selectedNodeID)
+            .sensoryFeedback(.selection, trigger: viewModel.selectedLayout)
+            .sensoryFeedback(.selection, trigger: viewModel.selectedCategoryFilter)
             .task {
                 await viewModel.loadGraph()
             }
@@ -102,15 +112,32 @@ struct GraphContainerView: View {
     }
 
     private var controlsCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Your knowledge map")
-                        .font(.headline)
-                    Text("Repeated, concrete subjects only. Each row is a category followed by the topics that consistently appeared in it.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        @Bindable var vm = viewModel
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center) {
+                Button {
+                    isControlsExpanded.toggle()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "cpu.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.cyan)
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 4) {
+                                Text("3D Neural Map")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(.white)
+                                Image(systemName: isControlsExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("\(viewModel.displayedNodes.count) key nodes in 3D space")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
+                .buttonStyle(.plain)
 
                 Spacer()
 
@@ -118,62 +145,122 @@ struct GraphContainerView: View {
                     rendererError = nil
                     Task { await viewModel.refresh() }
                 } label: {
-                    Label("Reload", systemImage: "arrow.clockwise")
-                        .font(.caption.weight(.semibold))
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption.weight(.bold))
+                        .padding(8)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(Circle())
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(viewModel.availableLayouts) { option in
-                        let isSelected = viewModel.selectedLayout == option.id
+            if isControlsExpanded {
+                // Search Bar
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Search 3D concepts & categories...", text: $vm.searchText)
+                        .font(.caption)
+                    if !viewModel.searchText.isEmpty {
                         Button {
-                            rendererError = nil
-                            viewModel.selectedLayout = option.id
+                            viewModel.searchText = ""
                         } label: {
-                            layoutOptionCard(option, isSelected: isSelected)
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
                     }
                 }
-            }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
 
-            ScrollView(.horizontal, showsIndicators: false) {
+                // Density Limit & Category Filters Row
                 HStack(spacing: 8) {
-                    ForEach(viewModel.categoryNodes) { node in
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(Color(hex: node.color))
-                                .frame(width: 8, height: 8)
-                            Text(node.label)
-                                .font(.caption.weight(.semibold))
-                            if let count = node.count {
-                                Text("\(count)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                    // Density Limit Menu
+                    Menu {
+                        ForEach(viewModel.availableDensityLimits, id: \.self) { limit in
+                            Button {
+                                viewModel.selectedDensityLimit = limit
+                            } label: {
+                                HStack {
+                                    Text(limit >= 100 ? "All Nodes (\(viewModel.nodes.count))" : "Top \(limit) Key Concepts")
+                                    if viewModel.selectedDensityLimit == limit {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
                             }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.caption2)
+                            Text(viewModel.selectedDensityLimit >= 100 ? "All Nodes" : "Top \(viewModel.selectedDensityLimit)")
+                                .font(.caption.weight(.bold))
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(Color.secondary.opacity(0.08))
+                        .background(Color.cyan.opacity(0.15))
+                        .foregroundStyle(.cyan)
                         .clipShape(Capsule())
+                    }
+
+                    // Category Chips
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(viewModel.availableCategories, id: \.self) { cat in
+                                let isSelected = viewModel.selectedCategoryFilter == cat
+                                Button {
+                                    viewModel.selectedCategoryFilter = cat
+                                } label: {
+                                    Text(cat.capitalized)
+                                        .font(.caption2.weight(.bold))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(isSelected ? Color.cyan : Color.white.opacity(0.06))
+                                        .foregroundStyle(isSelected ? .black : .secondary)
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                // 3D View Mode Selector
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(viewModel.availableLayouts) { option in
+                            let isSelected = viewModel.selectedLayout == option.id
+                            Button {
+                                rendererError = nil
+                                viewModel.selectedLayout = option.id
+                            } label: {
+                                layoutOptionCard(option, isSelected: isSelected)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
         }
-        .padding(16)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .padding(12)
+        .background(Color(hex: "0f172a").opacity(0.88))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
     }
 
     private var graphWebView: some View {
         CytoscapeWebView(
-            payload: GraphRenderPayload(nodes: viewModel.nodes, edges: viewModel.edges),
+            payload: GraphRenderPayload(nodes: viewModel.displayedNodes, edges: viewModel.displayedEdges),
             layout: viewModel.selectedLayout,
             selectedNodeID: selectedNodeID,
             renderSignature: viewModel.graphSignature,
@@ -185,41 +272,31 @@ struct GraphContainerView: View {
             }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.thickMaterial)
-        .overlay(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(selectedLayoutTitle)
-                    .font(.caption.weight(.semibold))
-                Text(interactionHint)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(12)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .padding(12)
-        }
         .clipShape(RoundedRectangle(cornerRadius: 26))
         .overlay(
             RoundedRectangle(cornerRadius: 26)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
     }
 
     private var selectedLayoutTitle: String {
-        viewModel.availableLayouts.first(where: { $0.id == viewModel.selectedLayout })?.title ?? "Graph"
+        viewModel.availableLayouts.first(where: { $0.id == viewModel.selectedLayout })?.title ?? "3D Graph"
     }
 
     private var interactionHint: String {
         switch viewModel.selectedLayout {
-        case GraphLayoutOption.lanes.id:
-            return "Swipe through categories; pinch to zoom. Tap a category or topic for details."
-        case GraphLayoutOption.concentric.id:
-            return "The higher the topic, the more often it appears. Tap for its connections."
-        case GraphLayoutOption.circle.id:
-            return "Topics run from earlier to later. Tap for its connections."
+        case GraphLayoutOption.constellation3d.id:
+            return "3D Neural Constellation: Touch drag to orbit 360°, pinch to zoom, tap any node sphere."
+        case GraphLayoutOption.vectorSpace3d.id:
+            return "Qdrant Vector Embedding Space: Semantic similarity distance projection in 3D."
+        case GraphLayoutOption.isometric25d.id:
+            return "2.5D Isometric Matrix: Elevated category grid with 3D frequency pillars."
+        case GraphLayoutOption.galaxyOrbit3d.id:
+            return "3D Galaxy Orbit: Category star hubs with orbiting topic nodes."
+        case GraphLayoutOption.volumetric3d.id:
+            return "3D Volumetric Matrix: Translucent 3D frequency & sentiment bars."
         default:
-            return "Tap a category or topic to focus its relationships."
+            return "Touch drag to rotate space 360°, pinch to zoom."
         }
     }
 
@@ -227,85 +304,97 @@ struct GraphContainerView: View {
         let connections = viewModel.strongestConnections(for: node)
         let categoryTopics = node.type == "category" ? viewModel.topics(in: node) : []
 
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                RoundedRectangle(cornerRadius: node.type == "category" ? 10 : 14)
-                    .fill(Color(hex: node.color))
-                    .frame(width: node.type == "category" ? 18 : 14, height: node.type == "category" ? 18 : 14)
-                    .padding(.top, 4)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .center, spacing: 14) {
+                    Circle()
+                        .fill(Color(hex: node.color))
+                        .frame(width: 18, height: 18)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(node.fullLabel)
-                        .font(.headline)
-                    Text(node.type == "category" ? "Category hub" : "Topic node")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(node.fullLabel)
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(.white)
+                        Text(node.type == "category" ? "Category Hub" : "Knowledge Concept Node")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Color.cyan)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        selectedNodeID = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
 
-                Spacer()
-
-                Button("Clear") {
-                    selectedNodeID = nil
+                HStack(spacing: 10) {
+                    metricBadge(title: metricTitle(for: node), value: metricValue(for: node))
+                    if !node.categories.isEmpty {
+                        metricBadge(title: "Categories", value: node.categories.joined(separator: " • "))
+                    }
                 }
-                .font(.caption.weight(.semibold))
-            }
 
-            HStack(spacing: 8) {
-                metricBadge(title: metricTitle(for: node), value: metricValue(for: node))
-                if !node.categories.isEmpty {
-                    metricBadge(title: "Categories", value: node.categories.joined(separator: " • "))
+                Text(nodeInsight(for: node))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                if !categoryTopics.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Top Topics in \(node.label)")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+
+                        topicPills(categoryTopics)
+                    }
                 }
-            }
 
-            Text(nodeInsight(for: node))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                if !connections.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Strongest 3D Connections")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
 
-            if !categoryTopics.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Top Topics in \(node.label)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        ForEach(connections) { connection in
+                            Button {
+                                selectedNodeID = connection.node.id
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(Color(hex: connection.node.color))
+                                        .frame(width: 10, height: 10)
 
-                    topicPills(categoryTopics)
-                }
-            }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(connection.node.fullLabel)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(.white)
+                                        Text(connection.node.type.capitalized)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
 
-            if !connections.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Strongest Connections")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                                    Spacer()
 
-                    ForEach(connections) { connection in
-                        HStack(spacing: 10) {
-                            Circle()
-                                .fill(Color(hex: connection.node.color))
-                                .frame(width: 8, height: 8)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(connection.node.fullLabel)
-                                    .font(.subheadline.weight(.medium))
-                                    .lineLimit(1)
-                                Text(connection.node.type.capitalized)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    Text("\(Int(connection.weight)) mentions")
+                                        .font(.caption.monospacedDigit().weight(.bold))
+                                        .foregroundStyle(Color.cyan)
+                                }
+                                .padding(12)
+                                .background(Color.white.opacity(0.05))
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
                             }
-
-                            Spacer()
-
-                            Text(connection.weight.formatted(.number.precision(.fractionLength(0))))
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                            .buttonStyle(.plain)
                         }
                     }
                 }
             }
+            .padding(20)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .background(Color(hex: "070a12").ignoresSafeArea())
     }
 
     private func topicPills(_ topics: [GraphNode]) -> some View {
@@ -351,22 +440,29 @@ struct GraphContainerView: View {
     }
 
     private func layoutOptionCard(_ option: GraphLayoutOption, isSelected: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(option.title)
-                .font(.subheadline.weight(.semibold))
-            Text(option.subtitle)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.leading)
+        HStack(spacing: 8) {
+            Image(systemName: option.icon)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(isSelected ? Color.cyan : Color.secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(option.title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(isSelected ? .white : .secondary)
+                Text(option.subtitle)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
-        .frame(width: 150, alignment: .leading)
-        .padding(12)
-        .background(isSelected ? Color.accentPrimary.opacity(0.14) : Color.secondary.opacity(0.08))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(isSelected ? Color.cyan.opacity(0.18) : Color.white.opacity(0.04))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(isSelected ? Color.accentPrimary : Color.primary.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(isSelected ? Color.cyan.opacity(0.5) : Color.white.opacity(0.08), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     private func metricTitle(for node: GraphNode) -> String {

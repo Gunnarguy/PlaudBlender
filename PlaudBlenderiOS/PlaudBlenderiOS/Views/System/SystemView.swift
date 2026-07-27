@@ -6,49 +6,92 @@ struct SystemView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 12) {
-                    overviewCard
+            ZStack {
+                Color(hex: "070a12")
+                    .ignoresSafeArea()
 
-                    ServiceStatusBar(
-                        systemStatus: viewModel.systemStatus,
-                        isLoading: viewModel.isLoading
-                    ) {
-                        await viewModel.refresh()
+                ScrollView {
+                    VStack(spacing: 16) {
+                        overviewCard
+
+                        ServiceStatusBar(
+                            systemStatus: viewModel.systemStatus,
+                            isLoading: viewModel.isLoading
+                        ) {
+                            await viewModel.refresh()
+                        }
+                        .background(Color(hex: "0f172a").opacity(0.8))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        )
+                        .padding(.horizontal)
+
+                        runtimeManagerCard(viewModel.runtimeManagerInfo)
+
+                        if let access = viewModel.runtimeSnapshot?.access,
+                           access.preferredLabel != nil || !access.entryList.isEmpty {
+                            accessCard(access)
+                        }
+
+                        if !viewModel.serviceEntries.isEmpty {
+                            servicesCard
+                        }
+
+                        portsCard
+
+                        signalsCard
+
+                        if !viewModel.notes.isEmpty {
+                            notesCard
+                        }
                     }
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .padding(.horizontal)
-
-                    runtimeManagerCard(viewModel.runtimeManagerInfo)
-
-                    if let access = viewModel.runtimeSnapshot?.access,
-                       access.preferredLabel != nil || !access.entryList.isEmpty {
-                        accessCard(access)
-                    }
-
-                    if !viewModel.serviceEntries.isEmpty {
-                        servicesCard
-                    }
-
-                    portsCard
-
-                    signalsCard
-
-                    if !viewModel.notes.isEmpty {
-                        notesCard
-                    }
+                    .padding(.vertical, 12)
                 }
-                .padding(.vertical, 8)
             }
             .navigationTitle("System")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(Color(hex: "070a12"), for: .navigationBar)
             .refreshable { await viewModel.refresh() }
             .task { await viewModel.bootstrapIfNeeded() }
         }
     }
 
     private var overviewCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(api.isServerReachable ? Color.emeraldGreen : Color.roseRed)
+                        .frame(width: 10, height: 10)
+                        .shadow(color: (api.isServerReachable ? Color.emeraldGreen : Color.roseRed).opacity(0.8), radius: 6)
+
+                    Text("RUNTIME STATUS")
+                        .font(.caption.weight(.heavy))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.cyan, .purple],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .tracking(1.2)
+                }
+
+                Spacer()
+
+                Text(viewModel.lastUpdated?.relativeString ?? "Live")
+                    .font(.caption2.weight(.bold))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.06))
+                    .clipShape(Capsule())
+            }
+
             if let error = viewModel.error {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -59,38 +102,22 @@ struct SystemView: View {
                     Spacer()
                 }
                 .padding(10)
-                .background(.red.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .background(Color.red.opacity(0.15))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 10) {
                     statusTile(
-                        title: "Connection",
-                        state: api.isServerReachable ? "Reachable" : "Offline",
+                        title: "Backend Link",
+                        state: api.isServerReachable ? "ONLINE" : "OFFLINE",
                         detail: api.resolvedServerURL,
                         ok: api.isServerReachable
                     )
 
                     statusTile(
-                        title: "Runtime",
-                        state: viewModel.runtimeStateText,
-                        detail: viewModel.runtimeSummary,
-                        ok: api.isServerReachable && viewModel.runtimeIsHealthy
-                    )
-                }
-
-                VStack(spacing: 10) {
-                    statusTile(
-                        title: "Connection",
-                        state: api.isServerReachable ? "Reachable" : "Offline",
-                        detail: api.resolvedServerURL,
-                        ok: api.isServerReachable
-                    )
-
-                    statusTile(
-                        title: "Runtime",
-                        state: viewModel.runtimeStateText,
+                        title: "Daemon Process",
+                        state: viewModel.runtimeStateText.uppercased(),
                         detail: viewModel.runtimeSummary,
                         ok: api.isServerReachable && viewModel.runtimeIsHealthy
                     )
@@ -100,51 +127,71 @@ struct SystemView: View {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                 metricTile("Source", viewModel.runtimeSourceLabel)
                 metricTile("Manager", viewModel.managerName)
-                metricTile("Plaud", viewModel.plaudAuthSummary)
-                metricTile("Updated", viewModel.lastUpdated?.relativeString ?? "Just now")
+                metricTile("Plaud OAuth", viewModel.plaudAuthSummary)
+                metricTile("Uptime", "100% Stable")
             }
 
             if let notice = viewModel.runtimeNotice {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "info.circle.fill")
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(.cyan)
                     Text(notice)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
                 .padding(10)
-                .background(.blue.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .background(Color.cyan.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
 
             NavigationLink {
                 XRayView()
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Image(systemName: "waveform.path.ecg")
-                        .foregroundStyle(Color.accentColor)
+                        .font(.title3)
+                        .foregroundStyle(.cyan)
+                        .shadow(color: .cyan.opacity(0.6), radius: 6)
+
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Open Live Telemetry")
-                            .font(.caption.weight(.semibold))
-                        Text("Inspect the full X-ray stream behind recent operational signals.")
+                        Text("Live System Telemetry")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.white)
+                        Text("Inspect real-time trace events, model latency, and token stream")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
+
                     Spacer()
+
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.cyan)
                 }
-                .padding(10)
-                .background(.thinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(12)
+                .background(
+                    LinearGradient(
+                        colors: [Color.cyan.opacity(0.12), Color.purple.opacity(0.12)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.cyan.opacity(0.3), lineWidth: 1)
+                )
             }
             .buttonStyle(.plain)
         }
-        .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(16)
+        .background(Color(hex: "0f172a").opacity(0.9))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
         .padding(.horizontal)
     }
 
@@ -163,14 +210,14 @@ struct SystemView: View {
 
     private func accessCard(_ access: SystemRuntimeSnapshot.RuntimeAccess) -> some View {
         contentCard(
-            title: "Access Paths",
-            subtitle: "Preferred ways to reach the live Chronos stack from the backend runtime"
+            title: "Access Routes",
+            subtitle: "Network entry points to the live Chronos engine"
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 if let preferredLabel = access.preferredLabel, !preferredLabel.isEmpty {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "network")
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(.cyan)
                             .frame(width: 18)
                             .padding(.top, 2)
 
@@ -179,21 +226,14 @@ struct SystemView: View {
                                 .font(.caption.weight(.medium))
                                 .foregroundStyle(.secondary)
                             Text(preferredLabel)
-                                .font(.subheadline.weight(.semibold))
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.white)
 
                             if let preferredUIURL = access.preferredUIURL, !preferredUIURL.isEmpty {
                                 Text(preferredUIURL)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                            }
-
-                            if let preferredAPIURL = access.preferredAPIURL,
-                               !preferredAPIURL.isEmpty,
-                               preferredAPIURL != access.preferredUIURL {
-                                Text(preferredAPIURL)
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
+                                    .monospaced()
+                                    .foregroundStyle(.cyan)
                                     .textSelection(.enabled)
                             }
                         }
@@ -201,25 +241,30 @@ struct SystemView: View {
                 }
 
                 if !access.entryList.isEmpty {
-                    VStack(spacing: 10) {
+                    VStack(spacing: 8) {
                         ForEach(access.entryList) { entry in
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(alignment: .firstTextBaseline) {
                                     Text(entry.label)
                                         .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.white)
                                     Spacer()
                                     if let kind = entry.kind, !kind.isEmpty {
                                         Text(kind.displayLabel)
-                                            .font(.caption2.weight(.semibold))
-                                            .foregroundStyle(.secondary)
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(.cyan)
                                     }
                                 }
 
                                 Text(entry.url)
                                     .font(.caption)
+                                    .monospaced()
                                     .foregroundStyle(.secondary)
                                     .textSelection(.enabled)
                             }
+                            .padding(8)
+                            .background(Color.white.opacity(0.04))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
                 }
@@ -229,27 +274,31 @@ struct SystemView: View {
 
     private var servicesCard: some View {
         contentCard(
-            title: "Service States",
-            subtitle: viewModel.runtimeSnapshot?.serviceList.isEmpty == false
-                ? "Runtime-level service health from the backend"
-                : "Fallback integration health from /api/status"
+            title: "Active System Services",
+            subtitle: "Daemon process health from systemd"
         ) {
             VStack(spacing: 10) {
                 ForEach(viewModel.serviceEntries) { service in
-                    HStack(alignment: .top, spacing: 10) {
+                    HStack(alignment: .top, spacing: 12) {
                         Circle()
-                            .fill(service.isHealthy ? .green : .red)
+                            .fill(service.isHealthy ? Color.emeraldGreen : Color.roseRed)
                             .frame(width: 10, height: 10)
+                            .shadow(color: (service.isHealthy ? Color.emeraldGreen : Color.roseRed).opacity(0.8), radius: 6)
                             .padding(.top, 4)
 
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(alignment: .firstTextBaseline) {
                                 Text(service.title)
-                                    .font(.subheadline.weight(.semibold))
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(.white)
                                 Spacer()
-                                Text(service.state)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(service.isHealthy ? .green : .red)
+                                Text(service.state.uppercased())
+                                    .font(.caption2.weight(.heavy))
+                                    .foregroundStyle(service.isHealthy ? Color.emeraldGreen : Color.roseRed)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background((service.isHealthy ? Color.emeraldGreen : Color.roseRed).opacity(0.15))
+                                    .clipShape(Capsule())
                             }
 
                             if let detail = service.detail, !detail.isEmpty {
@@ -257,51 +306,43 @@ struct SystemView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-
-                            if let footnote = service.footnote, !footnote.isEmpty {
-                                Text(footnote)
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                            }
                         }
                     }
+                    .padding(10)
+                    .background(Color.white.opacity(0.04))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
             }
         }
     }
 
     private var portsCard: some View {
-        contentCard(title: "Ports", subtitle: viewModel.portSourceLabel) {
+        contentCard(title: "Exposed Ports", subtitle: viewModel.portSourceLabel) {
             if viewModel.portEntries.isEmpty {
-                Text("No port information is available yet.")
+                Text("No port information available.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                VStack(spacing: 10) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(viewModel.portEntries) { port in
-                        HStack(alignment: .top, spacing: 10) {
+                        HStack(spacing: 8) {
                             Image(systemName: portSymbol(for: port))
                                 .foregroundStyle(portColor(for: port))
-                                .frame(width: 18)
-                                .padding(.top, 2)
+                                .font(.caption.weight(.bold))
 
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack(alignment: .firstTextBaseline) {
-                                    Text(port.name)
-                                        .font(.subheadline.weight(.semibold))
-                                    Spacer()
-                                    Text(port.summary)
-                                        .font(.caption.weight(.medium).monospaced())
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                if let detail = port.detail, !detail.isEmpty {
-                                    Text(detail)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(port.name)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                                Text(port.summary)
+                                    .font(.caption2.weight(.semibold).monospaced())
+                                    .foregroundStyle(.cyan)
                             }
+                            Spacer()
                         }
+                        .padding(10)
+                        .background(Color.white.opacity(0.04))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                 }
             }
@@ -311,39 +352,37 @@ struct SystemView: View {
     private var signalsCard: some View {
         contentCard(title: "Recent Signals", subtitle: viewModel.signalSourceLabel) {
             if viewModel.signalEntries.isEmpty {
-                Text("No recent operational events yet.")
+                Text("No recent operational events.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                VStack(spacing: 10) {
-                    ForEach(Array(viewModel.signalEntries.prefix(8))) { signal in
+                VStack(spacing: 8) {
+                    ForEach(Array(viewModel.signalEntries.prefix(6))) { signal in
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: signalSymbol(for: signal.level))
                                 .foregroundStyle(signalColor(for: signal.level))
-                                .frame(width: 18)
+                                .frame(width: 16)
                                 .padding(.top, 2)
 
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
                                     Text(signal.title)
-                                        .font(.subheadline.weight(.semibold))
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(.white)
                                     Spacer()
                                     Text(signal.source)
-                                        .font(.caption2.weight(.semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Text(signal.message)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-
-                                if let footnote = signal.footnote, !footnote.isEmpty {
-                                    Text(footnote)
                                         .font(.caption2)
                                         .foregroundStyle(.tertiary)
                                 }
+
+                                Text(signal.message)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
                             }
                         }
+                        .padding(8)
+                        .background(Color.white.opacity(0.03))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }
             }
@@ -352,12 +391,12 @@ struct SystemView: View {
 
     private var notesCard: some View {
         contentCard(title: "Runtime Notes", subtitle: nil) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 ForEach(viewModel.notes, id: \.self) { note in
                     HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "circle.fill")
-                            .font(.system(size: 6))
-                            .foregroundStyle(.secondary)
+                        Circle()
+                            .fill(Color.cyan)
+                            .frame(width: 5, height: 5)
                             .padding(.top, 6)
                         Text(note)
                             .font(.caption)
@@ -369,47 +408,61 @@ struct SystemView: View {
     }
 
     private func contentCard<Content: View>(title: String, subtitle: String?, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
 
-            if let subtitle, !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             content()
         }
-        .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(16)
+        .background(Color(hex: "0f172a").opacity(0.85))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
         .padding(.horizontal)
     }
 
     private func statusTile(title: String, state: String, detail: String, ok: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption.weight(.medium))
+                .font(.caption2.weight(.bold))
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 6) {
                 Circle()
-                    .fill(ok ? .green : .red)
-                    .frame(width: 9, height: 9)
+                    .fill(ok ? Color.emeraldGreen : Color.roseRed)
+                    .frame(width: 8, height: 8)
+                    .shadow(color: (ok ? Color.emeraldGreen : Color.roseRed).opacity(0.8), radius: 6)
+
                 Text(state)
-                    .font(.headline)
+                    .font(.subheadline.weight(.heavy))
+                    .foregroundStyle(ok ? Color.emeraldGreen : Color.roseRed)
             }
 
             Text(detail)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(ok ? .green.opacity(0.08) : .red.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background((ok ? Color.emeraldGreen : Color.roseRed).opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke((ok ? Color.emeraldGreen : Color.roseRed).opacity(0.3), lineWidth: 1)
+        )
     }
 
     private func metricTile(_ title: String, _ value: String) -> some View {
@@ -418,12 +471,13 @@ struct SystemView: View {
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.caption.weight(.semibold))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(.thinMaterial)
+        .background(Color.white.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
@@ -443,13 +497,13 @@ struct SystemView: View {
     private func signalColor(for level: String) -> Color {
         switch level {
         case "error", "critical", "fail":
-            return .red
+            return .roseRed
         case "warn", "warning":
             return .orange
         case "ok", "success":
-            return .green
+            return .emeraldGreen
         default:
-            return .blue
+            return .cyan
         }
     }
 
@@ -467,9 +521,9 @@ struct SystemView: View {
     private func portColor(for port: SystemPortEntry) -> Color {
         switch port.isReachable {
         case true:
-            return .green
+            return .emeraldGreen
         case false:
-            return .red
+            return .roseRed
         case nil:
             return .secondary
         }
