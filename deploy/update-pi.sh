@@ -119,6 +119,16 @@ acquire_update_lock
 cd "$REPO_DIR"
 
 echo "[1/6] Pulling latest code..."
+# Services rewrite telemetry into these tracked files while running, which makes
+# --ff-only refuse to pull. Discard the local churn; it regenerates on the next
+# probe. Kept in step with RUNTIME_TRACKED_FILES in auto-update.sh.
+for runtime_file in "plaud-capability-manifest.json"; do
+    [[ -e "$runtime_file" ]] || continue
+    if ! git diff --quiet --ignore-submodules -- "$runtime_file"; then
+        echo "  · discarding runtime-generated changes in $runtime_file"
+        git checkout -- "$runtime_file" || true
+    fi
+done
 git fetch origin
 git pull --ff-only
 echo "  ✓ Code updated"

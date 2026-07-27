@@ -31,9 +31,28 @@ if ! git -C "$REPO_DIR" remote get-url "$REMOTE" >/dev/null 2>&1; then
     exit 0
 fi
 
+# Tracked files that the running services rewrite in place. Their schema is
+# worth versioning, but they also carry live telemetry (last_latency_ms,
+# last_successful_call_time), so the working tree went dirty within minutes of
+# every boot -- and the guard below then skipped every single run, silently, for
+# as long as the service was up. Discard those local edits first; the next
+# capability probe regenerates them.
+RUNTIME_TRACKED_FILES=(
+    "plaud-capability-manifest.json"
+)
+
+for runtime_file in "${RUNTIME_TRACKED_FILES[@]}"; do
+    [[ -e "$REPO_DIR/$runtime_file" ]] || continue
+    if ! git -C "$REPO_DIR" diff --quiet --ignore-submodules -- "$runtime_file"; then
+        echo "$LOG_PREFIX discarding runtime-generated changes in $runtime_file"
+        git -C "$REPO_DIR" checkout -- "$runtime_file" || true
+    fi
+done
+
 if ! git -C "$REPO_DIR" diff --quiet --ignore-submodules --exit-code || \
    ! git -C "$REPO_DIR" diff --cached --quiet --ignore-submodules --exit-code; then
     echo "$LOG_PREFIX WARNING: local tracked changes exist; skipping auto-update to avoid overwriting them"
+    git -C "$REPO_DIR" status --porcelain --untracked-files=no | head -10 | sed "s/^/$LOG_PREFIX   /"
     exit 0
 fi
 
