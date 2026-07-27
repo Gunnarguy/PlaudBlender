@@ -20,6 +20,15 @@ struct StatsView: View {
             }
             .navigationTitle("Stats")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        DualBenchmarkView()
+                    } label: {
+                        Image(systemName: "waveform.badge.magnifyingglass")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .accessibilityLabel("Open audio benchmark")
+                }
                 ToolbarItem(placement: platformTrailingToolbarPlacement) {
                     Button {
                         showCostQuickLook = true
