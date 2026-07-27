@@ -2,8 +2,10 @@ import Foundation
 import Observation
 
 /// One side of the A/B benchmark.
-enum BenchmarkSlot: String, CaseIterable, Sendable {
+enum BenchmarkSlot: String, CaseIterable, Identifiable, Sendable {
     case a, b
+
+    var id: String { rawValue }
 
     var label: String { self == .a ? "File A" : "File B" }
 }
@@ -14,6 +16,17 @@ struct RepeatedToken: Identifiable, Sendable {
     var id: String { token }
     let token: String
     let count: Int
+}
+
+/// A recording offered in the transcript picker.
+struct LibraryPick: Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String
+    let subtitle: String
+}
+
+private struct BenchmarkTranscriptResponse: Decodable {
+    let transcript: String
 }
 
 @MainActor
@@ -32,11 +45,81 @@ final class DualBenchmarkViewModel {
     /// word-level Levenshtein -- up to 16M cell updates -- on every keystroke
     /// in the transcript editors.
     private(set) var comparison: BenchmarkComparison?
+    private(set) var transcriptSimilarity: TranscriptSimilarity = .empty
+    /// True while an alignment is in flight, so the UI can say so instead of
+    /// showing a stale score.
+    private(set) var isComparingText = false
     private(set) var metricRows: [MetricRow] = []
     private(set) var loopsA: [RepeatedToken] = []
     private(set) var loopsB: [RepeatedToken] = []
 
     private var rebuildTask: Task<Void, Never>?
+
+    // MARK: Library-backed transcripts
+
+    /// Recordings offered in the transcript picker. The corpus already holds
+    /// every transcript, so similarity should not depend on pasting text by hand.
+    private(set) var library: [LibraryPick] = []
+    private(set) var isLoadingLibrary = false
+    private(set) var libraryError: String?
+    private(set) var pickedA: LibraryPick?
+    private(set) var pickedB: LibraryPick?
+    private(set) var loadingTranscriptFor: BenchmarkSlot?
+
+    func picked(for slot: BenchmarkSlot) -> LibraryPick? {
+        slot == .a ? pickedA : pickedB
+    }
+
+    func loadLibrary(api: APIClient) async {
+        guard library.isEmpty, !isLoadingLibrary else { return }
+        isLoadingLibrary = true
+        libraryError = nil
+        defer { isLoadingLibrary = false }
+
+        do {
+            let response: DaysResponse = try await api.get(
+                "/api/timeline/days-filled",
+                query: ["limit": "60"]
+            )
+            var seen = Set<String>()
+            library = response.days.flatMap { day -> [LibraryPick] in
+                (day.recordings ?? []).compactMap { rec in
+                    guard seen.insert(rec.recordingId).inserted else { return nil }
+                    return LibraryPick(
+                        id: rec.recordingId,
+                        title: rec.title ?? rec.recordingId,
+                        subtitle: [day.date, rec.durationFormatted]
+                            .compactMap { $0 }
+                            .joined(separator: " · ")
+                    )
+                }
+            }
+            if library.isEmpty { libraryError = "No recordings found in the corpus." }
+        } catch {
+            libraryError = error.localizedDescription
+        }
+    }
+
+    /// Pull the stored transcript for `pick` and attach it to `slot`.
+    func attachTranscript(_ pick: LibraryPick, api: APIClient, into slot: BenchmarkSlot) async {
+        loadingTranscriptFor = slot
+        defer { loadingTranscriptFor = nil }
+
+        do {
+            let encoded = pick.id.addingPercentEncoding(
+                withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-._~"))
+            ) ?? pick.id
+            let response: BenchmarkTranscriptResponse = try await api.get(
+                "/api/recordings/\(encoded)/transcript"
+            )
+            switch slot {
+            case .a: pickedA = pick; transcriptA = response.transcript
+            case .b: pickedB = pick; transcriptB = response.transcript
+            }
+        } catch {
+            libraryError = "Could not load transcript for \(pick.title): \(error.localizedDescription)"
+        }
+    }
 
     var progressA: Double = 0
     var progressB: Double = 0
@@ -112,17 +195,29 @@ final class DualBenchmarkViewModel {
     /// Coalesce keystrokes so a long transcript is not re-aligned per character.
     private func scheduleRebuild() {
         rebuildTask?.cancel()
-        rebuildTask = Task { [weak self] in
+        
+        let ta = transcriptA
+        let tb = transcriptB
+        isComparingText = !ta.isEmpty && !tb.isEmpty
+        
+        rebuildTask = Task.detached { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            self?.rebuild()
+            
+            let similarity = TranscriptSimilarity.compute(ta, tb)
+            let loopsA = Self.repeatedTokens(in: ta)
+            let loopsB = Self.repeatedTokens(in: tb)
+            
+            await self?.applyRebuild(similarity: similarity, loopsA: loopsA, loopsB: loopsB)
         }
     }
 
-    private func rebuild() {
-        loopsA = Self.repeatedTokens(in: transcriptA)
-        loopsB = Self.repeatedTokens(in: transcriptB)
-
+    private func applyRebuild(similarity: TranscriptSimilarity, loopsA: [RepeatedToken], loopsB: [RepeatedToken]) {
+        self.transcriptSimilarity = similarity
+        self.loopsA = loopsA
+        self.loopsB = loopsB
+        self.isComparingText = false
+        
         guard let a = reportA, let b = reportB else {
             comparison = nil
             metricRows = []
@@ -131,12 +226,14 @@ final class DualBenchmarkViewModel {
 
         let built = BenchmarkComparison(
             reportA: a,
-            reportB: b,
-            transcriptA: transcriptA.isEmpty ? nil : transcriptA,
-            transcriptB: transcriptB.isEmpty ? nil : transcriptB
+            reportB: b
         )
         comparison = built
-        metricRows = Self.buildRows(built)
+        metricRows = Self.buildRows(built, similarity: similarity)
+    }
+
+    private func rebuild() {
+        scheduleRebuild()
     }
 
     func loops(for slot: BenchmarkSlot) -> [RepeatedToken] {
@@ -172,7 +269,7 @@ final class DualBenchmarkViewModel {
     // MARK: - Comparison
 
     /// Tokens repeated often enough to look like decoder loops rather than speech.
-    static func repeatedTokens(in transcript: String, minimumCount: Int = 25, limit: Int = 6) -> [RepeatedToken] {
+    nonisolated static func repeatedTokens(in transcript: String, minimumCount: Int = 25, limit: Int = 6) -> [RepeatedToken] {
         guard !transcript.isEmpty else { return [] }
         var counts: [String: Int] = [:]
         for raw in transcript.split(whereSeparator: { $0.isWhitespace }) {
@@ -189,7 +286,7 @@ final class DualBenchmarkViewModel {
 
     // MARK: - 35-metric table
 
-    static func buildRows(_ comparison: BenchmarkComparison) -> [MetricRow] {
+    static func buildRows(_ comparison: BenchmarkComparison, similarity: TranscriptSimilarity) -> [MetricRow] {
         let a = comparison.reportA
         let b = comparison.reportB
         let clock = comparison.clockSync
@@ -254,13 +351,13 @@ final class DualBenchmarkViewModel {
 
         // B. Speech recognition & AI fidelity (10-11)
         add("Word Count",
-            a.wordCount.map(String.init) ?? "—",
-            b.wordCount.map(String.init) ?? "—",
-            a.wordCount != nil && b.wordCount != nil ? Self.signed(Double(b.wordCount! - a.wordCount!), 0) : "—",
+            similarity.wordsA > 0 ? "\(similarity.wordsA)" : "—",
+            similarity.wordsB > 0 ? "\(similarity.wordsB)" : "—",
+            (similarity.wordsA > 0 && similarity.wordsB > 0) ? Self.signed(Double(similarity.wordsB - similarity.wordsA), 0) : "—",
             "💡 Words the transcriber produced. Wildly more words than the other file often means hallucinated filler, not richer capture.")
         add("Text Similarity",
-            comparison.textSimilarityRatio != nil ? Self.number(comparison.textSimilarityRatio! * 100, 1) + "%" : "—",
-            comparison.similarityWasTruncated ? "(first 4k words)" : "—",
+            similarity.ratio != nil ? Self.number(similarity.ratio! * 100, 1) + "%" : "—",
+            similarity.truncated ? "(first 4k words)" : "—",
             "—",
             "💡 How closely the two transcripts agree, word by word. Low agreement on the same event means one device misheard a lot.")
 

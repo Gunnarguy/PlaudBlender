@@ -4,7 +4,11 @@ import UniformTypeIdentifiers
 
 /// Side-by-side acoustic benchmark of two recordings.
 struct DualBenchmarkView: View {
+    @Environment(APIClient.self) private var api
     @State private var model = DualBenchmarkViewModel()
+    /// Safe as an optional: `.sheet(item:)` hands the value to its content
+    /// closure, so unlike `.fileImporter` it cannot be cleared before use.
+    @State private var pickingSlot: BenchmarkSlot?
     @State private var isImporting = false
     @State private var importingSlot: BenchmarkSlot = .a
 
@@ -16,13 +20,17 @@ struct DualBenchmarkView: View {
             VStack(alignment: .leading, spacing: 20) {
                 fileCards
 
+                // Transcripts stand on their own: the corpus already holds them,
+                // and comparing text should not require analysing two WAVs
+                // first. Only the acoustic sections depend on both reports.
+                transcriptViewer
+
                 if let comparison = model.comparison {
                     executiveOverview(comparison)
                     waveformChart(comparison)
                     loudnessChart(comparison)
                     spectralChart(comparison)
                     metricTable
-                    transcriptViewer
                 } else {
                     emptyState
                 }
@@ -43,6 +51,10 @@ struct DualBenchmarkView: View {
                 model.errorMessage = error.localizedDescription
             }
         }
+        .sheet(item: $pickingSlot) { slot in
+            transcriptPicker(for: slot)
+        }
+        .task { await model.loadLibrary(api: api) }
         .alert("Analysis Failed", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }
@@ -133,12 +145,13 @@ struct DualBenchmarkView: View {
     private func executiveOverview(_ c: BenchmarkComparison) -> some View {
         let a = c.reportA
         let b = c.reportB
+        let sim = model.transcriptSimilarity
         return VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Executive Overview", icon: "chart.bar.doc.horizontal")
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
                 statCard("Word Count",
-                         a.wordCount.map(String.init) ?? "—",
-                         b.wordCount.map(String.init) ?? "—")
+                         sim.wordsA > 0 ? "\(sim.wordsA)" : "—",
+                         sim.wordsB > 0 ? "\(sim.wordsB)" : "—")
                 statCard("Clipped Samples",
                          "\(a.totalClippedSamples)",
                          "\(b.totalClippedSamples)")
@@ -278,9 +291,23 @@ struct DualBenchmarkView: View {
 
     // MARK: - 35-metric table
 
+    /// Column widths, defined once. Header and rows both read these, so the two
+    /// cannot drift out of alignment.
+    private enum Col {
+        static let index: CGFloat = 34
+        static let parameter: CGFloat = 150
+        static let value: CGFloat = 96
+        static let variance: CGFloat = 92
+        static let takeaway: CGFloat = 320
+    }
+
     private var metricTable: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("35-Metric Comparison", icon: "tablecells")
+            // Horizontal scrolling only. The table is left at its natural height
+            // so the page's own vertical scroll reaches every row: a fixed
+            // maxHeight here clipped rows with no way to scroll to them, and
+            // nesting a second vertical scroll view fights the page's gesture.
             ScrollView(.horizontal, showsIndicators: true) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     tableHeader
@@ -289,7 +316,6 @@ struct DualBenchmarkView: View {
                     }
                 }
             }
-            .frame(maxHeight: 520)
             .background(.ultraThinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .padding(.horizontal)
@@ -297,28 +323,29 @@ struct DualBenchmarkView: View {
     }
 
     private var tableHeader: some View {
-        HStack(spacing: 0) {
-            cell("#", width: 34, bold: true)
-            cell("Parameter", width: 150, bold: true)
-            cell("File A", width: 96, bold: true).foregroundStyle(columnA)
-            cell("File B", width: 96, bold: true).foregroundStyle(columnB)
-            cell("Variance", width: 92, bold: true)
-            cell("Engineering & Takeaways", width: 330, bold: true)
+        HStack(alignment: .top, spacing: 0) {
+            cell("#", width: Col.index, bold: true)
+            cell("Parameter", width: Col.parameter, bold: true)
+            cell("File A", width: Col.value, bold: true).foregroundStyle(columnA)
+            cell("File B", width: Col.value, bold: true).foregroundStyle(columnB)
+            cell("Variance", width: Col.variance, bold: true)
+            cell("Engineering & Takeaways", width: Col.takeaway, bold: true)
         }
         .background(.regularMaterial)
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     private func metricRowView(_ row: MetricRow) -> some View {
-        HStack(spacing: 0) {
-            cell("\(row.index)", width: 34)
+        HStack(alignment: .top, spacing: 0) {
+            cell("\(row.index)", width: Col.index)
                 .foregroundStyle(.tertiary)
-            cell(row.parameter, width: 150, bold: true)
-            cell(row.valueA, width: 96)
+            cell(row.parameter, width: Col.parameter, bold: true)
+            cell(row.valueA, width: Col.value, monospaced: true)
                 .background(columnA.opacity(0.10))
-            cell(row.valueB, width: 96)
+            cell(row.valueB, width: Col.value, monospaced: true)
                 .background(columnB.opacity(0.10))
-            cell(row.variance, width: 92)
-            cell(row.takeaway, width: 330)
+            cell(row.variance, width: Col.variance, monospaced: true)
+            cell(row.takeaway, width: Col.takeaway)
                 .foregroundStyle(.secondary)
         }
         .background(row.isCritical ? Color.cyan.opacity(0.12) : Color.clear)
@@ -327,11 +354,15 @@ struct DualBenchmarkView: View {
         }
     }
 
-    private func cell(_ text: String, width: CGFloat, bold: Bool = false) -> some View {
+    private func cell(_ text: String,
+                      width: CGFloat,
+                      bold: Bool = false,
+                      monospaced: Bool = false) -> some View {
         Text(text)
             .font(.caption2)
             .fontWeight(bold ? .semibold : .regular)
-            .frame(width: width, alignment: .leading)
+            .monospaced(monospaced)
+            .frame(width: width, alignment: .topLeading)
             .padding(.horizontal, 6)
             .padding(.vertical, 7)
             .fixedSize(horizontal: false, vertical: true)
@@ -340,8 +371,36 @@ struct DualBenchmarkView: View {
     // MARK: - Transcripts
 
     private var transcriptViewer: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let sim = model.transcriptSimilarity
+        return VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Transcripts", icon: "text.alignleft")
+
+            HStack(spacing: 8) {
+                if model.isComparingText {
+                    ProgressView().controlSize(.mini)
+                    Text("Comparing…").font(.caption2).foregroundStyle(.secondary)
+                } else if let ratio = sim.ratio {
+                    Text("Similarity \(DualBenchmarkViewModel.number(ratio * 100, 1))%")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .monospaced()
+                    if sim.truncated {
+                        // No silent culling: say when only a prefix was scored.
+                        Text("first 4,000 words")
+                            .font(.system(size: 9))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.18))
+                            .clipShape(Capsule())
+                    }
+                } else {
+                    Text("Load a transcript into each side to score similarity.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal)
+
             HStack(alignment: .top, spacing: 12) {
                 transcriptPane(text: $model.transcriptA, slot: .a, tint: columnA)
                 transcriptPane(text: $model.transcriptB, slot: .b, tint: columnB)
@@ -358,8 +417,31 @@ struct DualBenchmarkView: View {
                 Spacer()
                 Text("\(text.wrappedValue.split(whereSeparator: \.isWhitespace).count) words")
                     .font(.caption2)
+                    .monospaced()
                     .foregroundStyle(.secondary)
             }
+
+            // The corpus already holds every transcript, so pull from it rather
+            // than making similarity depend on hand-pasted text.
+            Button {
+                pickingSlot = slot
+            } label: {
+                if model.loadingTranscriptFor == slot {
+                    HStack(spacing: 4) {
+                        ProgressView().controlSize(.mini)
+                        Text("Loading…").font(.caption2)
+                    }
+                } else if let pick = model.picked(for: slot) {
+                    Label(pick.title, systemImage: "text.book.closed")
+                        .font(.caption2)
+                        .lineLimit(1)
+                } else {
+                    Label("Load from Library", systemImage: "tray.and.arrow.down")
+                        .font(.caption2)
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.loadingTranscriptFor != nil)
 
             TextEditor(text: text)
                 .font(.caption2)
@@ -388,6 +470,39 @@ struct DualBenchmarkView: View {
     }
 
     // MARK: - Shared
+
+    @ViewBuilder
+    private func transcriptPicker(for slot: BenchmarkSlot) -> some View {
+        NavigationStack {
+            List(model.library) { pick in
+                Button {
+                    pickingSlot = nil
+                    Task {
+                        await model.attachTranscript(pick, api: api, into: slot)
+                    }
+                } label: {
+                    VStack(alignment: .leading) {
+                        Text(pick.title).font(.headline).foregroundColor(.primary)
+                        Text(pick.subtitle).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Select Transcript")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { pickingSlot = nil }
+                }
+            }
+            .overlay {
+                if model.isLoadingLibrary {
+                    ProgressView("Loading...")
+                } else if let error = model.libraryError {
+                    Text(error).foregroundStyle(.red).padding()
+                }
+            }
+        }
+    }
 
     private func sectionHeader(_ title: String, icon: String) -> some View {
         Label(title, systemImage: icon)

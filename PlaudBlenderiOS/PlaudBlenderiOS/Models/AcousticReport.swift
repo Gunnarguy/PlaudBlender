@@ -131,6 +131,44 @@ nonisolated struct ClockSyncMetrics: Sendable {
     }
 }
 
+// MARK: - Transcript similarity
+
+/// Word-level agreement between two transcripts.
+///
+/// Deliberately independent of `BenchmarkComparison`: transcripts are worth
+/// comparing whether or not any audio has been analysed, and the corpus already
+/// holds them. `nonisolated` so the alignment can run off the main actor -- a
+/// capped 4,000x4,000 pairing is ~16M cell updates and would visibly stall the
+/// UI on the main thread.
+nonisolated struct TranscriptSimilarity: Sendable {
+    /// 0...1, or nil when either side is empty.
+    let ratio: Double?
+    /// True when either transcript exceeded the cap and only a prefix was scored.
+    let truncated: Bool
+    let wordsA: Int
+    let wordsB: Int
+
+    static let empty = TranscriptSimilarity(ratio: nil, truncated: false, wordsA: 0, wordsB: 0)
+
+    static func compute(_ a: String, _ b: String, cap: Int = 4_000) -> TranscriptSimilarity {
+        let wordsA = a.split(whereSeparator: \.isWhitespace).map(String.init)
+        let wordsB = b.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !wordsA.isEmpty, !wordsB.isEmpty else {
+            return TranscriptSimilarity(ratio: nil, truncated: false,
+                                        wordsA: wordsA.count, wordsB: wordsB.count)
+        }
+        return TranscriptSimilarity(
+            ratio: BenchmarkComparison.levenshteinRatio(
+                Array(wordsA.prefix(cap)),
+                Array(wordsB.prefix(cap))
+            ),
+            truncated: wordsA.count > cap || wordsB.count > cap,
+            wordsA: wordsA.count,
+            wordsB: wordsB.count
+        )
+    }
+}
+
 // MARK: - Comparison
 
 /// A single row of the side-by-side 35-metric table.
@@ -153,35 +191,11 @@ nonisolated struct BenchmarkComparison: Sendable {
     let reportB: AcousticReport
     let clockSync: ClockSyncMetrics
 
-    /// Metric 11. Levenshtein alignment ratio between the two transcripts,
-    /// 0...1. Nil when either transcript is missing.
-    let textSimilarityRatio: Double?
-
-    /// True when the transcripts were longer than the comparison cap and the
-    /// ratio above reflects a truncated prefix.
-    let similarityWasTruncated: Bool
-
     init(reportA: AcousticReport,
-         reportB: AcousticReport,
-         transcriptA: String?,
-         transcriptB: String?,
-         similarityTokenCap: Int = 4_000) {
+         reportB: AcousticReport) {
         self.reportA = reportA
         self.reportB = reportB
         self.clockSync = .between(reportA, reportB)
-
-        if let ta = transcriptA, let tb = transcriptB, !ta.isEmpty, !tb.isEmpty {
-            let wordsA = ta.split(whereSeparator: \.isWhitespace).map(String.init)
-            let wordsB = tb.split(whereSeparator: \.isWhitespace).map(String.init)
-            self.similarityWasTruncated = wordsA.count > similarityTokenCap || wordsB.count > similarityTokenCap
-            self.textSimilarityRatio = Self.levenshteinRatio(
-                Array(wordsA.prefix(similarityTokenCap)),
-                Array(wordsB.prefix(similarityTokenCap))
-            )
-        } else {
-            self.textSimilarityRatio = nil
-            self.similarityWasTruncated = false
-        }
     }
 
     /// Word-level Levenshtein similarity, `1 - distance / maxLength`.
