@@ -46,7 +46,7 @@ struct DualBenchmarkView: View {
         ) { result in
             switch result {
             case .success(let urls):
-                if let url = urls.first { model.analyze(url: url, into: importingSlot) }
+                if let url = urls.first { model.analyze(url: url, into: importingSlot, api: api) }
             case .failure(let error):
                 model.errorMessage = error.localizedDescription
             }
@@ -421,6 +421,8 @@ struct DualBenchmarkView: View {
                     .foregroundStyle(.secondary)
             }
 
+            matchStatus(for: slot)
+
             // The corpus already holds every transcript, so pull from it rather
             // than making similarity depend on hand-pasted text.
             Button {
@@ -499,6 +501,61 @@ struct DualBenchmarkView: View {
                     ProgressView("Loading...")
                 } else if let error = model.libraryError {
                     Text(error).foregroundStyle(.red).padding()
+                }
+            }
+        }
+    }
+
+    /// What we recognised the imported file as. Reuse is labelled, ambiguity is
+    /// shown rather than resolved by guessing, and a miss offers transcription.
+    @ViewBuilder
+    private func matchStatus(for slot: BenchmarkSlot) -> some View {
+        switch model.match(for: slot) {
+        case .unique(let candidate, let reason):
+            Label("Reused “\(candidate.title)” — \(reason)", systemImage: "checkmark.seal")
+                .font(.system(size: 9))
+                .foregroundStyle(.green)
+                .lineLimit(2)
+
+        case .ambiguous(let candidates, let reason):
+            VStack(alignment: .leading, spacing: 3) {
+                Label(reason, systemImage: "questionmark.circle")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange)
+                ForEach(candidates) { candidate in
+                    Button(candidate.title) {
+                        if let pick = model.library.first(where: { $0.id == candidate.id }) {
+                            Task { await model.attachTranscript(pick, api: api, into: slot) }
+                        }
+                    }
+                    .font(.system(size: 9))
+                    .buttonStyle(.bordered)
+                }
+            }
+
+        case .none:
+            if model.report(for: slot) != nil, model.transcript(for: slot).isEmpty {
+                if model.transcribingSlot == slot {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ProgressView(value: model.transcribeProgress)
+                        Text(model.transcribeNeedsDownload
+                             ? "Downloading language model…"
+                             : "Transcribing \(Int(model.transcribeProgress * 100))%")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("No corpus match for this file.")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                        Button("Transcribe on device") {
+                            Task { await model.transcribeOnDevice(slot: slot) }
+                        }
+                        .font(.system(size: 9))
+                        .buttonStyle(.bordered)
+                        .disabled(model.transcribingSlot != nil)
+                    }
                 }
             }
         }

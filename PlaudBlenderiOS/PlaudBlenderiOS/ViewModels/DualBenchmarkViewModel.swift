@@ -23,6 +23,12 @@ struct LibraryPick: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let subtitle: String
+    let durationSeconds: Double
+    let startAt: Date?
+
+    var candidate: TranscriptCandidate {
+        TranscriptCandidate(id: id, title: title, durationSeconds: durationSeconds, startAt: startAt)
+    }
 }
 
 private struct BenchmarkTranscriptResponse: Decodable {
@@ -66,8 +72,92 @@ final class DualBenchmarkViewModel {
     private(set) var pickedB: LibraryPick?
     private(set) var loadingTranscriptFor: BenchmarkSlot?
 
+    /// Kept so a slot can be transcribed on device later without re-importing.
+    private var sourceURLA: URL?
+    private var sourceURLB: URL?
+    private(set) var transcribingSlot: BenchmarkSlot?
+    private(set) var transcribeProgress: Double = 0
+    private(set) var transcribeNeedsDownload = false
+
+    func sourceURL(for slot: BenchmarkSlot) -> URL? {
+        slot == .a ? sourceURLA : sourceURLB
+    }
+
+    /// Fall back to on-device speech recognition when nothing in the corpus
+    /// matches. Slower than reuse, which is why it is never the first choice.
+    func transcribeOnDevice(slot: BenchmarkSlot) async {
+        guard let url = sourceURL(for: slot) else { return }
+        guard let locale = await AudioTranscriber.resolveLocale() else {
+            errorMessage = AudioTranscriberError.noSupportedLocale.localizedDescription
+            return
+        }
+
+        transcribingSlot = slot
+        transcribeProgress = 0
+        transcribeNeedsDownload = await !AudioTranscriber.isInstalled(locale)
+        defer { transcribingSlot = nil; transcribeNeedsDownload = false }
+
+        do {
+            let text = try await AudioTranscriber.transcribe(url: url, locale: locale) { value in
+                Task { @MainActor [weak self] in self?.transcribeProgress = value }
+            }
+            switch slot {
+            case .a: transcriptA = text
+            case .b: transcriptB = text
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func picked(for slot: BenchmarkSlot) -> LibraryPick? {
         slot == .a ? pickedA : pickedB
+    }
+
+    /// What the imported file was recognised as, per slot.
+    private(set) var matchA: TranscriptMatchOutcome = .none
+    private(set) var matchB: TranscriptMatchOutcome = .none
+
+    func match(for slot: BenchmarkSlot) -> TranscriptMatchOutcome {
+        slot == .a ? matchA : matchB
+    }
+
+    private func setMatch(_ outcome: TranscriptMatchOutcome, for slot: BenchmarkSlot) {
+        switch slot {
+        case .a: matchA = outcome
+        case .b: matchB = outcome
+        }
+    }
+
+    static func parseTimestamp(_ raw: String) -> Date? {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: raw) { return d }
+        iso.formatOptions = [.withInternetDateTime]
+        if let d = iso.date(from: raw) { return d }
+        let plain = DateFormatter()
+        plain.locale = Locale(identifier: "en_US_POSIX")
+        plain.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return plain.date(from: raw)
+    }
+
+    /// Reuse an existing transcript when the imported file is recognisably one
+    /// of the corpus recordings. Never guesses between equally good candidates.
+    func resolveTranscript(for slot: BenchmarkSlot, api: APIClient) async {
+        guard let report = report(for: slot) else { return }
+        await loadLibrary(api: api)
+
+        let outcome = TranscriptMatcher.match(
+            fileName: report.fileName,
+            durationSeconds: report.durationSeconds,
+            in: library.map(\.candidate)
+        )
+        setMatch(outcome, for: slot)
+
+        if case .unique(let candidate, _) = outcome,
+           let pick = library.first(where: { $0.id == candidate.id }) {
+            await attachTranscript(pick, api: api, into: slot)
+        }
     }
 
     func loadLibrary(api: APIClient) async {
@@ -90,7 +180,9 @@ final class DualBenchmarkViewModel {
                         title: rec.title ?? rec.recordingId,
                         subtitle: [day.date, rec.durationFormatted]
                             .compactMap { $0 }
-                            .joined(separator: " · ")
+                            .joined(separator: " · "),
+                        durationSeconds: Double(rec.durationSeconds),
+                        startAt: rec.startTime.flatMap(Self.parseTimestamp)
                     )
                 }
             }
@@ -133,7 +225,11 @@ final class DualBenchmarkViewModel {
 
     // MARK: - Analysis
 
-    func analyze(url: URL, into slot: BenchmarkSlot) {
+    func analyze(url: URL, into slot: BenchmarkSlot, api: APIClient? = nil) {
+        switch slot {
+        case .a: sourceURLA = url
+        case .b: sourceURLB = url
+        }
         let transcript = slot == .a ? transcriptA : transcriptB
         setAnalyzing(true, for: slot)
         setProgress(0, for: slot)
@@ -161,6 +257,8 @@ final class DualBenchmarkViewModel {
                     self?.store(report, in: slot)
                     self?.setAnalyzing(false, for: slot)
                 }
+                // Reuse an existing transcript if this file is one we already know.
+                if let api { await self?.resolveTranscript(for: slot, api: api) }
             } catch {
                 guard !Task.isCancelled else { return }
                 await MainActor.run { [weak self] in
@@ -234,6 +332,10 @@ final class DualBenchmarkViewModel {
 
     private func rebuild() {
         scheduleRebuild()
+    }
+
+    func transcript(for slot: BenchmarkSlot) -> String {
+        slot == .a ? transcriptA : transcriptB
     }
 
     func loops(for slot: BenchmarkSlot) -> [RepeatedToken] {
