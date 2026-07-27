@@ -20,11 +20,23 @@ struct RepeatedToken: Identifiable, Sendable {
 @Observable
 final class DualBenchmarkViewModel {
 
-    var reportA: AcousticReport?
-    var reportB: AcousticReport?
+    private(set) var reportA: AcousticReport?
+    private(set) var reportB: AcousticReport?
 
-    var transcriptA: String = ""
-    var transcriptB: String = ""
+    var transcriptA: String = "" { didSet { scheduleRebuild() } }
+    var transcriptB: String = "" { didSet { scheduleRebuild() } }
+
+    /// Derived state, rebuilt when inputs change rather than on every render.
+    ///
+    /// These were computed properties, so a body evaluation re-ran the
+    /// word-level Levenshtein -- up to 16M cell updates -- on every keystroke
+    /// in the transcript editors.
+    private(set) var comparison: BenchmarkComparison?
+    private(set) var metricRows: [MetricRow] = []
+    private(set) var loopsA: [RepeatedToken] = []
+    private(set) var loopsB: [RepeatedToken] = []
+
+    private var rebuildTask: Task<Void, Never>?
 
     var progressA: Double = 0
     var progressB: Double = 0
@@ -86,6 +98,7 @@ final class DualBenchmarkViewModel {
         case .a: taskA?.cancel(); reportA = nil; progressA = 0; isAnalyzingA = false
         case .b: taskB?.cancel(); reportB = nil; progressB = 0; isAnalyzingB = false
         }
+        rebuild()
     }
 
     private func store(_ report: AcousticReport, in slot: BenchmarkSlot) {
@@ -93,6 +106,41 @@ final class DualBenchmarkViewModel {
         case .a: reportA = report
         case .b: reportB = report
         }
+        rebuild()
+    }
+
+    /// Coalesce keystrokes so a long transcript is not re-aligned per character.
+    private func scheduleRebuild() {
+        rebuildTask?.cancel()
+        rebuildTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            self?.rebuild()
+        }
+    }
+
+    private func rebuild() {
+        loopsA = Self.repeatedTokens(in: transcriptA)
+        loopsB = Self.repeatedTokens(in: transcriptB)
+
+        guard let a = reportA, let b = reportB else {
+            comparison = nil
+            metricRows = []
+            return
+        }
+
+        let built = BenchmarkComparison(
+            reportA: a,
+            reportB: b,
+            transcriptA: transcriptA.isEmpty ? nil : transcriptA,
+            transcriptB: transcriptB.isEmpty ? nil : transcriptB
+        )
+        comparison = built
+        metricRows = Self.buildRows(built)
+    }
+
+    func loops(for slot: BenchmarkSlot) -> [RepeatedToken] {
+        slot == .a ? loopsA : loopsB
     }
 
     private func setProgress(_ value: Double, for slot: BenchmarkSlot) {
@@ -123,18 +171,8 @@ final class DualBenchmarkViewModel {
 
     // MARK: - Comparison
 
-    var comparison: BenchmarkComparison? {
-        guard let a = reportA, let b = reportB else { return nil }
-        return BenchmarkComparison(
-            reportA: a,
-            reportB: b,
-            transcriptA: transcriptA.isEmpty ? nil : transcriptA,
-            transcriptB: transcriptB.isEmpty ? nil : transcriptB
-        )
-    }
-
     /// Tokens repeated often enough to look like decoder loops rather than speech.
-    func repeatedTokens(in transcript: String, minimumCount: Int = 25, limit: Int = 6) -> [RepeatedToken] {
+    static func repeatedTokens(in transcript: String, minimumCount: Int = 25, limit: Int = 6) -> [RepeatedToken] {
         guard !transcript.isEmpty else { return [] }
         var counts: [String: Int] = [:]
         for raw in transcript.split(whereSeparator: { $0.isWhitespace }) {
@@ -151,8 +189,7 @@ final class DualBenchmarkViewModel {
 
     // MARK: - 35-metric table
 
-    var metricRows: [MetricRow] {
-        guard let comparison else { return [] }
+    static func buildRows(_ comparison: BenchmarkComparison) -> [MetricRow] {
         let a = comparison.reportA
         let b = comparison.reportB
         let clock = comparison.clockSync

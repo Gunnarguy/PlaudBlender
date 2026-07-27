@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 /// Side-by-side acoustic benchmark of two recordings.
 struct DualBenchmarkView: View {
     @State private var model = DualBenchmarkViewModel()
-    @State private var importingSlot: BenchmarkSlot?
+    @State private var isImporting = false
+    @State private var importingSlot: BenchmarkSlot = .a
 
     private let columnA = Color.red
     private let columnB = Color.green
@@ -31,18 +32,13 @@ struct DualBenchmarkView: View {
         .navigationTitle("Audio Benchmark")
         .navigationBarTitleDisplayMode(.inline)
         .fileImporter(
-            isPresented: Binding(
-                get: { importingSlot != nil },
-                set: { if !$0 { importingSlot = nil } }
-            ),
+            isPresented: $isImporting,
             allowedContentTypes: [.wav, .aiff, .mp3, .mpeg4Audio, .audio],
             allowsMultipleSelection: false
         ) { result in
-            let slot = importingSlot ?? .a
-            importingSlot = nil
             switch result {
             case .success(let urls):
-                if let url = urls.first { model.analyze(url: url, into: slot) }
+                if let url = urls.first { model.analyze(url: url, into: importingSlot) }
             case .failure(let error):
                 model.errorMessage = error.localizedDescription
             }
@@ -86,7 +82,10 @@ struct DualBenchmarkView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
-                Button("Replace") { importingSlot = slot }
+                Button("Replace") {
+                    importingSlot = slot
+                    isImporting = true
+                }
                     .font(.caption2)
                     .buttonStyle(.bordered)
             } else if model.isAnalyzing(slot) {
@@ -98,6 +97,7 @@ struct DualBenchmarkView: View {
             } else {
                 Button {
                     importingSlot = slot
+                    isImporting = true
                 } label: {
                     Label("Choose Audio", systemImage: "waveform")
                         .font(.caption)
@@ -351,7 +351,7 @@ struct DualBenchmarkView: View {
     }
 
     private func transcriptPane(text: Binding<String>, slot: BenchmarkSlot, tint: Color) -> some View {
-        let loops = model.repeatedTokens(in: text.wrappedValue)
+        let loops = model.loops(for: slot)
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(slot.label).font(.caption).fontWeight(.semibold).foregroundStyle(tint)
