@@ -160,6 +160,13 @@ final class DualBenchmarkViewModel {
         }
     }
 
+    /// Force a refetch, clearing the "already loaded" guard.
+    func reloadLibrary(api: APIClient) async {
+        library = []
+        libraryError = nil
+        await loadLibrary(api: api)
+    }
+
     func loadLibrary(api: APIClient) async {
         guard library.isEmpty, !isLoadingLibrary else { return }
         isLoadingLibrary = true

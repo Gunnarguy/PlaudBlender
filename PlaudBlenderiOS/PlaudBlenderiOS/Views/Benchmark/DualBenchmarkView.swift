@@ -401,12 +401,52 @@ struct DualBenchmarkView: View {
             }
             .padding(.horizontal)
 
-            HStack(alignment: .top, spacing: 12) {
+            corpusStatus
+
+            // Stacked, not side by side: two ~170pt columns left no room for the
+            // load control or the match explanation.
+            VStack(alignment: .leading, spacing: 14) {
                 transcriptPane(text: $model.transcriptA, slot: .a, tint: columnA)
+                Divider()
                 transcriptPane(text: $model.transcriptB, slot: .b, tint: columnB)
             }
             .padding(.horizontal)
         }
+    }
+
+    /// Whether the corpus actually loaded. A silent empty list is impossible to
+    /// diagnose, so say what happened either way and offer a retry.
+    private var corpusStatus: some View {
+        HStack(spacing: 8) {
+            if model.isLoadingLibrary {
+                ProgressView().controlSize(.mini)
+                Text("Loading corpus…").font(.caption2).foregroundStyle(.secondary)
+            } else if let error = model.libraryError {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .lineLimit(3)
+                Button("Retry") { Task { await model.reloadLibrary(api: api) } }
+                    .font(.caption2)
+                    .buttonStyle(.bordered)
+            } else {
+                Image(systemName: "tray.full")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("\(model.library.count) recordings available")
+                    .font(.caption2)
+                    .monospaced()
+                    .foregroundStyle(.secondary)
+                Button("Reload") { Task { await model.reloadLibrary(api: api) } }
+                    .font(.caption2)
+                    .buttonStyle(.bordered)
+            }
+            Spacer()
+        }
+        .padding(.horizontal)
     }
 
     private func transcriptPane(text: Binding<String>, slot: BenchmarkSlot, tint: Color) -> some View {
