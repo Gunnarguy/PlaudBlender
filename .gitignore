@@ -83,3 +83,11 @@ scratch_out.txt
 # Release and discord draft templates
 docs/DISCORD_POST.md
 docs/DISCORD_QUICKSTART.md
+
+# Cross-process lock for Plaud token refresh (runtime artifact)
+.plaud_tokens.lock
+# Timestamped local backups made before in-place edits
+*.bak-[0-9]*
+*.bak2-[0-9]*
+*.bak3-[0-9]*
+*.bak-tombstone-*

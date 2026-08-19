@@ -10,6 +10,8 @@ Provides bulletproof authentication that:
 
 import os
 import json
+import time
+import fcntl
 import webbrowser
 import secrets
 import ssl
@@ -60,6 +62,11 @@ TOKEN_VALIDATION_CACHE_TTL = timedelta(minutes=5)
 # Plaud developer portal (scheme, host, port, and path).
 DEFAULT_REDIRECT_URI = "https://localhost:8050/auth/plaud/callback"
 TOKEN_FILE = Path(__file__).parent.parent / ".plaud_tokens.json"
+# Several long-lived processes (chronos-api, chronos-auto-sync, chronos-pipeline)
+# each hold their own client against this one file. Plaud ROTATES the refresh
+# token on every refresh, so without a lock two processes race: one rotates,
+# the other refreshes with the now-invalid token, gets 401, and wipes the file.
+TOKEN_LOCK_FILE = Path(__file__).parent.parent / ".plaud_tokens.lock"
 CERT_DIR = Path(__file__).parent.parent / ".certs"
 
 
@@ -119,6 +126,16 @@ class PlaudOAuthClient:
                 TOKEN_FILE.unlink()
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning(f"Could not delete token file: {exc}")
+
+    def _disk_refresh_token(self):
+        """Read only the refresh token currently on disk (may differ from ours)."""
+        try:
+            if TOKEN_FILE.exists():
+                with open(TOKEN_FILE, "r") as f:
+                    return json.load(f).get("refresh_token")
+        except Exception as exc:
+            logger.warning(f"Could not read on-disk refresh token: {exc}")
+        return None
 
     def _load_tokens(self):
         """Load tokens from local storage if available."""
@@ -238,36 +255,165 @@ class PlaudOAuthClient:
         """
         Refresh the access token using the refresh token.
 
+        Serialised across processes with an exclusive lock, because Plaud
+        ROTATES the refresh token on every refresh. Without the lock, two of
+        this box's services race: one rotates, the other refreshes with the
+        now-dead token, gets 401, and wipes the shared token file.
+
         Returns:
             New token response dictionary
         """
-        import base64
-
         if not self._refresh_token:
             raise ValueError("No refresh token available. Please re-authenticate.")
+
+        TOKEN_LOCK_FILE.touch(exist_ok=True)
+        lock_fh = open(TOKEN_LOCK_FILE, "w")
+        try:
+            try:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+            except OSError as exc:  # pragma: no cover - defensive
+                logger.warning(f"Could not acquire token lock: {exc}")
+
+            # Another process may have rotated while we waited for the lock.
+            disk_rt = self._disk_refresh_token()
+            if disk_rt and disk_rt != self._refresh_token:
+                logger.info("Adopting refresh token rotated by another process")
+                self._load_tokens()
+                if self._token_expiry and datetime.now() < self._token_expiry - timedelta(
+                    minutes=30
+                ):
+                    logger.info("Refresh already performed by another process")
+                    return {
+                        "access_token": self._access_token,
+                        "refresh_token": self._refresh_token,
+                        "expires_in": int(
+                            (self._token_expiry - datetime.now()).total_seconds()
+                        ),
+                        "token_type": "bearer",
+                    }
+
+            return self._do_refresh_locked()
+        finally:
+            try:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+                lock_fh.close()
+            except Exception:  # pragma: no cover - defensive
+                pass
+
+    def _do_refresh_locked(self) -> dict:
+        """Perform the actual refresh. Caller MUST hold the token lock."""
+        import base64
 
         credentials = f"{self.client_id}:{self.client_secret}"
         b64_creds = base64.b64encode(credentials.encode()).decode()
 
-        headers = {
-            "Authorization": f"Basic {b64_creds}",
+        # Plaud's published third-party spec sends the REFRESH request with only
+        # accept + content-type — no Authorization header. (The code-exchange
+        # request is the one that carries Basic auth.) This code historically
+        # sent Basic on refresh too, which the server can reject with 401.
+        # Try the documented form first, then fall back to the legacy form so we
+        # work against either server behaviour, and log which one succeeded.
+        spec_headers = {
             "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json",
         }
+        legacy_headers = dict(spec_headers, Authorization=f"Basic {b64_creds}")
+        header_variants = [("spec (no auth header)", spec_headers),
+                           ("legacy (Basic auth)", legacy_headers)]
+        headers = spec_headers
         data = f"refresh_token={self._refresh_token}"
 
-        try:
-            response = requests.post(PLAUD_REFRESH_URL, headers=headers, data=data)
-            if not response.ok:
-                logger.error("Plaud token refresh failed: HTTP %s", response.status_code)
-            response.raise_for_status()
-        except requests.HTTPError as exc:
-            logger.error(
-                "Plaud token refresh failed (%s) — clearing tokens",
-                exc,
+        # A refresh failure is only fatal when Plaud definitively rejects the
+        # grant (400/401 invalid_grant). Transient failures — 5xx, 429, socket
+        # timeouts, DNS blips — must NOT destroy the refresh token. Clearing it
+        # for a few seconds of network trouble forces a manual re-auth, which is
+        # what silently killed ingestion on 2026-08-17.
+        fatal_statuses = {400, 401}
+        attempts = 3
+        last_exc: Exception | None = None
+        response = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                for variant_name, variant_headers in header_variants:
+                    response = requests.post(
+                        PLAUD_REFRESH_URL,
+                        headers=variant_headers,
+                        data=data,
+                        timeout=30,
+                    )
+                    if response.ok:
+                        logger.info(
+                            "Plaud refresh accepted using %s form", variant_name
+                        )
+                        break
+                    if response.status_code not in (400, 401):
+                        break  # transient — retry loop handles it
+                    logger.warning(
+                        "Plaud refresh rejected (HTTP %s) using %s form",
+                        response.status_code, variant_name,
+                    )
+            except requests.RequestException as exc:
+                last_exc = exc
+                logger.warning(
+                    "Plaud token refresh network error (attempt %d/%d): %s "
+                    "— tokens preserved",
+                    attempt, attempts, exc,
+                )
+                if attempt < attempts:
+                    time.sleep(2 ** (attempt - 1))
+                continue
+
+            if response.ok:
+                break
+
+            if response.status_code in fatal_statuses:
+                # Before declaring the grant dead: another process may have
+                # rotated between our load and this request. If disk holds a
+                # different token, adopt it rather than destroy a good one.
+                disk_rt = self._disk_refresh_token()
+                if disk_rt and disk_rt != self._refresh_token:
+                    logger.warning(
+                        "Refresh got HTTP %s but disk holds a newer refresh "
+                        "token — adopting it instead of clearing",
+                        response.status_code,
+                    )
+                    self._load_tokens()
+                    return {
+                        "access_token": self._access_token,
+                        "refresh_token": self._refresh_token,
+                        "expires_in": int(
+                            (self._token_expiry - datetime.now()).total_seconds()
+                        )
+                        if self._token_expiry
+                        else 0,
+                        "token_type": "bearer",
+                    }
+                logger.error(
+                    "Plaud rejected the refresh token (HTTP %s) and disk holds "
+                    "no newer one — clearing tokens, re-auth required",
+                    response.status_code,
+                )
+                self._clear_tokens()
+                response.raise_for_status()
+
+            last_exc = requests.HTTPError(
+                f"HTTP {response.status_code} from Plaud refresh", response=response
             )
-            self._clear_tokens()
-            raise
+            logger.warning(
+                "Plaud token refresh transient failure (HTTP %s, attempt %d/%d) "
+                "— tokens preserved",
+                response.status_code, attempt, attempts,
+            )
+            if attempt < attempts:
+                time.sleep(2 ** (attempt - 1))
+        else:
+            logger.error(
+                "Plaud token refresh failed after %d attempts — tokens PRESERVED "
+                "so the next scheduled call can retry",
+                attempts,
+            )
+            raise last_exc if last_exc else RuntimeError("Plaud token refresh failed")
 
         token_data = response.json()
 

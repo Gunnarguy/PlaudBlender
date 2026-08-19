@@ -40,7 +40,11 @@ if ! http_healthy http://localhost:6333/healthz >/dev/null 2>&1; then
 fi
 
 # --- 2. Dash UI responds ---
-if ! http_healthy http://localhost:8050/ >/dev/null 2>&1; then
+# Dash UI may serve HTTPS (self-signed, .certs/) or plain HTTP depending on
+# whether certs are present. Accept either so a protocol switch cannot
+# trigger a restart loop. -k is safe: this is a loopback self-signed cert.
+if ! curl -fsSk --max-time 10 -o /dev/null https://localhost:8050/ >/dev/null 2>&1 \
+   && ! http_healthy http://localhost:8050/ >/dev/null 2>&1; then
     echo "$LOG_PREFIX Dash UI unreachable — restarting chronos-ui"
     restart_unit chronos-ui
 fi
