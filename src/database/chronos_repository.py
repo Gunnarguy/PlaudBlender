@@ -36,6 +36,7 @@ def upsert_chronos_recording(
     checksum: Optional[str] = None,
     time_is_estimated: Optional[bool] = None,
     time_estimate_reason: Optional[str] = None,
+    force_time: bool = False,
 ) -> ChronosRecording:
     """Insert or update a Chronos recording.
 
@@ -49,23 +50,48 @@ def upsert_chronos_recording(
         source: Source system (default: plaud)
         device_id: Hardware device identifier
         checksum: SHA256 hash for integrity
+        force_time: Overwrite a deliberately-corrected timestamp anyway.
+
+    Note:
+        Recordings imported into the Plaud app (rather than synced from the
+        device) carry the *import* moment in both `created_at` and `start_at`;
+        the true recording time is not stored upstream at all. Where that has
+        been repaired locally -- marked by `time_is_estimated` -- the upstream
+        value is wrong and will stay wrong on every future sync, so it must not
+        be allowed to overwrite the correction. Pass `force_time=True` only when
+        the caller genuinely knows better.
 
     Returns:
         ChronosRecording: The upserted recording instance
     """
+    # Tombstone check: ids the janitor has deliberately deleted (shadow
+    # duplicates) still exist upstream and would otherwise be re-imported as
+    # "new" on every sync -- re-extracted by the LLM, then re-deleted, forever.
+    from sqlalchemy import text as _sql_text
+    hit = session.execute(
+        _sql_text("SELECT 1 FROM janitor_tombstones WHERE recording_id = :rid"),
+        {"rid": recording_id}).first()
+    if hit:
+        return None
+
     rec = session.query(ChronosRecording).filter_by(recording_id=recording_id).first()
 
     if rec:
-        # Update existing
+        # Update existing.
+        # A timestamp that was deliberately corrected locally (time_is_estimated)
+        # must survive re-sync -- otherwise every pipeline run silently reverts it
+        # to Plaud's import-time stamp. This is what erased the March 17 repair.
+        keep_time = bool(rec.time_is_estimated) and not force_time
         rec.title = title
-        rec.created_at = created_at
+        if not keep_time:
+            rec.created_at = created_at
+            rec.time_is_estimated = time_is_estimated
+            rec.time_estimate_reason = time_estimate_reason
         rec.duration_seconds = duration_seconds
         rec.local_audio_path = local_audio_path
         rec.source = source
         rec.device_id = device_id
         rec.checksum = checksum
-        rec.time_is_estimated = time_is_estimated
-        rec.time_estimate_reason = time_estimate_reason
     else:
         # Insert new
         rec = ChronosRecording(

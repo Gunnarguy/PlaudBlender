@@ -231,6 +231,19 @@ class KnowledgeGraph:
         }
 
 
+
+def _is_reasoning_model(model: str) -> bool:
+    """True for OpenAI models that reject an explicit `temperature`."""
+    m = (model or "").strip().lower()
+    return (
+        m.startswith("gpt-5.6")
+        or m.startswith("gpt-5.5")
+        or m.startswith("o1")
+        or m.startswith("o3")
+        or m.startswith("o4")
+    )
+
+
 class EntityExtractor:
     """
     Extracts entities from transcript text using LLM.
@@ -356,12 +369,18 @@ Return ONLY the JSON object, no other text."""
                 self.model = model
 
             def complete(self, prompt: str) -> _CompletionResult:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.1,
-                    max_completion_tokens=4096,
-                )
+                kwargs = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_completion_tokens": 4096,
+                }
+                # Reasoning-family models (gpt-5.6 luna/terra/sol, o-series)
+                # accept only the default temperature and reject an explicit
+                # value with a 400. Sending it made extraction fail silently and
+                # return no entities at all, so only set it where supported.
+                if not _is_reasoning_model(model):
+                    kwargs["temperature"] = 0.1
+                response = client.chat.completions.create(**kwargs)
                 usage = getattr(response, "usage", None)
                 return _CompletionResult(
                     text=response.choices[0].message.content or "",

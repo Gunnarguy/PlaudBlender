@@ -120,15 +120,20 @@ _OPENAI_PRICING: dict[str, dict] = {
     },
     "gpt-5.6-terra": {
         "provider": "openai",
-        "input_per_mtok": 2.50,
-        "output_per_mtok": 15.00,
+        # Repriced 2026-07-30 (-20%): was $2.50/$15.00.
+        "input_per_mtok": 2.00,
+        "output_per_mtok": 12.00,
+        "cached_input_per_mtok": 0.20,
         "tier": "paid",
         "label": "GPT-5.6 Terra",
     },
     "gpt-5.6-luna": {
         "provider": "openai",
-        "input_per_mtok": 1.00,
-        "output_per_mtok": 6.00,
+        # Repriced 2026-07-30 (-80%): was $1.00/$6.00. Verified against
+        # developers.openai.com/api/docs/models/gpt-5.6-luna
+        "input_per_mtok": 0.20,
+        "output_per_mtok": 1.20,
+        "cached_input_per_mtok": 0.02,
         "tier": "paid",
         "label": "GPT-5.6 Luna",
     },
