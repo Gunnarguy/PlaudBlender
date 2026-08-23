@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import tempfile
@@ -15,9 +16,13 @@ from src.plaud_integrations.call_ledger import PlaudCallLedger
 from src.plaud_integrations.capability_manifest import generate_manifest
 from src.plaud_integrations.embedded_auth import PlaudEmbeddedAuthClient
 from src.plaud_integrations.embedded_upload import PlaudEmbeddedUploadClient
-from src.plaud_integrations.errors import PlaudIntegrationError, PlaudUnknownToolError
+from src.plaud_integrations.errors import PlaudAuthenticationError, PlaudIntegrationError, PlaudUnknownToolError
 from src.plaud_integrations.legacy_account import PlaudLegacyAccountAdapter
-from src.plaud_integrations.mcp_account import MCPToolResult, PlaudMCPAccountAdapter
+from src.plaud_integrations.mcp_account import (
+    MCP_ACCOUNT_OAUTH_SOURCE,
+    MCPToolResult,
+    PlaudMCPAccountAdapter,
+)
 from src.plaud_integrations.models import PlaudFileListRequest
 from src.plaud_integrations.redaction import REDACTED, redact
 from src.plaud_integrations.transcription import PlaudTranscriptionClient
@@ -177,6 +182,69 @@ class PlaudIntegrationTests(unittest.TestCase):
     def test_unknown_mcp_tool_is_rejected_before_server_invocation(self):
         with self.assertRaises(PlaudUnknownToolError):
             PlaudMCPAccountAdapter(ledger=self.ledger).call_tool("delete_everything")
+
+    def test_mcp_account_session_bridge_writes_access_token_only(self):
+        token_path = Path(self.tempdir.name) / "tokens-mcp.json"
+        expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+        adapter = PlaudMCPAccountAdapter(
+            ledger=self.ledger,
+            token_path=token_path,
+            account_token_provider=lambda: ("account-access-token", expiry),
+        )
+
+        self.assertTrue(adapter.synchronize_account_session(force=True))
+
+        stored = json.loads(token_path.read_text())
+        self.assertEqual(stored["access_token"], "account-access-token")
+        self.assertEqual(stored["source"], MCP_ACCOUNT_OAUTH_SOURCE)
+        self.assertNotIn("refresh_token", stored)
+        self.assertEqual(token_path.stat().st_mode & 0o777, 0o600)
+
+    def test_mcp_retries_unauthenticated_tool_with_account_session(self):
+        token_path = Path(self.tempdir.name) / "tokens-mcp.json"
+        expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+        adapter = PlaudMCPAccountAdapter(
+            ledger=self.ledger,
+            token_path=token_path,
+            account_token_provider=lambda: ("account-access-token", expiry),
+        )
+        unauthenticated = MCPToolResult(
+            tool_name="list_files", input_payload={}, raw_result={},
+            structured_content=None, text_content="Not authenticated. Please login first.",
+            duration_ms=1, is_error=True, schema_hash="schema",
+        )
+        recovered = MCPToolResult(
+            tool_name="list_files", input_payload={}, raw_result={},
+            structured_content={"data": []}, text_content="", duration_ms=1,
+            is_error=False, schema_hash="schema",
+        )
+
+        with patch.object(adapter, "_invoke_tool", side_effect=[unauthenticated, recovered]) as invoke:
+            result = adapter.call_tool("list_files")
+
+        self.assertEqual(result.structured_content, {"data": []})
+        self.assertEqual(invoke.call_count, 2)
+        self.assertEqual(json.loads(token_path.read_text())["source"], MCP_ACCOUNT_OAUTH_SOURCE)
+
+    def test_mcp_returns_401_when_session_cannot_be_repaired(self):
+        token_path = Path(self.tempdir.name) / "tokens-mcp.json"
+        expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+        adapter = PlaudMCPAccountAdapter(
+            ledger=self.ledger,
+            token_path=token_path,
+            account_token_provider=lambda: ("account-access-token", expiry),
+        )
+        unauthenticated = MCPToolResult(
+            tool_name="list_files", input_payload={}, raw_result={},
+            structured_content=None, text_content="Not authenticated. Please login first.",
+            duration_ms=1, is_error=True, schema_hash="schema",
+        )
+
+        with patch.object(adapter, "_invoke_tool", return_value=unauthenticated):
+            with self.assertRaises(PlaudAuthenticationError) as caught:
+                adapter.call_tool("list_files")
+
+        self.assertEqual(caught.exception.status_code, 401)
 
     def test_mcp_tool_discovery_captures_runtime_schema_and_version(self):
         adapter = PlaudMCPAccountAdapter(ledger=self.ledger)

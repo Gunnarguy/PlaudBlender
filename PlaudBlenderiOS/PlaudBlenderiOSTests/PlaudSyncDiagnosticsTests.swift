@@ -298,6 +298,36 @@ final class PlaudSyncDiagnosticsTests: XCTestCase {
         XCTAssertEqual(status.region, "us")
     }
 
+    func testPlaudIntegrationStatusDecodesMCPAuthentication() throws {
+        let json = #"""
+        {
+          "account_rest": "Unverified",
+          "official_mcp": "Connected",
+          "mcp_auth": {
+            "available": true,
+            "authenticated": true,
+            "state": "connected",
+            "message": "Official Plaud MCP is connected.",
+            "credential_source": "Plaud account OAuth",
+            "expires_at": "2026-08-23T14:09:03Z",
+            "verified_at": "2026-08-22T18:12:00Z"
+          },
+          "mcp_tool_count": 7,
+          "embedded_auth": "Configured",
+          "file_upload": "Ready",
+          "transcription": "Ready",
+          "region": "us"
+        }
+        """#.data(using: .utf8)!
+
+        let status = try JSONDecoder().decode(PlaudIntegrationStatus.self, from: json)
+        let mcpAuth = try XCTUnwrap(status.mcpAuth)
+
+        XCTAssertTrue(mcpAuth.authenticated)
+        XCTAssertEqual(mcpAuth.state, "connected")
+        XCTAssertEqual(mcpAuth.credentialSource, "Plaud account OAuth")
+    }
+
     func testPlaudCapabilityManifestDecodesDiagnosticFields() throws {
         let json = #"""
         {

@@ -5,6 +5,7 @@
 tokens.txt
 .plaud_tokens.json
 .plaud_api_token.json
+/.plaud/
 
 # Python
 venv/

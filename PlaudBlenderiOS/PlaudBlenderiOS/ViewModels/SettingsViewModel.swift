@@ -15,6 +15,7 @@ final class SettingsViewModel: NSObject {
     var plaudCapabilityManifest: PlaudCapabilityManifest?
     var plaudIntegrationError: String?
     var isLoadingPlaudIntegrations = false
+    var isReconnectingPlaudMCP = false
     var processingProvider = ""
     var cleaningModel = ""
     var analystModel = ""
@@ -222,6 +223,7 @@ final class SettingsViewModel: NSObject {
                 await loadPlaudStatus(forceRefresh: true)
                 if plaudStatus?.isAuthenticated == true {
                     error = nil
+                    await reconnectPlaudMCP(showError: false)
                     await loadSystemStatus()
                     return
                 }
@@ -239,6 +241,7 @@ final class SettingsViewModel: NSObject {
 
     func refreshAfterPlaudAuthorization() async {
         await loadPlaudStatus(forceRefresh: true)
+        await reconnectPlaudMCP(showError: false)
         await loadSystemStatus()
     }
 
@@ -275,6 +278,24 @@ final class SettingsViewModel: NSObject {
             plaudIntegrationStatus = nil
             plaudCapabilityManifest = nil
             plaudIntegrationError = error.localizedDescription
+        }
+    }
+
+    func reconnectPlaudMCP(showError: Bool = true) async {
+        isReconnectingPlaudMCP = true
+        defer { isReconnectingPlaudMCP = false }
+        do {
+            let status: PlaudMCPAuthStatus = try await api.post("/api/plaud/integrations/mcp/auth/reconnect")
+            if !status.authenticated && showError {
+                error = status.message
+            }
+            await loadPlaudIntegrations()
+        } catch is CancellationError {
+            return
+        } catch {
+            if showError {
+                self.error = "Could not reconnect Plaud MCP: \(error.localizedDescription)"
+            }
         }
     }
 

@@ -4,19 +4,26 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import json
 import os
+from pathlib import Path
 import select
 import shutil
 import subprocess
 import tempfile
 import threading
 import time
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 from uuid import uuid4
 
 from .call_ledger import PlaudCallLedger, default_ledger
-from .errors import PlaudConfigurationError, PlaudIntegrationError, PlaudUnknownToolError
+from .errors import (
+    PlaudAuthenticationError,
+    PlaudConfigurationError,
+    PlaudIntegrationError,
+    PlaudUnknownToolError,
+)
 from .legacy_account import _first
 from .models import (
     PlaudCallEvent,
@@ -44,6 +51,31 @@ EXPECTED_PUBLIC_TOOLS = {
     "get_transcript": "read-only",
 }
 REVIEWED_TOOLS = frozenset(EXPECTED_PUBLIC_TOOLS)
+MCP_ACCOUNT_OAUTH_SOURCE = "plaudblender_account_oauth"
+MCP_TOKEN_MINIMUM_VALIDITY = timedelta(minutes=2)
+MCP_AUTH_STATUS_CACHE_SECONDS = 30
+
+
+@dataclass(frozen=True)
+class MCPAuthenticationStatus:
+    available: bool
+    authenticated: bool
+    state: str
+    message: str
+    credential_source: str | None = None
+    expires_at: str | None = None
+    verified_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "available": self.available,
+            "authenticated": self.authenticated,
+            "state": self.state,
+            "message": self.message,
+            "credential_source": self.credential_source,
+            "expires_at": self.expires_at,
+            "verified_at": self.verified_at,
+        }
 
 
 @dataclass
@@ -65,10 +97,18 @@ class PlaudMCPAccountAdapter:
         command: str | None = None,
         args: Sequence[str] | None = None,
         ledger: PlaudCallLedger = default_ledger,
+        token_path: Path | None = None,
+        account_token_provider: Callable[[], tuple[str, datetime | None]] | None = None,
     ):
         self.command = command or os.getenv("PLAUD_MCP_COMMAND") or shutil.which("npx") or "npx"
         self.args = list(args or (os.getenv("PLAUD_MCP_ARGS") or "-y @plaud-ai/mcp@latest --no-login").split())
         self.ledger = ledger
+        self._token_path = token_path or Path.home() / ".plaud" / "tokens-mcp.json"
+        self._account_token_provider = account_token_provider
+        self._bridge_lock = threading.Lock()
+        self._auth_status_lock = threading.Lock()
+        self._cached_auth_status: MCPAuthenticationStatus | None = None
+        self._auth_status_cached_at = 0.0
         self._capabilities: dict[str, PlaudIntegrationCapability] = {}
         # Persistent stdio session: spawning npx per call cost 4-5 s of
         # node startup + MCP handshake on every request. One long-lived
@@ -79,6 +119,222 @@ class PlaudMCPAccountAdapter:
         self._stdio_discovered: dict[str, dict[str, Any]] = {}
         self._stdio_server_version: str | None = None
         self._stdio_next_id = 10
+
+    @staticmethod
+    def _parse_datetime(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str) and value:
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        else:
+            return None
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+
+    @classmethod
+    def _mcp_token_expiry(cls, token: dict[str, Any]) -> datetime | None:
+        value = token.get("expires_at")
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(float(value) / 1000, tz=timezone.utc)
+        return cls._parse_datetime(value)
+
+    def _read_mcp_token(self) -> dict[str, Any]:
+        try:
+            token = json.loads(self._token_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return token if isinstance(token, dict) else {}
+
+    def _mcp_token_is_usable(self, token: dict[str, Any]) -> bool:
+        if not token.get("access_token"):
+            return False
+        expires_at = self._mcp_token_expiry(token)
+        return expires_at is None or expires_at > datetime.now(timezone.utc) + MCP_TOKEN_MINIMUM_VALIDITY
+
+    def _mcp_command_available(self) -> bool:
+        return bool(shutil.which(self.command) or Path(self.command).is_file())
+
+    def _account_oauth_token(self, *, validate: bool) -> tuple[str, datetime | None]:
+        try:
+            if self._account_token_provider is not None:
+                access_token, expires_at = self._account_token_provider()
+            else:
+                from src.plaud_oauth import PlaudOAuthClient
+
+                client = PlaudOAuthClient()
+                access_token = client.ensure_valid_token() if validate else client.get_access_token()
+                expires_at = self._parse_datetime(client.token_status.get("expires_at"))
+            if not access_token:
+                raise ValueError("No Plaud account access token is available")
+            return access_token, self._parse_datetime(expires_at)
+        except PlaudAuthenticationError:
+            raise
+        except Exception as exc:
+            raise PlaudAuthenticationError(
+                "Plaud account authentication is required before MCP can reconnect. Reconnect Plaud and try again."
+            ) from exc
+
+    def _write_account_oauth_token(self, access_token: str, expires_at: datetime | None) -> None:
+        expiry = expires_at or (datetime.now(timezone.utc) + timedelta(minutes=10))
+        payload = {
+            "access_token": access_token,
+            "token_type": "Bearer",
+            "expires_at": int(expiry.timestamp() * 1000),
+            "source": MCP_ACCOUNT_OAUTH_SOURCE,
+        }
+        temp_name: str | None = None
+        try:
+            self._token_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.chmod(self._token_path.parent, 0o700)
+            except OSError:
+                pass
+            descriptor, temp_name = tempfile.mkstemp(prefix=".tokens-mcp-", dir=str(self._token_path.parent))
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, separators=(",", ":"))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temp_name, 0o600)
+            os.replace(temp_name, self._token_path)
+            temp_name = None
+        except OSError as exc:
+            raise PlaudIntegrationError(
+                "Could not synchronize the Plaud MCP session", code="mcp_token_sync_failed", status_code=500
+            ) from exc
+        finally:
+            if temp_name:
+                try:
+                    os.unlink(temp_name)
+                except OSError:
+                    pass
+
+    def _clear_auth_status_cache(self) -> None:
+        with self._auth_status_lock:
+            self._cached_auth_status = None
+            self._auth_status_cached_at = 0.0
+
+    def _reset_after_token_change(self) -> None:
+        with self._stdio_lock:
+            self._reset_stdio()
+
+    def synchronize_account_session(self, *, force: bool = False, validate: bool = False) -> bool:
+        """Give the official MCP a current account OAuth access token.
+
+        The MCP receives only the short-lived access token. PlaudBlender keeps
+        the refresh token, avoiding competing refresh-token rotation between
+        the two clients.
+        """
+        with self._bridge_lock:
+            current = self._read_mcp_token()
+            if not force and self._mcp_token_is_usable(current):
+                return False
+            access_token, expires_at = self._account_oauth_token(validate=validate)
+            self._write_account_oauth_token(access_token, expires_at)
+            self._reset_after_token_change()
+            self._clear_auth_status_cache()
+            return True
+
+    @staticmethod
+    def _is_authentication_error(error: Any) -> bool:
+        message = str(error).lower()
+        return any(marker in message for marker in (
+            "not authenticated",
+            "authentication required",
+            "unauthorized",
+            "invalid or expired token",
+            "invalid token",
+            " 401",
+            "status 401",
+        ))
+
+    def _invoke_tool(self, tool_name: str, arguments: dict[str, Any]) -> MCPToolResult:
+        return (
+            self._run(self._call_async(tool_name, arguments))
+            if os.getenv("PLAUD_MCP_USE_PYTHON_SDK") == "1"
+            else self._call_stdio(tool_name, arguments)
+        )
+
+    def _raise_mcp_tool_error(self, result: MCPToolResult) -> None:
+        response = result.structured_content if result.structured_content is not None else result.text_content
+        if self._is_authentication_error(response):
+            raise PlaudAuthenticationError("PLAUD MCP session is not authenticated")
+        raise PlaudIntegrationError(str(response), code="mcp_tool_error", status_code=502)
+
+    def _credential_source(self) -> str | None:
+        token = self._read_mcp_token()
+        if token.get("source") == MCP_ACCOUNT_OAUTH_SOURCE:
+            return "Plaud account OAuth"
+        if token.get("access_token"):
+            return "Official MCP OAuth"
+        return None
+
+    def _cache_auth_status(self, status: MCPAuthenticationStatus) -> MCPAuthenticationStatus:
+        with self._auth_status_lock:
+            self._cached_auth_status = status
+            self._auth_status_cached_at = time.monotonic()
+        return status
+
+    def authentication_status(self, *, force_refresh: bool = False) -> MCPAuthenticationStatus:
+        if not self._mcp_command_available():
+            return self._cache_auth_status(MCPAuthenticationStatus(
+                available=False,
+                authenticated=False,
+                state="unavailable",
+                message="Official Plaud MCP is unavailable because npx is not installed.",
+            ))
+        with self._auth_status_lock:
+            cached = self._cached_auth_status
+            is_fresh = time.monotonic() - self._auth_status_cached_at < MCP_AUTH_STATUS_CACHE_SECONDS
+        if cached is not None and is_fresh and not force_refresh:
+            return cached
+
+        try:
+            self.call_tool("get_current_user")
+        except PlaudAuthenticationError:
+            return self._cache_auth_status(MCPAuthenticationStatus(
+                available=True,
+                authenticated=False,
+                state="reauthorization_required",
+                message="Reconnect Plaud to restore the Official MCP session.",
+                credential_source=self._credential_source(),
+            ))
+        except PlaudIntegrationError as exc:
+            return self._cache_auth_status(MCPAuthenticationStatus(
+                available=True,
+                authenticated=False,
+                state="unavailable",
+                message=f"Official Plaud MCP is unavailable: {exc}",
+                credential_source=self._credential_source(),
+            ))
+        except Exception:
+            return self._cache_auth_status(MCPAuthenticationStatus(
+                available=True,
+                authenticated=False,
+                state="unavailable",
+                message="Official Plaud MCP could not be checked. Try reconnecting Plaud.",
+                credential_source=self._credential_source(),
+            ))
+
+        token = self._read_mcp_token()
+        expires_at = self._mcp_token_expiry(token)
+        return self._cache_auth_status(MCPAuthenticationStatus(
+            available=True,
+            authenticated=True,
+            state="connected",
+            message="Official Plaud MCP is connected and follows the Plaud account session.",
+            credential_source=self._credential_source(),
+            expires_at=expires_at.isoformat() if expires_at else None,
+            verified_at=datetime.now(timezone.utc).isoformat(),
+        ))
+
+    def reconnect_from_account_oauth(self) -> MCPAuthenticationStatus:
+        self.synchronize_account_session(force=True, validate=True)
+        status = self.authentication_status(force_refresh=True)
+        if not status.authenticated:
+            raise PlaudAuthenticationError(status.message)
+        return status
 
     def _stdio_process(self) -> subprocess.Popen:
         env = os.environ.copy()
@@ -392,19 +648,37 @@ class PlaudMCPAccountAdapter:
         arguments = arguments or {}
         started = time.perf_counter()
         error_name: str | None = None
+        result: MCPToolResult | None = None
+        status = "error"
+        response: Any = {"error": "MCP call was not started"}
         try:
-            result = (
-                self._run(self._call_async(tool_name, arguments))
-                if os.getenv("PLAUD_MCP_USE_PYTHON_SDK") == "1"
-                else self._call_stdio(tool_name, arguments)
-            )
-            status = "error" if result.is_error else "success"
+            if tool_name not in {"login", "logout"}:
+                self.synchronize_account_session()
+            try:
+                result = self._invoke_tool(tool_name, arguments)
+                if result.is_error:
+                    self._raise_mcp_tool_error(result)
+            except PlaudIntegrationError as exc:
+                if tool_name in {"login", "logout"} or not self._is_authentication_error(exc):
+                    raise
+                # The MCP token may have been revoked independently of its
+                # local expiry. Force the account owner to validate/refresh,
+                # rebuild the token file, then retry this one safe request.
+                self.synchronize_account_session(force=True, validate=True)
+                try:
+                    result = self._invoke_tool(tool_name, arguments)
+                    if result.is_error:
+                        self._raise_mcp_tool_error(result)
+                except PlaudIntegrationError as retry_error:
+                    if self._is_authentication_error(retry_error):
+                        raise PlaudAuthenticationError(
+                            "PLAUD MCP could not restore its session. Reconnect Plaud and try again."
+                        ) from retry_error
+                    raise
+            status = "success"
             response = result.structured_content if result.structured_content is not None else result.text_content
-            if result.is_error:
-                raise PlaudIntegrationError(str(response), code="mcp_tool_error", status_code=502)
             return result
         except Exception as exc:
-            result = None
             status = "error"
             response = {"error": str(exc)}
             error_name = type(exc).__name__

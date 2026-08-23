@@ -124,9 +124,30 @@ struct ServerSettingsUpdateRequest: Codable, Sendable {
 
 // MARK: - PLAUD public platform diagnostics
 
+struct PlaudMCPAuthStatus: Codable, Sendable {
+    let available: Bool
+    let authenticated: Bool
+    let state: String
+    let message: String
+    let credentialSource: String?
+    let expiresAt: String?
+    let verifiedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case available
+        case authenticated
+        case state
+        case message
+        case credentialSource = "credential_source"
+        case expiresAt = "expires_at"
+        case verifiedAt = "verified_at"
+    }
+}
+
 struct PlaudIntegrationStatus: Codable, Sendable {
     let accountREST: String
     let officialMCP: String
+    let mcpAuth: PlaudMCPAuthStatus?
     let mcpToolCount: Int?
     let embeddedAuth: String
     let fileUpload: String
@@ -137,6 +158,7 @@ struct PlaudIntegrationStatus: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case accountREST = "account_rest"
         case officialMCP = "official_mcp"
+        case mcpAuth = "mcp_auth"
         case mcpToolCount = "mcp_tool_count"
         case embeddedAuth = "embedded_auth"
         case fileUpload = "file_upload"

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
 from typing import Any
 from uuid import uuid4
 
@@ -103,15 +102,20 @@ def _raise(exc: Exception, correlation_id: str) -> None:
 async def integration_status(request: Request):
     settings = _settings()
     legacy_configured = bool(os.getenv("PLAUD_CLIENT_ID") and os.getenv("PLAUD_CLIENT_SECRET"))
-    mcp_available = bool(shutil.which("node") and shutil.which("npx"))
+    mcp_auth = await asyncio.to_thread(_MCP_ADAPTER.authentication_status)
     manifest = load_manifest()
     discovered_mcp = [
         item for item in manifest.get("capabilities", [])
         if item.get("transport") == "plaud_mcp" and item.get("discovered_at_runtime")
     ]
+    mcp_label = {
+        "connected": "Connected",
+        "reauthorization_required": "Reauthorization required",
+    }.get(mcp_auth.state, "Unavailable")
     return {
         "account_rest": "Unverified" if legacy_configured else "Missing",
-        "official_mcp": "Available" if mcp_available else "Unavailable",
+        "official_mcp": mcp_label,
+        "mcp_auth": mcp_auth.to_dict(),
         "mcp_tool_count": len(discovered_mcp) if discovered_mcp else None,
         "embedded_auth": "Configured" if settings["client_id"] and settings["secret_key"] else "Missing",
         "file_upload": "Ready" if settings["client_id"] and settings["secret_key"] else "Missing prerequisites",
@@ -199,6 +203,26 @@ async def mcp_tools(request: Request):
         tools = await asyncio.to_thread(_MCP_ADAPTER.discover_tools)
         await asyncio.to_thread(lambda: write_manifest(discovered_mcp_tools=tools))
         return {"tools": [tool.to_dict() for tool in tools], "count": len(tools), "correlation_id": correlation_id}
+    except Exception as exc:
+        _raise(exc, correlation_id)
+
+
+@router.get("/mcp/auth/status")
+async def mcp_auth_status(request: Request):
+    correlation_id = _correlation_id(request)
+    try:
+        status = await asyncio.to_thread(_MCP_ADAPTER.authentication_status, force_refresh=True)
+        return {**status.to_dict(), "correlation_id": correlation_id}
+    except Exception as exc:
+        _raise(exc, correlation_id)
+
+
+@router.post("/mcp/auth/reconnect")
+async def reconnect_mcp_auth(request: Request):
+    correlation_id = _correlation_id(request)
+    try:
+        status = await asyncio.to_thread(_MCP_ADAPTER.reconnect_from_account_oauth)
+        return {**status.to_dict(), "correlation_id": correlation_id}
     except Exception as exc:
         _raise(exc, correlation_id)
 

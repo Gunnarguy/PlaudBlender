@@ -157,6 +157,24 @@ struct SettingsView: View {
                     if let status = viewModel.plaudIntegrationStatus {
                         plaudPlatformRow("Account REST", status: status.accountREST)
                         plaudPlatformRow("Official MCP", status: status.officialMCP)
+                        if let mcpAuth = status.mcpAuth {
+                            Text(mcpAuth.message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("MCP follows your Plaud account session; it does not need a second sign-in.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Button {
+                                Task { await viewModel.reconnectPlaudMCP() }
+                            } label: {
+                                Label(
+                                    mcpAuth.authenticated ? "Refresh Plaud MCP" : "Reconnect Plaud MCP",
+                                    systemImage: "arrow.triangle.2.circlepath"
+                                )
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(viewModel.isReconnectingPlaudMCP || !mcpAuth.available)
+                        }
                         plaudPlatformRow(
                             "MCP tools",
                             status: status.mcpToolCount.map { "\($0) discovered" } ?? "Runtime check pending"
