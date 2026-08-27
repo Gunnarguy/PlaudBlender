@@ -321,37 +321,6 @@ def get_webhook_handler() -> PlaudWebhookHandler:
     return _webhook_handler
 
 
-def create_flask_webhook_endpoint(app, path: str = "/webhook/plaud"):
-    """
-    Create a Flask webhook endpoint for Plaud events.
-
-    Args:
-        app: Flask application instance
-        path: URL path for the webhook endpoint
-
-    Returns:
-        The webhook handler instance
-    """
-    from flask import request, jsonify
-
-    handler = get_webhook_handler()
-
-    @app.route(path, methods=["POST"])
-    def plaud_webhook():
-        signature = request.headers.get("Plaud-Signature")
-
-        if not handler.verify_signature(request.data, signature):
-            return jsonify({"error": "Invalid signature"}), 400
-
-        event = handler.parse_event(request.get_json())
-        handler.handle_event(event)
-
-        return jsonify({"status": "success"}), 200
-
-    logger.info(f"Registered Plaud webhook endpoint at {path}")
-    return handler
-
-
 if __name__ == "__main__":
     # Test event parsing
     handler = PlaudWebhookHandler()

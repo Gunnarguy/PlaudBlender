@@ -692,9 +692,3 @@ def get_notion_service() -> NotionService:
     if _notion_service is None:
         _notion_service = NotionService()
     return _notion_service
-
-
-def reset_notion_service() -> None:
-    """Clear the cached singleton so the next call creates a fresh one."""
-    global _notion_service
-    _notion_service = None

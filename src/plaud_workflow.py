@@ -60,17 +60,6 @@ class TaskType(Enum):
 
 
 @dataclass
-class WorkflowTask:
-    """Definition of a single workflow task."""
-
-    task_type: TaskType
-    task_params: Dict[str, Any]
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"task_type": self.task_type.value, "task_params": self.task_params}
-
-
-@dataclass
 class WorkflowResult:
     """Result from a completed workflow."""
 
@@ -490,11 +479,6 @@ BUILTIN_TEMPLATES: List[SummaryTemplate] = [
         ),
     ),
 ]
-
-
-def get_builtin_templates() -> List[SummaryTemplate]:
-    """Return all built-in summary templates."""
-    return list(BUILTIN_TEMPLATES)
 
 
 def get_template_by_id(template_id: str) -> Optional[SummaryTemplate]:

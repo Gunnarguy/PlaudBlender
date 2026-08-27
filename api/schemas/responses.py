@@ -7,7 +7,6 @@ for automatic FastAPI serialization and OpenAPI documentation.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -24,10 +23,6 @@ from src.chronos.pipeline_stages import (
 class SuccessResponse(BaseModel):
     success: bool = True
     message: str = ""
-
-
-class ErrorResponse(BaseModel):
-    detail: str
 
 
 # ── Events ──────────────────────────────────────────────────

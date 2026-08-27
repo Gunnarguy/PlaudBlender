@@ -483,14 +483,6 @@ def get_auto_sync() -> PlaudAutoSync:
     return _auto_sync
 
 
-def start_auto_sync() -> PlaudAutoSync:
-    """Start auto-sync if not already running."""
-    sync = get_auto_sync()
-    if not sync.is_running:
-        sync.start()
-    return sync
-
-
 if __name__ == "__main__":
     import time
 

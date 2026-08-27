@@ -7,7 +7,6 @@ legacy Recording/Segment logic.
 
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
-from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from .models import (
@@ -207,19 +206,6 @@ def add_chronos_events(session: Session, events: List[ChronosEvent]) -> int:
     return len(events)
 
 
-def get_chronos_events_by_recording(
-    session: Session,
-    recording_id: str,
-) -> List[ChronosEvent]:
-    """Fetch all events for a given recording."""
-    return (
-        session.query(ChronosEvent)
-        .filter_by(recording_id=recording_id)
-        .order_by(ChronosEvent.start_ts)
-        .all()
-    )
-
-
 def delete_chronos_events_by_recording(session: Session, recording_id: str) -> int:
     """Delete all Chronos events for a recording.
 
@@ -233,146 +219,9 @@ def delete_chronos_events_by_recording(session: Session, recording_id: str) -> i
     return int(count)
 
 
-def get_chronos_events_by_day(
-    session: Session,
-    day_of_week: str,
-    limit: int = 1000,
-) -> List[ChronosEvent]:
-    """Fetch events for a specific day of week (e.g., 'Monday')."""
-    return (
-        session.query(ChronosEvent)
-        .filter_by(day_of_week=day_of_week)
-        .order_by(ChronosEvent.start_ts)
-        .limit(limit)
-        .all()
-    )
-
-
-def get_chronos_events_by_date_range(
-    session: Session,
-    start_date: datetime,
-    end_date: datetime,
-    limit: int = 1000,
-) -> List[ChronosEvent]:
-    """Fetch events within a date range."""
-    return (
-        session.query(ChronosEvent)
-        .filter(
-            and_(
-                ChronosEvent.start_ts >= start_date,
-                ChronosEvent.start_ts <= end_date,
-            )
-        )
-        .order_by(ChronosEvent.start_ts)
-        .limit(limit)
-        .all()
-    )
-
-
-def get_chronos_events_by_category(
-    session: Session,
-    category: str,
-    limit: int = 1000,
-) -> List[ChronosEvent]:
-    """Fetch events by category (work, personal, meeting, etc.)."""
-    return (
-        session.query(ChronosEvent)
-        .filter_by(category=category)
-        .order_by(ChronosEvent.start_ts)
-        .limit(limit)
-        .all()
-    )
-
-
 # ═══════════════════════════════════════════════════════════════════
 # ChronosProcessingJob Operations
 # ═══════════════════════════════════════════════════════════════════
-
-
-def enqueue_chronos_job(
-    session: Session,
-    recording_id: str,
-    job_type: str,
-    priority: int = 0,
-) -> ChronosProcessingJob:
-    """Create a new processing job.
-
-    Args:
-        session: SQLAlchemy session
-        recording_id: Recording to process
-        job_type: Job type (gemini_clean | qdrant_index | graph_extract)
-        priority: Job priority (higher = more urgent)
-
-    Returns:
-        ChronosProcessingJob: The created job instance
-    """
-    job = ChronosProcessingJob(
-        recording_id=recording_id,
-        job_type=job_type,
-        priority=priority,
-    )
-    session.add(job)
-    session.commit()
-    session.refresh(job)
-    return job
-
-
-def get_next_chronos_job(
-    session: Session, job_type: Optional[str] = None
-) -> Optional[ChronosProcessingJob]:
-    """Fetch the next queued job (highest priority first).
-
-    Args:
-        session: SQLAlchemy session
-        job_type: Filter by job type (optional)
-
-    Returns:
-        ChronosProcessingJob: Next job to process, or None
-    """
-    query = session.query(ChronosProcessingJob).filter_by(status="queued")
-
-    if job_type:
-        query = query.filter_by(job_type=job_type)
-
-    return query.order_by(ChronosProcessingJob.priority.desc()).first()
-
-
-def mark_chronos_job_status(
-    session: Session,
-    job_id: str,
-    status: str,
-    error_message: Optional[str] = None,
-) -> None:
-    """Update job status.
-
-    Args:
-        session: SQLAlchemy session
-        job_id: Job ID
-        status: New status (queued | running | completed | failed)
-        error_message: Error details if status is failed
-    """
-    job = session.query(ChronosProcessingJob).filter_by(job_id=job_id).first()
-    if job:
-        job.status = status
-        job.error_message = error_message
-
-        if status == "running" and not job.started_at:
-            job.started_at = datetime.utcnow()
-        elif status in ("completed", "failed"):
-            job.completed_at = datetime.utcnow()
-
-        session.commit()
-
-
-def retry_failed_chronos_job(session: Session, job_id: str) -> None:
-    """Reset a failed job for retry."""
-    job = session.query(ChronosProcessingJob).filter_by(job_id=job_id).first()
-    if job:
-        job.status = "queued"
-        job.retry_count += 1
-        job.started_at = None
-        job.completed_at = None
-        session.commit()
 
 
 # ═══════════════════════════════════════════════════════════════════

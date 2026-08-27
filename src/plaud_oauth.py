@@ -37,12 +37,6 @@ class AuthenticationRequired(Exception):
     pass
 
 
-class PlaudAuthError(Exception):
-    """Base exception for Plaud authentication errors."""
-
-    pass
-
-
 # Plaud OAuth Configuration
 # Auth is on app.plaud.ai, API is on platform.plaud.ai
 PLAUD_AUTH_URL = "https://app.plaud.ai/platform/oauth"
