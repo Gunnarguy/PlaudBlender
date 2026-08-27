@@ -947,6 +947,88 @@ def run_refresh_workflows(session, *, days_back: int = 30, limit: int = 10) -> i
     return total
 
 
+def run_backfill_summaries(session, *, days_back: int = 14, limit: int = 10) -> int:
+    """Fill chronos_recordings.plaud_ai_summary from Plaud's stored note.
+
+    Nothing else in the pipeline writes this column. Its readers -- notion_bridge,
+    ask_context, transcript_processor -- sat empty for months because the only
+    writer was scripts/backfill_plaud_notes.py, run by hand.
+
+    Bounded by days_back on purpose: Plaud has no note at all for some recordings,
+    and an unbounded query would re-fetch those same rows on every run, forever.
+    Anything older than the window ages out; use the standalone script to sweep
+    the full history.
+
+    Returns:
+        int: Number of summaries written
+    """
+    from sqlalchemy import text
+
+    print_phase_header("PLAUD SUMMARY BACKFILL", "\U0001F4DD")
+    pipeline_progress.start_phase("summaries")
+    pipeline_progress.update(step="Finding recordings without a Plaud summary")
+
+    start_time = time.time()
+    cutoff = (datetime.now() - timedelta(days=days_back)).isoformat(" ")
+
+    pending = session.execute(
+        text(
+            "SELECT recording_id FROM chronos_recordings "
+            "WHERE (plaud_ai_summary IS NULL OR plaud_ai_summary = '') "
+            "AND source = 'plaud' AND created_at >= :cutoff "
+            "ORDER BY created_at DESC LIMIT :limit"
+        ),
+        {"cutoff": cutoff, "limit": limit},
+    ).fetchall()
+
+    if not pending:
+        print(f"  \u2705 Every Plaud recording in the last {days_back} days has a summary")
+        pipeline_progress.finish_phase(summary="nothing pending")
+        return 0
+
+    print(f"Fetching {len(pending)} summaries (last {days_back} days)...")
+
+    # Imported here, not at module scope: constructing the adapter spawns an npx
+    # MCP subprocess, and this phase runs on every pipeline pass. The common case
+    # is nothing pending, which must not pay that cost.
+    from src.plaud_integrations.mcp_account import PlaudMCPAccountAdapter
+
+    adapter = PlaudMCPAccountAdapter()
+    filled = skipped = failed = 0
+
+    for (recording_id,) in pending:
+        try:
+            note = adapter.get_note(recording_id)
+            markdown = (note.markdown or "").strip()
+        except Exception as exc:  # noqa: BLE001 - one bad recording must not stop the phase
+            failed += 1
+            logger.warning("Summary backfill failed for %s: %s", recording_id, exc)
+            continue
+
+        if not markdown:
+            skipped += 1
+            continue
+
+        session.execute(
+            text(
+                "UPDATE chronos_recordings SET plaud_ai_summary = :md "
+                "WHERE recording_id = :rid"
+            ),
+            {"md": markdown, "rid": recording_id},
+        )
+        session.commit()
+        filled += 1
+
+    elapsed = time.time() - start_time
+    print(f"  \u2705 Filled: {filled} | \u23ED\uFE0F  No note: {skipped} | \u274C Failed: {failed}")
+    print(f"  \u23F1\uFE0F  {elapsed:.1f}s")
+    pipeline_progress.finish_phase(
+        summary=f"{filled} filled, {skipped} without a note, {failed} failed"
+    )
+
+    return filled
+
+
 def run_repair_recent(
     session,
     *,
@@ -1242,6 +1324,11 @@ def main():
         action="store_true",
         help="Audit recent Plaud recordings and repair missing or retryable rows before processing.",
     )
+    parser.add_argument(
+        "--backfill-summaries",
+        action="store_true",
+        help="Fetch Plaud AI summaries for recent recordings that do not have one yet.",
+    )
 
     args = parser.parse_args()
 
@@ -1267,6 +1354,7 @@ def main():
             args.reindex,
             args.refresh_workflows,
             args.repair_recent,
+            args.backfill_summaries,
         ]
     ):
         parser.print_help()
@@ -1320,6 +1408,8 @@ def main():
         phases.append("ingest")
     if run_full_pipeline or args.refresh_workflows:
         phases.append("refresh-workflows")
+    if run_full_pipeline or args.backfill_summaries:
+        phases.append("summaries")
     if run_full_pipeline or args.repair_recent:
         phases.append("repair")
     if run_full_pipeline or args.process:
@@ -1427,6 +1517,20 @@ def main():
                 message="Refresh Plaud workflow statuses",
             ):
                 run_refresh_workflows(session, days_back=max(args.days_back, 30), limit=args.limit)
+
+        if run_full_pipeline or args.backfill_summaries:
+            with trace_span(
+                operation="phase-backfill-summaries",
+                source="pipeline",
+                stage="summaries",
+                provider="plaud",
+                message="Backfill Plaud AI summaries",
+            ):
+                run_backfill_summaries(
+                    session,
+                    days_back=max(args.days_back, 14),
+                    limit=args.limit,
+                )
 
         if run_full_pipeline or args.repair_recent:
             with trace_span(

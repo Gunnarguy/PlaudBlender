@@ -504,6 +504,9 @@ class TestChronosPipeline:
             pipeline, "run_refresh_workflows", lambda *args, **kwargs: 0
         )
         monkeypatch.setattr(pipeline, "run_repair_recent", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(
+            pipeline, "run_backfill_summaries", lambda *args, **kwargs: 0
+        )
 
         with pytest.raises(SystemExit) as exc_info:
             pipeline.main()
@@ -542,6 +545,9 @@ class TestChronosPipeline:
             pipeline, "run_refresh_workflows", lambda *args, **kwargs: 0
         )
         monkeypatch.setattr(pipeline, "run_repair_recent", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(
+            pipeline, "run_backfill_summaries", lambda *args, **kwargs: 0
+        )
 
         pipeline.main()
 
@@ -581,6 +587,9 @@ class TestChronosPipeline:
             pipeline, "run_refresh_workflows", lambda *args, **kwargs: 0
         )
         monkeypatch.setattr(pipeline, "run_repair_recent", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(
+            pipeline, "run_backfill_summaries", lambda *args, **kwargs: 0
+        )
 
         pipeline.main()
 
@@ -588,7 +597,15 @@ class TestChronosPipeline:
         assert captured["fetch_all_pages"] is True
         assert captured["phase_name"] == "backfill"
         progress.start_run.assert_called_once_with(
-            phases=["backfill", "refresh-workflows", "repair", "process", "index", "graph"],
+            phases=[
+                "backfill",
+                "refresh-workflows",
+                "summaries",
+                "repair",
+                "process",
+                "index",
+                "graph",
+            ],
             trigger="cli",
         )
         assert any(
@@ -630,6 +647,9 @@ class TestChronosPipeline:
             pipeline, "run_refresh_workflows", lambda *args, **kwargs: 0
         )
         monkeypatch.setattr(pipeline, "run_repair_recent", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(
+            pipeline, "run_backfill_summaries", lambda *args, **kwargs: 0
+        )
 
         pipeline.main()
 
@@ -637,7 +657,15 @@ class TestChronosPipeline:
         assert captured["fetch_all_pages"] is True
         assert captured["phase_name"] == "ingest"
         progress.start_run.assert_called_once_with(
-            phases=["ingest", "refresh-workflows", "repair", "process", "index", "graph"],
+            phases=[
+                "ingest",
+                "refresh-workflows",
+                "summaries",
+                "repair",
+                "process",
+                "index",
+                "graph",
+            ],
             trigger="cli",
         )
         assert any(
@@ -676,6 +704,9 @@ class TestChronosPipeline:
             pipeline, "run_refresh_workflows", lambda *args, **kwargs: 0
         )
         monkeypatch.setattr(pipeline, "run_repair_recent", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(
+            pipeline, "run_backfill_summaries", lambda *args, **kwargs: 0
+        )
 
         pipeline.main()
 
