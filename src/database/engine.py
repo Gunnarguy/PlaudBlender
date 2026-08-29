@@ -21,9 +21,21 @@ PROJECT_ROOT = os.path.abspath(
 DB_PATH = os.path.join(PROJECT_ROOT, "data", "brain.db")
 
 
+def resolve_database_url() -> str:
+    """Return the configured database URL, honoring $DATABASE_URL.
+
+    src/config.py has always built a `database_url` setting from this variable,
+    and /api/health and the settings screen report it, but the engine ignored it
+    and always opened data/brain.db -- so the two were free to disagree, and
+    there was no way to point a process at a different database. The test suite
+    uses it to stay off the real one.
+    """
+    return (os.getenv("DATABASE_URL") or "").strip() or f"sqlite:///{DB_PATH}"
+
+
 def get_engine(database_url: Optional[str] = None) -> Engine:
     """Return a SQLAlchemy engine, creating data dir as needed."""
-    url = database_url or f"sqlite:///{DB_PATH}"
+    url = database_url or resolve_database_url()
     if url.startswith("sqlite:///"):
         db_location = url.replace("sqlite:///", "")
         if db_location != ":memory:" and db_location:
