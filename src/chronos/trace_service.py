@@ -7,6 +7,7 @@ back into the existing X-Ray UI stream.
 
 import contextvars
 import hashlib
+import logging
 import os
 import socket
 import time
@@ -65,6 +66,9 @@ def safe_snippet(value: Any, *, max_chars: int = 500) -> Optional[str]:
     return text[:max_chars] + ("…" if len(text) > max_chars else "")
 
 
+logger = logging.getLogger(__name__)
+
+
 def _with_session(func) -> None:
     """Run a best-effort DB operation without letting tracing break work."""
     try:
@@ -73,7 +77,15 @@ def _with_session(func) -> None:
         with SessionLocal() as session:
             func(session)
     except Exception:
-        # Trace persistence is diagnostic only; never break the user's pipeline.
+        # Trace persistence is diagnostic only and must never break the user's
+        # pipeline, but it is logged rather than passed over in silence: a span
+        # that cannot be written vanishes completely, with nothing anywhere to
+        # say so. That hid a real gap -- chronos_execution_spans.recording_id
+        # carries a foreign key to chronos_recordings and SQLite runs with
+        # foreign_keys=ON, so tracing a recording that has not been imported yet
+        # violates it and the span is dropped. That is exactly the targeted
+        # `--recording-id` ingest you would most want traced.
+        logger.debug("Trace persistence failed", exc_info=True)
         return
 
 
