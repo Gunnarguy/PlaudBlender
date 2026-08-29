@@ -231,7 +231,6 @@ PlaudBlender/
 │   ├── config.py               # Single .env loader (34 params)
 │   ├── plaud_oauth.py          # OAuth 2.0 client
 │   ├── plaud_client.py         # Plaud API wrapper
-│   ├── plaud_device.py         # Device management
 │   ├── plaud_workflow.py       # Workflow API
 │   ├── notion_oauth.py         # Notion OAuth 2.0 client
 │   ├── notion_service.py       # Notion API service (page sync)

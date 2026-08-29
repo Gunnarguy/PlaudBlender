@@ -11,8 +11,6 @@ __all__ = [
     "PlaudClient",
     "PlaudWorkflowClient",
     "get_workflow_client",
-    "PlaudDeviceManager",
-    "get_device_manager",
     "PlaudWebhookHandler",
     "get_webhook_handler",
 ]
@@ -32,10 +30,6 @@ def __getattr__(name):
         from .plaud_workflow import PlaudWorkflowClient, get_workflow_client
 
         return {"PlaudWorkflowClient": PlaudWorkflowClient, "get_workflow_client": get_workflow_client}[name]
-    if name in {"PlaudDeviceManager", "get_device_manager"}:
-        from .plaud_device import PlaudDeviceManager, get_device_manager
-
-        return {"PlaudDeviceManager": PlaudDeviceManager, "get_device_manager": get_device_manager}[name]
     if name in {"PlaudWebhookHandler", "get_webhook_handler"}:
         from .plaud_webhook import PlaudWebhookHandler, get_webhook_handler
 

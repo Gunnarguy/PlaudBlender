@@ -436,16 +436,6 @@ class TestPlaudWorkflow:
         assert PlaudWorkflowClient is not None
 
 
-class TestPlaudDevice:
-    """Tests for src/plaud_device.py."""
-
-    def test_plaud_device_import(self):
-        """Verify PlaudDeviceManager can be imported."""
-        from src.plaud_device import PlaudDeviceManager
-
-        assert PlaudDeviceManager is not None
-
-
 class TestPlaudWebhook:
     """Tests for src/plaud_webhook.py."""
 
@@ -527,7 +517,6 @@ class TestPipelineSmoke:
         from src.plaud_client import PlaudClient
         from src.plaud_oauth import PlaudOAuthClient
         from src.plaud_workflow import PlaudWorkflowClient
-        from src.plaud_device import PlaudDeviceManager
 
         # Models
         from src.models.schemas import RecordingSchema
