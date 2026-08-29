@@ -80,17 +80,28 @@ def test_openai_key_configured():
 
 # 6. Write tests for _resolve_openai_api_key
 def test_resolve_openai_api_key():
-    # Test with CHRONOS_OPENAI_ENABLED=1 and OPENAI_API_KEY set
-    with patch.dict(os.environ, {"CHRONOS_OPENAI_ENABLED": "1", "OPENAI_API_KEY": "sk-1234"}, clear=True):
+    """The resolver reports the stored credential and does not apply the kill switch.
+
+    CHRONOS_OPENAI_ENABLED used to be checked here, which meant a disabled
+    install resolved to None and nothing could tell "no key configured" apart
+    from "key configured, switched off". The switch moved to the call sites in
+    59f7224; see test_openai_service.py::test_kill_switch_makes_a_stored_key_inert
+    for the test that a disabled key cannot reach OpenAI.
+    """
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-1234"}, clear=True):
         assert _resolve_openai_api_key() == "sk-1234"
 
-    # Test with CHRONOS_OPENAI_ENABLED=1 but OPENAI_API_KEY empty
-    with patch.dict(os.environ, {"CHRONOS_OPENAI_ENABLED": "1", "OPENAI_API_KEY": "   "}, clear=True):
+    # Whitespace is not a key.
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "   "}, clear=True):
         assert _resolve_openai_api_key() is None
 
-    # Test with CHRONOS_OPENAI_ENABLED=0
-    with patch.dict(os.environ, {"CHRONOS_OPENAI_ENABLED": "0", "OPENAI_API_KEY": "sk-1234"}, clear=True):
+    with patch.dict(os.environ, {}, clear=True):
         assert _resolve_openai_api_key() is None
+
+    # The switch is deliberately not consulted: the key still resolves so
+    # callers can report it as present-but-disabled.
+    with patch.dict(os.environ, {"CHRONOS_OPENAI_ENABLED": "0", "OPENAI_API_KEY": "sk-1234"}, clear=True):
+        assert _resolve_openai_api_key() == "sk-1234"
 
 # 7. Write tests for Settings class
 def test_settings_initialization():

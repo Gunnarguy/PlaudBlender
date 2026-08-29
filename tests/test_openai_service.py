@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from src.chronos.openai_service import OpenAIResponseService
 
 
@@ -248,3 +250,26 @@ def test_extraction_cache_key_changes_with_instructions():
         "gpt-5.4", "default instructions"
     )
     assert default_key != custom_key
+
+
+def test_kill_switch_makes_a_stored_key_inert(monkeypatch):
+    """CHRONOS_OPENAI_ENABLED=0 must block requests, not just hide the key.
+
+    src/config.py resolves OPENAI_API_KEY whatever the switch says, so this is
+    the layer that has to enforce it -- nothing else stands between a configured
+    key and a billed request.
+    """
+
+    def _disabled_settings():
+        settings = _make_settings()
+        settings.chronos_openai_enabled = False
+        return settings
+
+    monkeypatch.setattr("src.chronos.openai_service.get_settings", _disabled_settings)
+
+    service = OpenAIResponseService()
+
+    assert service._api_key == "test-openai-key"
+    assert service.available is False
+    with pytest.raises(RuntimeError, match="CHRONOS_OPENAI_ENABLED=0"):
+        service._get_client()
