@@ -1,8 +1,12 @@
 """
-Comprehensive tests for the Chronos FastAPI backend.
+Tests for the Chronos FastAPI backend.
 
-Uses FastAPI's TestClient with mocked services to avoid hitting real DB/API.
-Tests every route for success, 404, 401, and invalid input paths.
+Uses FastAPI's TestClient with mocked services to avoid hitting real DB/API,
+covering success, 404, 401, and invalid-input paths for the routes it reaches.
+
+It does not reach every route, though it used to say it did. The routes with no
+test naming them are listed in tests/test_api_route_coverage.py, which fails if
+that set grows or goes stale -- see it for the current count.
 """
 
 import os
