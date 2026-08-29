@@ -373,3 +373,30 @@ class NotionMatchOverride(Base):
     notion_page_id = Column(String, primary_key=True)
     chronos_recording_id = Column(String, nullable=False)
 
+
+class JanitorTombstone(Base):
+    """Recording ids the janitor deliberately deleted, so sync will not revive them.
+
+    `upsert_chronos_recording` consults this table on *every* ingest, so a database
+    that lacks it cannot ingest at all. The table was previously created by hand
+    outside the repo, which left every fresh install and every rebuilt database
+    raising `no such table: janitor_tombstones` on the first upsert. Declaring it
+    here lets `init_db` create it like any other table; `create_all` skips it
+    where it already exists, so deployments carrying the hand-made copy are
+    untouched.
+
+    Columns mirror that hand-made schema exactly. `recording_id` holds
+    `notion:`-prefixed ids as well as Plaud ones, so it carries no foreign key,
+    and `deleted_at` stays TEXT because existing rows hold ISO-8601 strings
+    written by the out-of-band janitor.
+    """
+
+    __tablename__ = "janitor_tombstones"
+
+    recording_id = Column(String, primary_key=True)
+    deleted_at = Column(String, nullable=True)
+    title = Column(String, nullable=True)
+    reason = Column(String, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"JanitorTombstone(recording_id={self.recording_id}, reason={self.reason})"
