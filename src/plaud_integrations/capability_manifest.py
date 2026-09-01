@@ -18,8 +18,13 @@ DOCUMENTATION_SOURCES = [
     "https://docs.plaud.ai/llms.txt",
     "https://docs.plaud.ai/plaud-mcp-cli/mcp",
     "https://docs.plaud.ai/openapi/auth.json",
+    "https://docs.plaud.ai/openapi/binding.json",
     "https://docs.plaud.ai/openapi/file.json",
     "https://docs.plaud.ai/openapi/transcription.json",
+    # transcription.json omits the `model` field; the -model variant is the
+    # one that documents it, and is the direct continuation of the spec this
+    # project originally captured.
+    "https://docs.plaud.ai/openapi/transcription-model.json",
 ]
 
 

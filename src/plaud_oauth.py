@@ -38,8 +38,13 @@ class AuthenticationRequired(Exception):
 
 
 # Plaud OAuth Configuration
-# Auth is on app.plaud.ai, API is on platform.plaud.ai
-PLAUD_AUTH_URL = "https://app.plaud.ai/platform/oauth"
+# Auth is on web.plaud.ai, API is on platform.plaud.ai.
+# Plaud moved the OAuth UI from app.plaud.ai to web.plaud.ai; app.plaud.ai
+# still 302-redirects there, and @plaud-ai/mcp 0.3.10 calls web.plaud.ai
+# directly. Pointing at the redirect source left the flow one upstream
+# cleanup away from breaking, and sent the browser's Origin through a host
+# the callback handler did not allow.
+PLAUD_AUTH_URL = "https://web.plaud.ai/platform/oauth"
 PLAUD_TOKEN_URL = (
     "https://platform.plaud.ai/developer/api/oauth/third-party/access-token"
 )
@@ -677,6 +682,10 @@ class PlaudOAuthClient:
                 allowed_origins = [
                     "http://localhost:8050",
                     "https://localhost:8050",
+                    # web.plaud.ai serves the OAuth UI; app.plaud.ai is kept
+                    # because it still redirects there and older sessions may
+                    # already be mid-flow on that host.
+                    "https://web.plaud.ai",
                     "https://app.plaud.ai",
                     "https://platform.plaud.ai",
                     "https://api.plaud.ai"

@@ -148,7 +148,13 @@ def _register_auth_routes(server):
         # Plaud's OAuth page may send its own domain.
         # We must reflect the request Origin strictly if it matches Plaud's domains.
         origin = request.headers.get("Origin", "")
-        allowed = {"https://app.plaud.ai", "https://resource.plaud.ai"}
+        # web.plaud.ai now serves the OAuth page; app.plaud.ai redirects there
+        # and is kept for sessions already mid-flow on that host.
+        allowed = {
+            "https://web.plaud.ai",
+            "https://app.plaud.ai",
+            "https://resource.plaud.ai",
+        }
         if origin in allowed:
             resp.headers["Access-Control-Allow-Origin"] = origin
         resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
