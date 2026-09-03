@@ -42,6 +42,12 @@ except Exception:
     ChronosQdrantClient = None
 
 TOLERANCE_S = 180
+
+
+def tolerance(duration_s: int) -> int:
+    # The log rounds long takes to whole hours ("5h" for a 245-minute take),
+    # so the window must grow with length; short takes stay tight.
+    return max(TOLERANCE_S, int(duration_s * 0.25)) if duration_s >= 3600 else TOLERANCE_S
 REASON = "app clock: owner's recording-list log"
 
 
@@ -86,8 +92,13 @@ def main() -> int:
                 except ValueError: pass
             wanted_device = "860" if (device_id and "-" in str(device_id)) else None
             cands = [e for e in entries if not e["claimed"] and e["local_date"] == local_date
-                     and abs(e["duration_s"] - int(dur or 0)) <= TOLERANCE_S
+                     and abs(e["duration_s"] - int(dur or 0)) <= tolerance(int(dur or 0))
                      and (wanted_device is None or e["device"] == wanted_device)]
+            # Two candidates that start within a minute of each other are the
+            # same moment on two devices; either is the right clock. Prefer the
+            # one for the row's device when known, else the first.
+            if len(cands) > 1 and max(abs((a["utc"] - b["utc"]).total_seconds()) for a in cands for b in cands) <= 60:
+                cands = [c for c in cands if wanted_device is None or c["device"] == wanted_device][:1] or cands[:1]
             if len(cands) != 1:
                 unmatched += 1
                 print(f"  {'no match' if not cands else 'ambiguous':9}  {local_date}  {int(dur or 0)//60:4}m  {t[:52]}")
