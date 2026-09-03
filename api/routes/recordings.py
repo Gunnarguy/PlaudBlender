@@ -55,7 +55,8 @@ def _recording_summary_to_out(r) -> RecordingSummaryOut:
         recording_id=r.recording_id,
         start_time=str(r.start_time) if getattr(r, "start_time", None) else None,
         end_time=str(r.end_time) if getattr(r, "end_time", None) else None,
-        duration_seconds=getattr(r, "duration_seconds", 0),
+        # data_service computes a float once events exist; the API field is int.
+        duration_seconds=int(round(float(getattr(r, "duration_seconds", 0) or 0))),
         duration_formatted=getattr(r, "duration_formatted", None),
         top_category=getattr(r, "top_category", "unknown"),
         event_count=getattr(r, "event_count", 0),
