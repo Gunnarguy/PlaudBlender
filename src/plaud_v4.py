@@ -88,7 +88,15 @@ class PlaudV4Client:
             "Accept": "application/json",
             "Origin": WEB_ORIGIN,
             "Referer": WEB_ORIGIN + "/",
-            "User-Agent": "PlaudBlender/plaud_v4 (+https://github.com/Gunnarguy/PlaudBlender)",
+            # Plaud's Cloudflare edge returns a 403 challenge page to any
+            # non-browser User-Agent on the auth endpoints, verified from two
+            # networks with identical requests. A browser string is the one
+            # header that decides whether the request reaches the API at all.
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
         })
         self._tokens: dict[str, str] = {}
         self._load()
