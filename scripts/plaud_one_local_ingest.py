@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -66,14 +67,25 @@ def main() -> int:
                         "duration_s": int(e["duration_s"]), "claimed": False})
 
     init_db()
-    created = updated = skipped = unclocked = 0
+    created = updated = skipped = unclocked = already = 0
+
+    def norm(t: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
     root = Path(__file__).resolve().parent.parent / "data" / "artifacts"
     with SessionLocal() as session:
         # entries already claimed by rows ingested earlier must stay claimed
         for (reason,) in session.execute(text("select time_estimate_reason from chronos_recordings where source='one_local'")).fetchall():
             pass
+        # A file that also reached Plaud already has a row under its Plaud id;
+        # creating a second under a local id would be the duplicate this whole
+        # effort exists to prevent. Match on normalised title and skip.
+        plaud_titles = {norm(t) for (t,) in session.execute(text("select title from chronos_recordings where source != 'one_local'")).fetchall()}
         for stem, m in sorted(manifest.items()):
             rid = stable_id(stem)
+            if norm(stem) in plaud_titles:
+                already += 1
+                print(f"  already in Plaud   {stem[:60]}")
+                continue
             tpath = Path(args.transcripts) / f"{stem}.json"
             if not tpath.exists():
                 skipped += 1
@@ -113,7 +125,7 @@ def main() -> int:
             session.commit()
             if existing: updated += 1
             else: created += 1
-    print(f"\n{created} created · {updated} updated · {unclocked} without app-clock match · {skipped} awaiting transcript")
+    print(f"\n{created} created · {updated} updated · {unclocked} without app-clock match · {skipped} awaiting transcript · {already} already in Plaud")
     return 0
 
 
