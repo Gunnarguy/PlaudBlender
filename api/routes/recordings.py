@@ -239,6 +239,40 @@ async def recording_processing(recording_id: str):
         )
 
 
+@router.get("/{recording_id}/artifacts")
+async def list_recording_artifacts(recording_id: str):
+    """Every artifact Plaud 4.0 produced for a recording that the broker holds
+    on disk: outline, polished transcript, highlight memos, the timed and
+    speaker-labelled transcript JSON. Fetched by scripts/plaud_v4_artifacts.py."""
+    from sqlalchemy import text as _text
+    from src.database import SessionLocal
+    with SessionLocal() as session:
+        rows = session.execute(_text(
+            "select object_type, mime_type, size_bytes, fetched_at from chronos_recording_artifacts where recording_id=:i order by object_type"
+        ), {"i": recording_id}).fetchall()
+    return {"recording_id": recording_id,
+            "artifacts": [{"type": t, "mime_type": m, "size_bytes": n, "fetched_at": str(f)} for t, m, n, f in rows]}
+
+
+@router.get("/{recording_id}/artifacts/{object_type}")
+async def get_recording_artifact(recording_id: str, object_type: str):
+    """The artifact's content, verbatim as Plaud served it: JSON for the
+    timed transcript, outline and memos; markdown for polished text."""
+    import os
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+    from sqlalchemy import text as _text
+    from src.database import SessionLocal
+    with SessionLocal() as session:
+        row = session.execute(_text(
+            "select path, mime_type from chronos_recording_artifacts where recording_id=:i and object_type=:t"
+        ), {"i": recording_id, "t": object_type.upper()}).fetchone()
+    if not row or not os.path.isfile(row[0]):
+        raise HTTPException(status_code=404, detail={"error": {"code": "no_artifact", "message": f"No {object_type} held for this recording"}})
+    media = "application/json" if row[0].endswith(".json") else "text/markdown"
+    return FileResponse(row[0], media_type=media)
+
+
 @router.get("/{recording_id}/transcript")
 async def recording_transcript(
     recording_id: str,
