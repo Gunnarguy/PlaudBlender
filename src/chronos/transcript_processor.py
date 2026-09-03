@@ -1249,8 +1249,12 @@ Extract events from this transcript following the schema exactly."""
                 deleted = delete_chronos_events_by_recording(self.db, recording_id)
                 logger.info(f"Deleted {deleted} existing events for {recording_id}")
 
+            # Rows that arrived with their transcript already stored have
+            # nothing to fetch. Notion rows always did; Plaud 4.0 rows do too,
+            # and their ids are unknown to the 3.0 client this branch would
+            # otherwise call -- it answers 500 and the row is marked failed.
             use_cached_transcript = (
-                str(source or "").strip().lower() == "notion"
+                str(source or "").strip().lower() in ("notion", "plaud_v4")
                 or record_id.startswith("notion:")
             )
 
