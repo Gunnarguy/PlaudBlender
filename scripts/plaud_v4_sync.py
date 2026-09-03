@@ -32,7 +32,7 @@ from src.database.chronos_repository import (  # noqa: E402
     set_chronos_recording_transcript,
     upsert_chronos_recording,
 )
-from src.plaud_v4 import NotLoggedIn, PlaudV4Client, PlaudV4Error, classic_id, device_model  # noqa: E402
+from src.plaud_v4 import NotLoggedIn, PlaudV4Client, PlaudV4Error, classic_id, device_code  # noqa: E402
 
 SOURCE = "plaud_v4"
 PACE_SECONDS = 0.15
@@ -95,7 +95,7 @@ def sync(client: PlaudV4Client, *, limit: int | None, dry_run: bool, refresh_com
                 if meta.get("start_time"):
                     created_at = datetime.fromtimestamp(meta["start_time"] / 1000, tz=timezone.utc).replace(tzinfo=None)
 
-                device = device_model(meta.get("scene_source"))
+                device = device_code(meta.get("scene_source"))
 
                 rec = upsert_chronos_recording(
                     session,

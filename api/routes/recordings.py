@@ -64,6 +64,7 @@ def _recording_summary_to_out(r) -> RecordingSummaryOut:
         time_estimate_reason=getattr(r, "time_estimate_reason", None),
         title=getattr(r, "title", None),
         plaud_ai_summary=getattr(r, "plaud_ai_summary", None),
+        device_id=getattr(r, "device_id", None),
         cloud_status=getattr(r, "cloud_status", None),
     )
 

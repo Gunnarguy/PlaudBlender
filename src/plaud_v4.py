@@ -69,14 +69,31 @@ def classic_id(file_id: str) -> str:
     return file_id
 
 
-def device_model(scene_source: Any) -> Optional[str]:
+def device_code(scene_source: Any) -> Optional[str]:
+    """The device as a bare code string: "888", "860".
+
+    Stored this way on purpose. Older syncs stored the device's full serial,
+    which begins with the same three digits (888317281808436884), and the iOS
+    app already identifies hardware by that three-digit prefix -- so a bare
+    code and a full serial read as the same device without a migration.
+    """
     if scene_source in (None, "", 0):
         return None
     try:
-        code = int(scene_source)
+        return str(int(scene_source))
     except (TypeError, ValueError):
         return str(scene_source)
-    return DEVICE_MODELS.get(code, str(code))
+
+
+def device_model(scene_source: Any) -> Optional[str]:
+    """Human name for a device code, where Plaud's bundle provides one."""
+    code = device_code(scene_source)
+    if code is None:
+        return None
+    try:
+        return DEVICE_MODELS.get(int(code), code)
+    except ValueError:
+        return code
 
 
 class PlaudV4Client:

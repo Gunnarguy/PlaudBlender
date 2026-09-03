@@ -365,6 +365,7 @@ class RecordingSummary:
     title: Optional[str] = None
     plaud_ai_summary: Optional[str] = None
     cloud_status: Optional[str] = None
+    device_id: Optional[str] = None  # bare code (888, 860) or legacy serial; iOS keys on the 3-digit prefix
     plaud_workflow_status: Optional[str] = None
     notion_state: Optional[str] = None
     notion_page_id: Optional[str] = None
@@ -1125,6 +1126,7 @@ class ChronosDataService:
                     if db_rec
                     else None
                 ),
+                device_id=(str(getattr(db_rec, "device_id", "") or "").strip() or None) if db_rec else None,
                 cloud_status=(
                     self._cloud_status_for_source(
                         str(getattr(db_rec, "source", "") or "")
@@ -1197,6 +1199,7 @@ class ChronosDataService:
             ),
             title=title,
             plaud_ai_summary=plaud_ai_summary,
+            device_id=(str(getattr(rec, "device_id", "") or "").strip() or None),
             cloud_status=self._cloud_status_for_source(source),
             plaud_workflow_status=(
                 str(getattr(rec, "plaud_workflow_status", "") or "").strip() or None

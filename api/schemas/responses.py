@@ -61,6 +61,7 @@ class RecordingSummaryOut(BaseModel):
     time_is_estimated: Optional[bool] = None
     time_estimate_reason: Optional[str] = None
     title: Optional[str] = None
+    device_id: Optional[str] = None
     plaud_ai_summary: Optional[str] = None
     cloud_status: Optional[str] = None
 
