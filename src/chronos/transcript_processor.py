@@ -1254,7 +1254,7 @@ Extract events from this transcript following the schema exactly."""
             # and their ids are unknown to the 3.0 client this branch would
             # otherwise call -- it answers 500 and the row is marked failed.
             use_cached_transcript = (
-                str(source or "").strip().lower() in ("notion", "plaud_v4")
+                str(source or "").strip().lower() in ("notion", "plaud_v4", "one_local")
                 or record_id.startswith("notion:")
             )
 
