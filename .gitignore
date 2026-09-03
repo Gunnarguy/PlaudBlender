@@ -92,3 +92,7 @@ docs/DISCORD_QUICKSTART.md
 *.bak2-[0-9]*
 *.bak3-[0-9]*
 *.bak-tombstone-*
+
+# Plaud 4.0 login session (runtime, chmod 600)
+.plaud_v4_session.json
+.plaud_v4_session.tmp

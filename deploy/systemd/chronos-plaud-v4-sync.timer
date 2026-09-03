@@ -1,0 +1,10 @@
+[Unit]
+Description=Chronos Plaud 4.0 library sync timer (every 20 minutes)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

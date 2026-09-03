@@ -1,0 +1,16 @@
+[Unit]
+Description=Chronos Plaud 4.0 library sync
+After=network-online.target chronos-api.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=your-pi-username
+WorkingDirectory=/home/your-pi-username/PlaudBlender
+Environment=HOME=/home/your-pi-username
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/home/your-pi-username/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/your-pi-username/PlaudBlender/.env
+ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/plaud_v4_sync.py
+StandardOutput=append:/home/your-pi-username/PlaudBlender/logs/plaud_v4_sync.log
+StandardError=append:/home/your-pi-username/PlaudBlender/logs/plaud_v4_sync.log
