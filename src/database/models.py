@@ -374,6 +374,27 @@ class NotionMatchOverride(Base):
     chronos_recording_id = Column(String, nullable=False)
 
 
+class ChronosRecordingArtifact(Base):
+    """One artifact Plaud 4.0 serves for a recording, kept verbatim on disk.
+
+    The sync stores a flattened transcript and the summary on the recording
+    row. Everything else Plaud produces -- the outline, the polished
+    transcript, highlight memos, the transcript's per-line timing and
+    speaker JSON -- is fetched by scripts/plaud_v4_artifacts.py and kept
+    here: the content on disk, the row saying what it is and where.
+    """
+
+    __tablename__ = "chronos_recording_artifacts"
+
+    recording_id = Column(String, ForeignKey("chronos_recordings.recording_id"), primary_key=True)
+    object_type = Column(String, primary_key=True)  # TRANSCRIPT, OUTLINE, POLISHED_TRANSCRIPT, MARK_MEMO, SUMMARY_BETA ...
+    content_id = Column(String, nullable=True)
+    mime_type = Column(String, nullable=True)
+    path = Column(String, nullable=False)
+    size_bytes = Column(Integer, nullable=True)
+    fetched_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class JanitorTombstone(Base):
     """Recording ids the janitor deliberately deleted, so sync will not revive them.
 
