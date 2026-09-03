@@ -19,6 +19,7 @@ Requires a session from scripts/plaud_v4_login.py.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -45,6 +46,15 @@ HARDWARE_DEVICES = {"888", "860", "881", "883", "880", "882"}
 CLOCK_TOLERANCE_SECONDS = 60
 
 SOURCE = "plaud_v4"
+
+# Plaud's summary markdown embeds card images as `[](plaud://image?...)` or
+# `![...](plaud://image?...)`. They resolve only inside Plaud's own apps and
+# render as a raw URL everywhere else, so they are dropped at ingest.
+_PLAUD_IMAGE = re.compile(r"!?\[[^\]]*\]\(plaud://[^)]*\)\s*")
+
+
+def clean_summary(text: str) -> str:
+    return re.sub(r"\n{3,}", "\n\n", _PLAUD_IMAGE.sub("", text or "")).strip()
 
 
 def _shift(ts, delta: timedelta):
@@ -217,7 +227,7 @@ def sync(client: PlaudV4Client, *, limit: int | None, dry_run: bool, refresh_com
                         set_chronos_recording_transcript(session, rid, text)
 
                 if "SUMMARY" in objects and (not existing or not existing.plaud_ai_summary or refresh_complete):
-                    summary = client.content(objects["SUMMARY"]["content_id"]).strip()
+                    summary = clean_summary(client.content(objects["SUMMARY"]["content_id"]))
                     if summary:
                         rec.plaud_ai_summary = summary
                         session.commit()
