@@ -151,6 +151,28 @@ def sync(client: PlaudV4Client, *, limit: int | None, dry_run: bool, refresh_com
             created_at = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc).replace(tzinfo=None) if start_ms else datetime.utcnow()
 
             existing = get_chronos_recording(session, rid)
+
+            # The list row's start is the device clock for hardware-synced
+            # recordings. Check it here, before the completeness skip, so a
+            # complete row that something re-dated by inference is still put
+            # back. Detail is fetched only on a mismatch, so unchanged rows
+            # cost nothing.
+            if (existing and not dry_run and existing.created_at is not None
+                    and str(existing.device_id or "")[:3] in HARDWARE_DEVICES
+                    and abs((created_at - existing.created_at).total_seconds()) >= CLOCK_TOLERANCE_SECONDS):
+                try:
+                    confirm = (client.file_detail(item["file_id"]).get("meta") or {}).get("start_time")
+                except PlaudV4Error:
+                    confirm = None
+                if confirm:
+                    true = datetime.fromtimestamp(confirm / 1000, tz=timezone.utc).replace(tzinfo=None)
+                    if abs((true - existing.created_at).total_seconds()) >= CLOCK_TOLERANCE_SECONDS:
+                        redate_to_device_clock(session, qdrant, rid, existing.created_at, true)
+                        session.commit()
+                        reclocked += 1
+                        print(f"  reclocked  {existing.created_at:%Y-%m-%d %H:%M} -> {true:%Y-%m-%d %H:%M}  {title[:48]}")
+                        existing = get_chronos_recording(session, rid)
+
             complete = bool(existing and existing.transcript and existing.plaud_ai_summary and existing.device_id)
             if complete and not refresh_complete:
                 skipped += 1
@@ -188,14 +210,6 @@ def sync(client: PlaudV4Client, *, limit: int | None, dry_run: bool, refresh_com
                 # rows. If anything has moved this row off it -- an inference
                 # from a title date, a Notion default -- put it back, cascade,
                 # and clear the estimate flag. Counted separately so it is visible.
-                if existing and device in HARDWARE_DEVICES and meta.get("start_time"):
-                    stored_at = existing.created_at
-                    if stored_at is not None and abs((created_at - stored_at).total_seconds()) >= CLOCK_TOLERANCE_SECONDS:
-                        redate_to_device_clock(session, qdrant, rid, stored_at, created_at)
-                        session.commit()
-                        reclocked += 1
-                        print(f"  reclocked  {stored_at:%Y-%m-%d %H:%M} -> {created_at:%Y-%m-%d %H:%M}  {title[:48]}")
-
                 if "TRANSCRIPT" in objects and (not existing or not existing.transcript or refresh_complete):
                     segments = client.content_json(objects["TRANSCRIPT"]["content_id"])
                     text = transcript_text(segments)
