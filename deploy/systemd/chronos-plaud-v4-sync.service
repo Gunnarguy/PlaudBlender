@@ -12,6 +12,9 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PATH=/home/your-pi-username/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=/home/your-pi-username/PlaudBlender/.env
 ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/plaud_v4_sync.py
+# Retire Zapier-era Notion copies of recordings the sync just brought in, so a
+# recording never shows twice while the Zap is still running.
+ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/plaud_v4_dedupe.py
 # Master audio for anything new; a oneshot runs its ExecStart lines in order.
 ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/plaud_v4_audio.py
 StandardOutput=append:/home/your-pi-username/PlaudBlender/logs/plaud_v4_sync.log
