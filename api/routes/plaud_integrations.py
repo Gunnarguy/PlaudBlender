@@ -131,12 +131,69 @@ async def capabilities(request: Request):
     return {**load_manifest(), "correlation_id": _correlation_id(request)}
 
 
+_AUDIO_TYPES = {".ogg": "audio/ogg", ".opus": "audio/ogg", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav"}
+
+
+def _local_audio_response(file_id: str, range_header: str | None):
+    """Range-aware response for a recording's master audio on disk, or None."""
+    import os
+    from fastapi.responses import StreamingResponse
+    from src.database import SessionLocal
+    from src.database.chronos_repository import get_chronos_recording
+
+    with SessionLocal() as session:
+        rec = get_chronos_recording(session, file_id)
+        path = str(rec.local_audio_path or "") if rec else ""
+    if not path or not os.path.isfile(path):
+        return None
+    size = os.path.getsize(path)
+    content_type = _AUDIO_TYPES.get(os.path.splitext(path)[1].lower(), "application/octet-stream")
+    start, end = 0, size - 1
+    status = 200
+    if range_header and range_header.startswith("bytes="):
+        spec = range_header[6:].split(",")[0].strip()
+        lo, _, hi = spec.partition("-")
+        try:
+            if lo:
+                start = int(lo); end = int(hi) if hi else size - 1
+            elif hi:
+                start = max(0, size - int(hi))
+            end = min(end, size - 1)
+            if start <= end:
+                status = 206
+        except ValueError:
+            start, end, status = 0, size - 1, 200
+    length = end - start + 1
+
+    def _chunks():
+        with open(path, "rb") as fh:
+            fh.seek(start)
+            remaining = length
+            while remaining > 0:
+                block = fh.read(min(1 << 16, remaining))
+                if not block:
+                    break
+                remaining -= len(block)
+                yield block
+
+    headers = {"Accept-Ranges": "bytes", "Content-Length": str(length), "X-Audio-Source": "local"}
+    if status == 206:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    return StreamingResponse(_chunks(), status_code=status, media_type=content_type, headers=headers)
+
+
 @router.get("/files/{file_id}/audio")
 async def stream_file_audio(file_id: str, request: Request):
     """Stream a recording's audio through the broker. Presigned URLs are
     redacted in every JSON surface (telemetry safety), so the broker
     dereferences the URL server-side and streams the bytes instead."""
     correlation_id = _correlation_id(request)
+    # Audio the 4.0 sync has already fetched is served from disk. The MCP
+    # path below reaches Plaud's 3.0 surface, which cannot answer for 4.0
+    # ids at all; a local master is both faster and the only option there.
+    local = _local_audio_response(file_id, request.headers.get("Range"))
+    if local is not None:
+        return local
     try:
         result = await asyncio.to_thread(_MCP_ADAPTER.call_tool, "get_file", {"file_id": file_id})
         payload = result.structured_content or {}
