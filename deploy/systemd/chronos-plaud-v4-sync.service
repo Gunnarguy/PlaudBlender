@@ -17,5 +17,8 @@ ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/plaud_v4_s
 ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/plaud_v4_dedupe.py
 # Master audio for anything new; a oneshot runs its ExecStart lines in order.
 ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/plaud_v4_audio.py
+# Timed, speaker-labelled transcript JSON and the other objects for anything
+# new; skips what is already held.
+ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/plaud_v4_artifacts.py
 StandardOutput=append:/home/your-pi-username/PlaudBlender/logs/plaud_v4_sync.log
 StandardError=append:/home/your-pi-username/PlaudBlender/logs/plaud_v4_sync.log
