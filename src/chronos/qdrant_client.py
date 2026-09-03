@@ -442,6 +442,47 @@ class ChronosQdrantClient:
             for hit in results
         ]
 
+    def reassign_recording_id(self, old_id: str, new_id: str) -> int:
+        """Re-point every event of `old_id` at `new_id`, keeping the vectors.
+
+        Used when a recording row is merged into another: the events survive
+        in SQLite under the new id, and the day view reads recording ids from
+        these payloads, so the vectors must follow or the old id keeps
+        appearing as a phantom recording with no title.
+        """
+        selector = Filter(
+            must=[FieldCondition(key="recording_id", match=MatchValue(value=old_id))]
+        )
+        count = self.client.count(
+            collection_name=self.collection_name, count_filter=selector
+        ).count
+        if count:
+            self.client.set_payload(
+                collection_name=self.collection_name,
+                payload={"recording_id": new_id},
+                points=FilterSelector(filter=selector),
+            )
+        return count
+
+    def point_ids_for_recording(self, recording_id: str) -> list:
+        """Ids of every point whose payload names `recording_id`."""
+        selector = Filter(
+            must=[FieldCondition(key="recording_id", match=MatchValue(value=recording_id))]
+        )
+        ids, offset = [], None
+        while True:
+            points, offset = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=selector,
+                with_payload=False,
+                with_vectors=False,
+                limit=1000,
+                offset=offset,
+            )
+            ids.extend(p.id for p in points)
+            if offset is None:
+                return ids
+
     def delete_by_recording_id(self, recording_id: str) -> int:
         """Delete all events for a recording.
 

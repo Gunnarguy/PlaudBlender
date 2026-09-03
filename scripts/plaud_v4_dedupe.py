@@ -36,6 +36,11 @@ from sqlalchemy import text  # noqa: E402
 
 from src.database import SessionLocal  # noqa: E402
 
+try:
+    from src.chronos.qdrant_client import ChronosQdrantClient  # noqa: E402
+except Exception:  # Qdrant optional at runtime
+    ChronosQdrantClient = None
+
 CHILD_TABLES = ("chronos_events", "chronos_processing_jobs", "chronos_webhook_events", "chronos_execution_spans")
 NAME_TO_CODE = {"plaud_notepin": "880", "plaud_note_pro": "881", "plaud_notepin_s": "882", "plaud_note": "888"}
 
@@ -61,7 +66,48 @@ def find_twins(session) -> list[tuple[str, str, str]]:
     return [(nid, real[(day, norm(title))], title) for nid, title, day in notion if (day, norm(title)) in real]
 
 
-def retire(session, notion_id: str, real_id: str, title: str) -> None:
+def reconcile_qdrant(session, qdrant, dead_id: str) -> tuple[int, int]:
+    """Bring Qdrant in line with SQLite for a retired recording id.
+
+    The day view builds its recording list from event payloads in Qdrant,
+    so a retired id lingers there as a phantom -- title None, device None --
+    until its points are dealt with. Per point: if SQLite still has that
+    event (moved under the real id), re-point the vector at the row that
+    owns it now; otherwise the event was dropped, so drop the vector too.
+    Returns (repointed, deleted).
+    """
+    if qdrant is None:
+        return (0, 0)
+    ids = qdrant.point_ids_for_recording(dead_id)
+    if not ids:
+        return (0, 0)
+    owners: dict[str, str] = {}
+    for chunk_start in range(0, len(ids), 500):
+        chunk = [str(i) for i in ids[chunk_start:chunk_start + 500]]
+        placeholders = ",".join(f":p{i}" for i in range(len(chunk)))
+        rows = session.execute(
+            text(f"select qdrant_point_id, recording_id from chronos_events where qdrant_point_id in ({placeholders})"),
+            {f"p{i}": v for i, v in enumerate(chunk)},
+        ).fetchall()
+        owners.update({str(pid): rid for pid, rid in rows})
+    keep_by_owner: dict[str, list] = {}
+    drop = []
+    for pid in ids:
+        owner = owners.get(str(pid))
+        if owner and owner != dead_id:
+            keep_by_owner.setdefault(owner, []).append(pid)
+        else:
+            drop.append(pid)
+    repointed = 0
+    for owner, pids in keep_by_owner.items():
+        qdrant.client.set_payload(collection_name=qdrant.collection_name, payload={"recording_id": owner}, points=pids)
+        repointed += len(pids)
+    if drop:
+        qdrant.client.delete(collection_name=qdrant.collection_name, points_selector=drop)
+    return (repointed, len(drop))
+
+
+def retire(session, notion_id: str, real_id: str, title: str, qdrant=None) -> None:
     n = session.execute(text("select plaud_ai_summary, transcript from chronos_recordings where recording_id=:i"), {"i": notion_id}).fetchone()
     r = session.execute(text("select plaud_ai_summary, transcript from chronos_recordings where recording_id=:i"), {"i": real_id}).fetchone()
     if n and r:
@@ -81,6 +127,8 @@ def retire(session, notion_id: str, real_id: str, title: str) -> None:
         values (:i, :at, :t, :why)
     """), {"i": notion_id, "at": datetime.utcnow().isoformat(), "t": title, "why": f"notion twin of {real_id} (plaud_v4_dedupe)"})
     session.execute(text("delete from chronos_recordings where recording_id=:i"), {"i": notion_id})
+    session.flush()
+    reconcile_qdrant(session, qdrant, notion_id)
 
 
 def normalise_devices(session, dry_run: bool) -> int:
@@ -96,7 +144,27 @@ def normalise_devices(session, dry_run: bool) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--repair-qdrant", action="store_true",
+                        help="reconcile Qdrant for twins retired by earlier runs (reads janitor_tombstones)")
     args = parser.parse_args()
+
+    qdrant = None
+    if ChronosQdrantClient is not None and not args.dry_run:
+        try:
+            qdrant = ChronosQdrantClient()
+        except Exception as error:
+            print(f"Qdrant unavailable ({error}); SQLite only", file=sys.stderr)
+
+    if args.repair_qdrant:
+        with SessionLocal() as session:
+            dead = [r[0] for r in session.execute(text(
+                "select recording_id from janitor_tombstones where reason like '%plaud_v4_dedupe%'")).fetchall()]
+            repointed = deleted = 0
+            for dead_id in dead:
+                r, d = reconcile_qdrant(session, qdrant, dead_id)
+                repointed += r; deleted += d
+            print(f"repaired Qdrant for {len(dead)} retired ids: {repointed} points re-pointed, {deleted} deleted")
+        return 0
 
     with SessionLocal() as session:
         twins = find_twins(session)
@@ -110,7 +178,7 @@ def main() -> int:
             print("dry run — nothing changed")
             return 0
         for notion_id, real_id, title in twins:
-            retire(session, notion_id, real_id, title)
+            retire(session, notion_id, real_id, title, qdrant)
         session.commit()
         print(f"retired {len(twins)} twins (tombstoned), normalised {renamed} device ids")
     return 0
