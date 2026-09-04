@@ -5,6 +5,7 @@ REST API, and MCP tool.
 """
 
 import logging
+import os
 from typing import Any, Optional
 
 from src.config import get_settings
@@ -298,6 +299,14 @@ Answer:"""
             return {
                 "error": "No AI provider configured (set CHRONOS_GEMINI_API_KEY, OPENAI_API_KEY, or enable CHRONOS_LOCAL_LLM_ENABLED)"
             }
+
+        # Ask is a handful of calls a day against the whole corpus, so it
+        # reasons harder than the bulk chunking that shares this service.
+        if not reasoning:
+            _ask_effort = os.getenv("CHRONOS_ASK_REASONING_EFFORT", "xhigh").strip().lower()
+            reasoning = _ask_effort if _ask_effort in {
+                "none", "low", "medium", "high", "xhigh"
+            } else "xhigh"
 
         result = self._openai.ask(
             question=question,

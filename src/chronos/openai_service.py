@@ -6,6 +6,7 @@ context-aware answers backed by Chronos event data.
 
 import hashlib
 import logging
+import os
 import time
 from typing import Any, Callable, List, Optional, TypeVar
 
@@ -38,7 +39,18 @@ class OpenAIResponseService:
     _CONNECTION_CACHE_TTL_SECONDS = 120.0
     _REQUEST_TIMEOUT_SECONDS = 150.0
     _MAX_RETRY_ATTEMPTS = 3
-    _DEFAULT_REASONING_EFFORT = "low"
+    # Reasoning effort for every OpenAI call that does not name its own.
+    # This was pinned to "low", which quietly capped the analyst and cleaning
+    # models well under what they can do. "high" is the default because bulk
+    # transcript chunking shares this service; Ask overrides it upward.
+    # The API accepts none/low/medium/high/xhigh -- there is no "max".
+    _VALID_REASONING_EFFORTS = {"none", "low", "medium", "high", "xhigh"}
+    _DEFAULT_REASONING_EFFORT = (
+        os.getenv("CHRONOS_REASONING_EFFORT", "high").strip().lower()
+        if os.getenv("CHRONOS_REASONING_EFFORT", "high").strip().lower()
+        in {"none", "low", "medium", "high", "xhigh"}
+        else "high"
+    )
     _DEFAULT_MAX_OUTPUT_TOKENS = 1800
     _EXTRACTION_CACHE_KEY_VERSION = "v1"
 
