@@ -1029,6 +1029,9 @@ def run_backfill_summaries(session, *, days_back: int = 14, limit: int = 10) -> 
     return filled
 
 
+from src.plaud_oauth import AuthenticationRequired
+
+
 def run_repair_recent(
     session,
     *,
@@ -1539,11 +1542,22 @@ def main():
                 stage="repair",
                 message="Repair recent Chronos rows",
             ):
-                run_repair_recent(
-                    session,
-                    days_back=args.days_back,
-                    limit=args.limit,
-                )
+                # The self-heal audit polls Plaud's 3.0 API, whose OAuth is
+                # permanently unavailable since the account moved to 4.0. The
+                # 4.0 sync timer covers recent recordings now, so a dead 3.0
+                # session must not abort the pipeline before its process,
+                # index, and janitor phases run.
+                try:
+                    run_repair_recent(
+                        session,
+                        days_back=args.days_back,
+                        limit=args.limit,
+                    )
+                except AuthenticationRequired:
+                    print(
+                        "  ↳ 3.0 self-heal skipped: Plaud 3.0 OAuth is gone; "
+                        "the 4.0 sync timer covers recent recordings."
+                    )
 
         if run_full_pipeline or args.process:
             with trace_span(
