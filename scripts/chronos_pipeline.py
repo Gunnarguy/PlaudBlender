@@ -552,6 +552,15 @@ def run_process(
     return success_count
 
 
+def _is_quota_error(exc: Exception) -> bool:
+    """A cloud embedding/LLM provider saying 'out of quota' for now -- 429,
+    RESOURCE_EXHAUSTED, no credits. Transient against billing, not a code bug,
+    so the pipeline logs it and moves on rather than aborting before its
+    remaining phases (graph, janitor) run."""
+    blob = f"{type(exc).__name__} {exc}".lower()
+    return any(t in blob for t in ("resource_exhausted", "429", "quota", "exhausted", "no credit", "insufficient_quota", "rate limit"))
+
+
 def run_index(
     session,
     limit: int = 10,
@@ -1476,7 +1485,15 @@ def main():
                 stage="index",
                 message="Reindex all Chronos events",
             ):
-                run_index(session, limit=999_999)
+                try:
+                    run_index(session, limit=999_999)
+                except Exception as exc:  # noqa: BLE001
+                    if not _is_quota_error(exc):
+                        raise
+                    print(
+                        f"  ↳ Index phase paused: embedding provider out of quota ({exc}). "
+                        "Events stay unindexed and retry next run."
+                    )
 
         if args.backfill or args.full or args.ingest:
             # --full and --backfill always fetch all pages within their scopes.
@@ -1584,7 +1601,15 @@ def main():
                 message="Embed and index Chronos events",
                 recording_id=args.recording_id,
             ):
-                run_index(session, limit=args.limit, recording_id=args.recording_id)
+                try:
+                    run_index(session, limit=args.limit, recording_id=args.recording_id)
+                except Exception as exc:  # noqa: BLE001
+                    if not _is_quota_error(exc):
+                        raise
+                    print(
+                        f"  ↳ Index phase paused: embedding provider out of quota ({exc}). "
+                        "Events stay unindexed and retry next run."
+                    )
 
         if run_full_pipeline or args.graph:
             with trace_span(
