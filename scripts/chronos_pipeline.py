@@ -1526,7 +1526,16 @@ def main():
                     phase_name=ingest_phase_name,
                 )
             if ingest_result.error_message:
-                phase_errors.append(f"{ingest_phase_name}: {ingest_result.error_message}")
+                # Plaud's 3.0 OAuth cannot authenticate since the account moved
+                # to 4.0, and the 4.0 sync timer ingests recordings now. Report
+                # that as information, not a phase failure that reddens the run.
+                if "not authenticated" in ingest_result.error_message.lower():
+                    logger.info(
+                        "  ↳ 3.0 ingest skipped: Plaud 3.0 OAuth is gone; "
+                        "the 4.0 sync timer ingests recordings now."
+                    )
+                else:
+                    phase_errors.append(f"{ingest_phase_name}: {ingest_result.error_message}")
 
         if run_full_pipeline or args.refresh_workflows:
             with trace_span(
