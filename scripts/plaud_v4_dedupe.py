@@ -24,6 +24,8 @@ Notion row is deleted. Also normalises device ids written as the human name
 
 from __future__ import annotations
 
+import json
+import os
 import argparse
 import re
 import sys
@@ -34,7 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import text  # noqa: E402
 
-from src.database import SessionLocal  # noqa: E402
+from src.database import SessionLocal
+from src.database.engine import DB_PATH  # noqa: E402
 
 try:
     from src.chronos.qdrant_client import ChronosQdrantClient  # noqa: E402
@@ -49,21 +52,63 @@ def norm(title: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (title or "").lower()).strip()
 
 
-def find_twins(session) -> list[tuple[str, str, str]]:
-    rows = session.execute(text("""
-        select recording_id, title, date(created_at) from chronos_recordings
-    """)).fetchall()
-    real: dict[tuple[str, str], str] = {}
-    notion: list[tuple[str, str, str]] = []
-    for rid, title, day in rows:
-        key = (day or "", norm(title))
-        if not key[1]:
+def _parse_dt(value):
+    text_value = str(value or "")[:19]
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(text_value, fmt)
+        except ValueError:
             continue
-        if rid.startswith("notion:"):
-            notion.append((rid, title or "", day or ""))
-        else:
-            real.setdefault(key, rid)
-    return [(nid, real[(day, norm(title))], title) for nid, title, day in notion if (day, norm(title)) in real]
+    return None
+
+
+def find_twins(session) -> list[tuple[str, str, str]]:
+    """Zapier copies of a real recording, matched on the day and how long the
+    recording ran.
+
+    Title matching alone misses most of them: Plaud regenerates titles, so the
+    same hour reaches Notion as "Shift Summary: OR Instrument Processing" and
+    stays in Plaud as "Monologue: Career Transition". Duration is the durable
+    signal -- the same audio is the same length. Matching is one-to-one within
+    a day, so two recordings of similar length can never both claim the same
+    real row, which would retire a recording that is actually distinct.
+    """
+    rows = session.execute(text("""
+        select recording_id, title, created_at, duration_seconds
+        from chronos_recordings
+    """)).fetchall()
+
+    real_by_day: dict[object, list] = {}
+    notion_by_day: dict[object, list] = {}
+    for rid, title, created_at, duration in rows:
+        when = _parse_dt(created_at)
+        if when is None:
+            continue
+        bucket = notion_by_day if str(rid).startswith("notion:") else real_by_day
+        bucket.setdefault(when.date(), []).append((rid, title or "", duration or 0))
+
+    twins: list[tuple[str, str, str]] = []
+    for day, candidates in notion_by_day.items():
+        pool = list(real_by_day.get(day, []))
+        claimed: set[int] = set()
+        # Longest first: a substantial recording claims its counterpart before
+        # a short fragment can take it.
+        for nid, ntitle, ndur in sorted(candidates, key=lambda c: -(c[2] or 0)):
+            best = None
+            for index, (rid, rtitle, rdur) in enumerate(pool):
+                if index in claimed:
+                    continue
+                if norm(ntitle) and norm(ntitle) == norm(rtitle):
+                    best = (0, index, rid)
+                    break
+                if ndur and rdur and abs(rdur - ndur) <= max(60, 0.05 * max(rdur, ndur)):
+                    gap = abs(rdur - ndur)
+                    if best is None or gap < best[0]:
+                        best = (gap, index, rid)
+            if best is not None:
+                claimed.add(best[1])
+                twins.append((nid, best[2], ntitle))
+    return twins
 
 
 def reconcile_qdrant(session, qdrant, dead_id: str) -> tuple[int, int]:
@@ -107,7 +152,27 @@ def reconcile_qdrant(session, qdrant, dead_id: str) -> tuple[int, int]:
     return (repointed, len(drop))
 
 
+def archive_row(session, recording_id: str) -> None:
+    """Append a row's full contents to an append-only archive before it is
+    deleted. A retirement is then never a loss: the text, summary and metadata
+    stay recoverable even when the real recording already had its own copy."""
+    row = session.execute(text("select * from chronos_recordings where recording_id=:i"),
+                          {"i": recording_id}).mappings().first()
+    if not row:
+        return
+    archive_path = os.path.join(os.path.dirname(DB_PATH), "retired_rows_archive.jsonl")
+    try:
+        with open(archive_path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(
+                {k: (v if isinstance(v, (str, int, float, type(None))) else str(v))
+                 for k, v in dict(row).items()},
+                ensure_ascii=False) + "\n")
+    except OSError as exc:  # never let archiving failure delete unarchived data
+        raise RuntimeError(f"could not archive {recording_id} before retiring: {exc}") from exc
+
+
 def retire(session, notion_id: str, real_id: str, title: str, qdrant=None) -> None:
+    archive_row(session, notion_id)
     n = session.execute(text("select plaud_ai_summary, transcript from chronos_recordings where recording_id=:i"), {"i": notion_id}).fetchone()
     r = session.execute(text("select plaud_ai_summary, transcript from chronos_recordings where recording_id=:i"), {"i": real_id}).fetchone()
     if n and r:
