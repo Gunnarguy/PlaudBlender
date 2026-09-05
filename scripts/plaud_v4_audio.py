@@ -125,6 +125,19 @@ def main() -> int:
                         checksum=checksum,
                     )
                 done += 1
+                if ext == ".opus":
+                    # The recorder uploads bare CBR Opus frames with no container; wrap them
+                    # so the file is playable everywhere, losslessly.
+                    try:
+                        from scripts.opus_raw_to_ogg import convert as _wrap
+                        wrapped = target.with_suffix(".ogg")
+                        ok, why = _wrap(target, wrapped)
+                        if ok:
+                            target.unlink(); target = wrapped; ext = ".ogg"
+                        else:
+                            print(f"  (left raw: {why})")
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"  (wrap skipped: {type(exc).__name__})")
                 print(f"  {target.stat().st_size / 1e6:6.1f} MB  {ext}  {item.get('name', '')[:52]}")
             except NotLoggedIn:
                 raise
