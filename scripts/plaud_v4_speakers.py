@@ -64,6 +64,22 @@ def load_or_fetch(client, native_id: str, cid: str, refresh: bool):
     return emb
 
 
+def plaud_label_for(cid: str, label: str) -> str:
+    """What Plaud's own tagging called this local speaker in the transcript."""
+    p = ART / cid / "TRANSCRIPT.json"
+    if not p.exists():
+        return ""
+    try:
+        segs = json.loads(p.read_text())
+    except ValueError:
+        return ""
+    names = {}
+    for sg in segs:
+        if isinstance(sg, dict) and sg.get("original_speaker") == label and sg.get("speaker"):
+            names[sg["speaker"]] = names.get(sg["speaker"], 0) + 1
+    return max(names, key=names.get) if names else ""
+
+
 def quotes_for(cid: str, label: str, n: int = 2):
     p = ART / cid / "TRANSCRIPT.json"
     if not p.exists():
@@ -146,6 +162,16 @@ def main() -> int:
 
     # Build the report.
     titles = {cid: (title, st) for cid, _, title, st in files}
+    # Dates and devices come from the broker's rows: the listing carries neither reliably.
+    try:
+        import sqlite3
+        from src.database.engine import DB_PATH
+        con = sqlite3.connect(str(DB_PATH))
+        for rid, title, created, dev in con.execute("select recording_id, title, created_at, device_id from chronos_recordings"):
+            if rid in titles:
+                titles[rid] = (titles[rid][0] or title or "", str(created)[:10], {"888": "Note", "860": "One"}.get(str(dev), str(dev)))
+    except Exception as exc:  # noqa: BLE001
+        print("db lookup failed:", exc)
     voices = {}
     reg_names = {sid: name for sid, name, _, _ in reg_vecs}
     for cid, label, sid, score in assignments:
@@ -158,25 +184,32 @@ def main() -> int:
 
     rows = []
     for key, v in voices.items():
-        talk = 0.0; recs = set(); quotes = []; dates = []
+        talk = 0.0; recs = set(); quotes = []; dates = []; devs = {}; plaud_says = {}
         for cid, label, _ in v["members"]:
             q, t = quotes_for(cid, label)
             talk += t; recs.add(cid)
             if len(quotes) < 4 and q:
                 quotes.extend((cid, *x) for x in q[:1])
-            dates.append(str(titles.get(cid, ("", ""))[1])[:10])
-        rows.append((key, v["name"], v["kind"], len(recs), talk, sorted(d for d in dates if d), quotes))
+            info = titles.get(cid, ("", "", ""))
+            dates.append(str(info[1])[:10] if len(info) > 1 else "")
+            dev = info[2] if len(info) > 2 else "?"
+            devs[dev] = devs.get(dev, 0) + 1
+            pl = plaud_label_for(cid, label)
+            if pl: plaud_says[pl] = plaud_says.get(pl, 0) + 1
+        v["devices"] = devs; v["plaud_says"] = plaud_says
+        rows.append((key, v["name"], v["kind"], len(recs), talk, sorted(d for d in dates if d), quotes, devs, plaud_says))
     rows.sort(key=lambda r: -r[4])
+    fmt = lambda d: ", ".join(f"{k} ×{n}" for k, n in sorted(d.items(), key=lambda kv: -kv[1])) or "—"
 
     out = ["# Voices across the library", "",
            f"{len(files)} recordings · {len(assignments)} speaker slots matched a known voice · {len(unknown)} grouped into {len(clusters)} unknown voices",
            "", "Match bar: cosine ≥ 0.70, the same threshold Plaud's app uses to auto-tag a speaker.", "",
-           "| voice | kind | recordings | talk time | first–last seen |", "|---|---|---|---|---|"]
-    for key, name, kind, nrec, talk, dates, _ in rows:
+           "| voice | kind | recordings | talk time | first–last seen | device | Plaud's own label |", "|---|---|---|---|---|---|---|"]
+    for key, name, kind, nrec, talk, dates, _, devs, plaud_says in rows:
         span = f"{dates[0]} – {dates[-1]}" if dates else ""
-        out.append(f"| **{name}** | {kind} | {nrec} | {talk/3600:.1f} h | {span} |")
+        out.append(f"| **{name}** | {kind} | {nrec} | {talk/3600:.1f} h | {span} | {fmt(devs)} | {fmt(plaud_says)} |")
     out += ["", "## Who they sound like", ""]
-    for key, name, kind, nrec, talk, dates, quotes in rows:
+    for key, name, kind, nrec, talk, dates, quotes, devs, plaud_says in rows:
         if name == "Gunnar":
             continue
         out.append(f"### {name}  ·  {nrec} recordings · {talk/60:.0f} min")
