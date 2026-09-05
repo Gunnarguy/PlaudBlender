@@ -1,0 +1,17 @@
+[Unit]
+Description=Chronos Plaud 4.0 live sync (notify WebSocket)
+After=network-online.target chronos-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=your-pi-username
+WorkingDirectory=/home/your-pi-username/PlaudBlender
+EnvironmentFile=/home/your-pi-username/PlaudBlender/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/plaud_v4_notify.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
