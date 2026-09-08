@@ -96,3 +96,6 @@ docs/DISCORD_QUICKSTART.md
 # Plaud 4.0 login session (runtime, chmod 600)
 .plaud_v4_session.json
 .plaud_v4_session.tmp
+
+# Claude Code hook checkpoints (kit, 2026-09-08)
+**/.claude/.state/
