@@ -3,6 +3,8 @@
 > **Single source of truth** for architecture, roadmap, implementation status, and next steps.
 >
 > _Last updated: March 18, 2026_
+>
+> _Correction, 2026-09-23: the counts below date from March 2026. `tests/` now holds 420 test functions in 44 files, and the Dash graph (`app_v2/components/graph.py`) is a Plotly 3D view with five layouts: lanes, levels, orbit, timeline and force._
 
 ---
 

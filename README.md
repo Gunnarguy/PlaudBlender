@@ -150,8 +150,6 @@ PlaudBlender structures your complex memory network into legible 3D arrangements
 * **Timeline (Chronological Helix)**: Arranges all topics and categories in a 3D spiral climbing up the Y-axis. Vertical height maps directly to chronological time progression.
 * **Force (Standard Physics)**: A classic free-form dynamic force-directed simulation.
 
-*Note: In all structured layouts, physics simulation forces are automatically paused to lock positions instantly, saving battery on mobile devices.*
-
 ---
 
 ## ⚙️ Commands Reference
@@ -182,7 +180,7 @@ PlaudBlender is fully optimized and pre-configured to run on low-resource hardwa
 
 ---
 
-## 🦙 Local-First (Free & Offline) Mode via Ollama
+## 🦙 Local AI Mode via Ollama
 
 PlaudBlender can route AI tasks to a local **Ollama** or `llama.cpp` instance. Recordings are still fetched from the Plaud API.
 * **Fully Local Processing**: Set `CHRONOS_PROCESSING_PROVIDER=local` and `CHRONOS_EMBEDDING_MODEL=nomic-embed-text` in your `.env`. `CHRONOS_LOCAL_LLM_ENABLED=1` is also required.
