@@ -27,7 +27,7 @@ PlaudBlenderiOS is built around a **user-owned data philosophy**. The app does n
 ┌──────────────────────────────────────────────────────────────┐
 │                  Self-Hosted API Backend (User-Owned)        │
 │                                                              │
-│  - PostgreSQL: Day Summaries, transcriptions, telemetry logs  │
+│  - SQLite: Day Summaries, transcriptions, telemetry logs  │
 │  - Qdrant: Vector embeddings and similarity index            │
 │  - Storage: Ingested WAV audio archive files                 │
 └──────────────────────────────┬───────────────────────────────┘
@@ -54,7 +54,7 @@ PlaudBlenderiOS is built around a **user-owned data philosophy**. The app does n
 
 ## 4. What Data is Sent to Remote Gateways
 
-- **Transcriptions and Vector Metadata**: Transcripts and event text segments are transmitted to your configured Chronos backend for vector classification and PostgreSQL storage.
+- **Transcriptions and Vector Metadata**: Transcripts and event text segments are transmitted to your configured Chronos backend for vector classification and SQLite storage.
 - **Audio Uploads**: File candidates selected in the **Data** tab (`DataView`) are sent directly to your self-hosted `/api/v1/sync/upload/process` endpoint.
 - **RAG Prompts**: Custom search strings entered in the **Search** interface are sent to the FastAPI backend, which packages them with retrieved context and forwards them to Gemini or OpenAI for summary generation.
 

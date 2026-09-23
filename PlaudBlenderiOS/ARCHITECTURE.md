@@ -2,7 +2,7 @@
 
 ## 1. Architectural Thesis
 
-**PlaudBlenderiOS** (Chronos Mobile) is designed around a **Modular, Client-Server Hybrid Architectural Model**. Rather than attempting to run a local embedding model, Postgres instance, or Qdrant vector index directly on-device (which would strain iOS thermal and battery footprints), the app delegates computation-heavy AI processing to a self-hosted **FastAPI backend** while acting as an **observable cockpit** on the user's mobile device.
+**PlaudBlenderiOS** (Chronos Mobile) is designed around a **Modular, Client-Server Hybrid Architectural Model**. Rather than attempting to run a local embedding model, SQLite instance, or Qdrant vector index directly on-device (which would strain iOS thermal and battery footprints), the app delegates computation-heavy AI processing to a self-hosted **FastAPI backend** while acting as an **observable cockpit** on the user's mobile device.
 
 To maintain an exceptional user experience, the client is structured as a **native SwiftUI app with isolated, cached ViewModels (`@Observable`)**, a **robust connection fallback engine (`APIClient`)**, and a **real-time WebSocket telemetry ingestion system (`WebSocketManager`)**. 
 
@@ -44,7 +44,7 @@ flowchart TD
 
     subgraph Remote ["FastAPI Gateway & Workers"]
         F1[FastAPI Routes /api/v1/*]
-        F2[Postgres DB]
+        F2[SQLite DB]
         F3[Qdrant Vector DB]
         F4[Plaud/Notion OAuth Bridge]
         F5[LLM API Endpoints]
@@ -66,7 +66,7 @@ flowchart TD
 
     D1 <-->|HTTPS Rest Endpoints| F1
     D3 <-->|WSS Event Stream| F1
-    F1 <--> SQL[(Postgres DB)]
+    F1 <--> SQL[(SQLite DB)]
     F1 <--> Qdr[(Qdrant Vector DB)]
     F1 <--> LLM[(Gemini / OpenAI API)]
 ```
@@ -222,7 +222,7 @@ Data entities maps 1:1 with Chronos FastAPI Pydantic schema contracts:
 │        ┌──────────────┴──────────────┐                          │
 │        ▼                             ▼                          │
 │   ┌───────────┐                 ┌───────────┐                   │
-│   │ Postgres  │                 │  Qdrant   │                   │
+│   │ SQLite  │                 │  Qdrant   │                   │
 │   │ (Metrics) │                 │  Vectors  │                   │
 │   └───────────┘                 └───────────┘                   │
 └─────────────────────────────────────────────────────────────────┘

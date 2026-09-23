@@ -160,7 +160,7 @@ flowchart TD
     subgraph Processing ["2. Processing & OCR/AI Enrichment"]
         J1 -->|Job Scheduled| J2[Gemini/OpenAI Processing]
         J2 -->|AI Enrichment| J3[JSON Extraction: Events & Topics]
-        J3 -->|Persist Metadata| DB[(PostgreSQL Database)]
+        J3 -->|Persist Metadata| DB[(SQLite Database)]
     end
 
     subgraph Indexing ["3. Vector Embedding"]
@@ -203,7 +203,7 @@ flowchart TD
 
     subgraph Remote ["Third-Party API & Storage Boundaries"]
         Net <--> Cloud[FastAPI Gateway Router]
-        Cloud <--> SQL[(PostgreSQL DB)]
+        Cloud <--> SQL[(SQLite DB)]
         Cloud <--> Qdr[(Qdrant Cloud Vector Store)]
         Cloud <--> AI[OpenAI / Gemini API Services]
     end
