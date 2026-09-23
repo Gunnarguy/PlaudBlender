@@ -4,13 +4,13 @@ Public-safe defaults: this repository ships with placeholder configuration only.
 Bring your own API keys, OAuth credentials, and endpoints via `.env` and local
 overrides.
 
-> **Status:** Developer/power-user project. PlaudBlender is not a polished consumer app yet. It is an open local-first system for experimenting with Plaud recordings, semantic search, knowledge graphs, MCP tools, and personal AI memory workflows.
+> **Status:** Developer/power-user project. PlaudBlender is not a polished consumer app yet. It is an open, self-hosted system for experimenting with Plaud recordings, semantic search, knowledge graphs, MCP tools, and personal AI memory workflows. Data is stored locally in SQLite and Qdrant; by default, transcripts are processed and embedded with Google Gemini, and Ask Chronos uses OpenAI when `OPENAI_API_KEY` is set.
 >
 > **Current vector store:** Qdrant is the primary vector database. Older Pinecone references in historical docs are legacy migration history only.
 >
 > **Notion support:** Optional. Notion exists because early PlaudBlender workflows stored Plaud transcripts in Notion before Chronos became the local source-of-truth system. The Notion bridge can import, dedupe, match, and optionally sync enriched metadata back to Notion.
 
-Transform **Plaud Note voice recordings** into a structured, searchable, local-first knowledge base. PlaudBlender includes an AI-powered processing pipeline, daily timeline UI, Qdrant vector search, graph visualization, MCP integrations, optional Notion import/sync, and a sibling iOS companion client.
+Transform **Plaud Note voice recordings** into a structured, searchable, self-hosted knowledge base. PlaudBlender includes an AI-powered processing pipeline, daily timeline UI, Qdrant vector search, graph visualization, MCP integrations, optional Notion import/sync, and a sibling iOS companion client.
 
 ### ✨ Key Capabilities (What you get)
 * **Ask Your Memory (AI RAG)**: Ask natural language questions like *"What did I do in my meeting last Thursday?"* or *"What was that idea I brainstormed during my commute?"* and get synthesized answers with precise timeline citations.
@@ -58,7 +58,7 @@ Transform **Plaud Note voice recordings** into a structured, searchable, local-f
 ## 📡 Real-Time Telemetry & Hybrid AI Engine
 
 PlaudBlender includes advanced instrumentation for tracking pipeline execution and model performance:
-* **Real-Time Cost Telemetry**: Calculates exact USD costs for active model calls based on paid-tier token usage, mapping runs to specific `CHRONOS_TRACE_RUN_ID` tracking tokens.
+* **Real-Time Cost Telemetry**: Estimates USD cost per model call from token counts and a built-in price table, mapping runs to specific `CHRONOS_TRACE_RUN_ID` tracking tokens.
 * **Hybrid AI Engine**: Run Google Gemini and OpenAI models in tandem. The system dynamically dispatches calls based on prefix signatures (e.g., `gemini-*` dispatches via Google GenAI, `gpt-*` dispatches via OpenAI).
 * **GPT-5.6 Family Integration**: Full pricing estimation and endpoint mappings for flagship variants: `gpt-5.6-sol` (Flagship), `gpt-5.6-terra` (Balanced / default analyst), and `gpt-5.6-luna` (Lightweight).
 * **Zero-Configuration Key Fallbacks**: Automatically enables the OpenAI integration when an `OPENAI_API_KEY` is present in the `.env` file.
@@ -71,7 +71,7 @@ PlaudBlender includes advanced instrumentation for tracking pipeline execution a
 
 1. **PlaudBlender (Backend Pipeline & Dash Web UI)**:
    * **Ingestion**: Fetches voice recordings and transcripts directly from the Plaud Note API using secure OAuth authentication.
-   * **Processing**: Leverages Gemini AI to filter conversational noise, extract structured categories (clinical, personal, work, technical), track sentiment, and identify discrete event nodes.
+   * **Processing**: Leverages Gemini AI to filter conversational noise, extract structured categories (work, personal, meeting, deep work, break, reflection, idea), track sentiment, and identify discrete event nodes.
    * **Storage**: Persists metadata in SQLite (`data/brain.db`) and indexes dense vectors in Qdrant.
    * **Dash UI (Port 8050)**: A dark-mode dashboard with search panels, chronological views, stats tickers, and an interactive 3D Knowledge Graph.
 
@@ -79,7 +79,7 @@ PlaudBlender includes advanced instrumentation for tracking pipeline execution a
    * A native SwiftUI client displaying your daily timeline, category breakdowns, and a full-screen interactive **3D Knowledge Graph** optimized for native touch gestures (rotate, pinch-to-zoom, tap-to-select).
 
 3. **Chronos MCP Server (FastMCP)**:
-   * Exposes your memory timeline as tools to Model Context Protocol (MCP) clients. Connect your Plaud logs directly into Claude Desktop or Cursor so your LLMs can query your memory database (e.g., *"What did I do in my clinical rounds last Tuesday?"*).
+   * Exposes your memory timeline as tools to Model Context Protocol (MCP) clients. Connect your Plaud logs directly into Claude Desktop or Cursor so your LLMs can query your memory database (e.g., *"What did I do last Tuesday?"*).
 
 4. **Optional Notion Bridge (Import/Sync Layer)**:
    * Provides migration pathways and ongoing sync capabilities for Notion-based Plaud workflows, enabling import, de-duplication, and metadata synchronization back to your databases.
@@ -150,7 +150,7 @@ PlaudBlender structures your complex memory network into legible 3D arrangements
 * **Timeline (Chronological Helix)**: Arranges all topics and categories in a 3D spiral climbing up the Y-axis. Vertical height maps directly to chronological time progression.
 * **Force (Standard Physics)**: A classic free-form dynamic force-directed simulation.
 
-*Note: In all structured layouts, physics simulation forces are automatically paused (`cooldownTicks(0)`) to lock positions instantly, saving battery on mobile devices.*
+*Note: In all structured layouts, physics simulation forces are automatically paused to lock positions instantly, saving battery on mobile devices.*
 
 ---
 
@@ -184,8 +184,8 @@ PlaudBlender is fully optimized and pre-configured to run on low-resource hardwa
 
 ## 🦙 Local-First (Free & Offline) Mode via Ollama
 
-PlaudBlender includes native support for running completely offline and free of cloud quotas by routing AI tasks to a local **Ollama** or `llama.cpp` instance:
-* **Fully Local Processing**: Set `CHRONOS_PROCESSING_PROVIDER=local` and `CHRONOS_EMBEDDING_MODEL=nomic-embed-text` in your `.env`.
+PlaudBlender can route AI tasks to a local **Ollama** or `llama.cpp` instance. Recordings are still fetched from the Plaud API.
+* **Fully Local Processing**: Set `CHRONOS_PROCESSING_PROVIDER=local` and `CHRONOS_EMBEDDING_MODEL=nomic-embed-text` in your `.env`. `CHRONOS_LOCAL_LLM_ENABLED=1` is also required.
 * **Configurable Sidecar**: Enable local models for specific tasks (like classification, JSON repair, and Ask Chronos) by setting `CHRONOS_LOCAL_LLM_ENABLED=1`.
 * **Recommended Models**: We recommend `nomic-embed-text` for embeddings and a fast, lightweight model (e.g., `qwen2.5:0.5b`, `llama3.2`) for local reasoning tasks.
 * **Extensible & Customizable**: Because local routing uses standard Ollama endpoints, you can easily swap in and experiment with any other models (like larger Qwen, Llama, or Mistral weights if running on a Raspberry Pi 5 or local machine) simply by updating your `.env`.
@@ -249,7 +249,7 @@ PlaudBlender parses environment configuration from `.env` in the root directory.
 | `OPENAI_API_KEY` | OpenAI API Key. Presence auto-activates OpenAI model integrations. | None |
 | `CHRONOS_API_KEY` | Secret token for client JWT auth. Omit to run key-less on trusted networks. | None |
 | `CHRONOS_PROCESSING_PROVIDER` | Selection of AI reasoning engine (`gemini` or `local`). | `gemini` |
-| `CHRONOS_CLEANING_MODEL` | Model used for transcribing and structural timeline cleaning. | `gemini-3.5-flash` |
+| `CHRONOS_CLEANING_MODEL` | Model used for transcribing and structural timeline cleaning. | `gemini-3.5-flash-lite` |
 | `CHRONOS_ANALYST_MODEL` | Model used for building graph RAG entities and timeline analysis. | `gpt-5.6-terra` |
 | `CHRONOS_LOCAL_LLM_ENABLED` | Set to `1` to route supported tasks locally via Ollama. | `0` |
 

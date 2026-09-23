@@ -282,12 +282,8 @@ The application reads options from both compile-time configurations (Info.plist)
     git clone <your-fork-or-clone-url>
     cd PlaudBlender/PlaudBlenderiOS
    ```
-2. Open the Xcode Project:
-   ```bash
-   open PlaudBlenderiOS.xcodeproj
-   ```
-3. Configure the active schema. Select your destination simulator or device.
-4. Set up authentication. Enter Settings in the iOS interface and supply your Chronos API token and server URL.
+2. Configure the active schema. Select your destination simulator or device.
+3. Set up authentication. Enter Settings in the iOS interface and supply your Chronos API token and server URL.
 
 ---
 
