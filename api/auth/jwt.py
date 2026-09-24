@@ -17,12 +17,34 @@ def _get_api_key() -> str:
     return os.getenv("CHRONOS_API_KEY", "").strip()
 
 
-def _get_client_ip(request: Request) -> str:
-    # Check X-Forwarded-For from proxies
-    xff = request.headers.get("X-Forwarded-For")
+_UNTRUSTED = "0.0.0.0"  # not loopback, not private: forces the API key check
+
+
+def resolve_client_ip(headers, peer_host: str | None) -> str:
+    """Return the address to make trust decisions on.
+
+    X-Forwarded-For is attacker-controlled. It is only honored when the direct
+    peer is loopback, i.e. the local ngrok agent, and then only its LAST entry,
+    which the proxy appends and the caller cannot forge. The first entry is
+    whatever the caller sent. A direct LAN/Tailscale peer's own address wins
+    over any header it sends.
+    """
+    peer = peer_host or "127.0.0.1"
+    if not _is_loopback(peer):
+        return peer
+    xff = headers.get("X-Forwarded-For")
     if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else "127.0.0.1"
+        return xff.split(",")[-1].strip() or _UNTRUSTED
+    # Proxied without an XFF entry: don't let it inherit loopback trust.
+    if headers.get("X-Forwarded-Proto") or headers.get("X-Forwarded-Host"):
+        return _UNTRUSTED
+    return peer
+
+
+def _get_client_ip(request: Request) -> str:
+    return resolve_client_ip(
+        request.headers, request.client.host if request.client else None
+    )
 
 
 def _is_loopback(ip_str: str) -> bool:

@@ -438,6 +438,44 @@ class TestAuthEnforcement:
             )
             assert r.status_code == 401
 
+    def test_trusted_lan_rejects_spoofed_private_xff_via_tunnel(self, client):
+        """A caller behind the tunnel cannot claim a LAN address in the first XFF hop."""
+        with patch.dict(os.environ, {"CHRONOS_DEPLOYMENT_MODE": "trusted_lan", "CHRONOS_API_KEY": "some-key"}, clear=False):
+            r = client.get(
+                "/api/v1/timeline/days",
+                headers={"X-Forwarded-For": "10.0.0.5, 8.8.8.8"},
+            )
+            assert r.status_code == 401
+
+
+class TestResolveClientIp:
+    """Only the proxy-appended XFF hop is trusted, and only from a loopback peer."""
+
+    def _ip(self, peer, headers=None):
+        from api.auth.jwt import resolve_client_ip
+        return resolve_client_ip(headers or {}, peer)
+
+    def test_tunnel_uses_last_hop_not_first(self):
+        assert self._ip("127.0.0.1", {"X-Forwarded-For": "10.0.0.5, 8.8.8.8"}) == "8.8.8.8"
+
+    def test_tunnel_single_hop(self):
+        assert self._ip("127.0.0.1", {"X-Forwarded-For": "8.8.8.8"}) == "8.8.8.8"
+
+    def test_direct_lan_peer_ignores_header(self):
+        assert self._ip("10.0.0.20", {"X-Forwarded-For": "8.8.8.8"}) == "10.0.0.20"
+
+    def test_direct_tailscale_peer_ignores_header(self):
+        assert self._ip("100.98.63.87", {"X-Forwarded-For": "127.0.0.1"}) == "100.98.63.87"
+
+    def test_public_peer_cannot_claim_loopback(self):
+        assert self._ip("8.8.8.8", {"X-Forwarded-For": "127.0.0.1"}) == "8.8.8.8"
+
+    def test_local_request_without_proxy_headers_stays_loopback(self):
+        assert self._ip("127.0.0.1") == "127.0.0.1"
+
+    def test_proxied_without_xff_is_untrusted(self):
+        assert self._ip("127.0.0.1", {"X-Forwarded-Proto": "https"}) == "0.0.0.0"
+
 
 # ═══════════════════════════════════════════════════════════
 # TIMELINE

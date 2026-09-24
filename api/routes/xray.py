@@ -262,12 +262,11 @@ def _ws_event_matches(
 async def _websocket_auth_ok(websocket: WebSocket) -> bool:
     mode = os.getenv("CHRONOS_DEPLOYMENT_MODE", "trusted_lan").strip().lower()
 
-    # Get client IP
-    xff = websocket.headers.get("X-Forwarded-For")
-    if xff:
-        client_ip = xff.split(",")[0].strip()
-    else:
-        client_ip = websocket.client.host if websocket.client else "127.0.0.1"
+    from api.auth.jwt import resolve_client_ip
+
+    client_ip = resolve_client_ip(
+        websocket.headers, websocket.client.host if websocket.client else None
+    )
 
     # Check loopback/trusted_lan bypasses
     import ipaddress
