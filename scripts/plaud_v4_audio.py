@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.config import get_settings  # noqa: E402
 from src.database import SessionLocal  # noqa: E402
-from src.database.chronos_repository import get_chronos_recording, upsert_chronos_recording  # noqa: E402
+from src.database.chronos_repository import get_chronos_recording  # noqa: E402
 from src.plaud_v4 import NotLoggedIn, PlaudV4Client, PlaudV4Error, classic_id, device_code  # noqa: E402
 
 EXT_BY_MIME = {"audio/ogg": ".ogg", "audio/opus": ".opus", "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "audio/x-m4a": ".m4a", "audio/wav": ".wav", "audio/x-wav": ".wav"}
@@ -56,6 +56,40 @@ def download(url: str, target: Path) -> str:
     return digest.hexdigest()
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def existing_audio(rec, raw_dir: Path, rid: str) -> Path | None:
+    """The recording's audio file on disk, if any.
+
+    A raw .opus download is wrapped into .ogg and the .opus deleted, so a row
+    can point at a file that no longer exists while its .ogg twin does.
+    """
+    if rec and rec.local_audio_path:
+        path = Path(rec.local_audio_path)
+        if path.exists():
+            return path
+        if path.with_suffix(".ogg").exists():
+            return path.with_suffix(".ogg")
+    for ext in dict.fromkeys(EXT_BY_MIME.values()):
+        path = raw_dir / f"{rid}{ext}"
+        if path.exists():
+            return path
+    return None
+
+
+def record_audio(session, rec, path: Path, checksum: str) -> None:
+    """Point the row at the final file. Touches only the audio fields."""
+    rec.local_audio_path = str(path)
+    rec.checksum = checksum
+    session.commit()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--limit", type=int, help="stop after this many downloads (newest first)")
@@ -71,7 +105,7 @@ def main() -> int:
     raw_dir = Path(get_settings().chronos_raw_audio_dir)
     raw_dir.mkdir(parents=True, exist_ok=True)
 
-    done = skipped = failed = 0
+    done = skipped = failed = repaired = 0
     total_bytes = 0
     started = time.monotonic()
     with SessionLocal() as session:
@@ -83,7 +117,11 @@ def main() -> int:
                 skipped += 1
                 continue
             rec = get_chronos_recording(session, rid)
-            if rec and rec.local_audio_path and Path(rec.local_audio_path).exists():
+            have = existing_audio(rec, raw_dir, rid)
+            if have:
+                if rec and rec.local_audio_path != str(have) and not args.dry_run:
+                    record_audio(session, rec, have, sha256_file(have))
+                    repaired += 1
                 skipped += 1
                 continue
             try:
@@ -112,18 +150,6 @@ def main() -> int:
                     continue
                 checksum = download(url, target)
                 total_bytes += target.stat().st_size
-                if rec:
-                    upsert_chronos_recording(
-                        session,
-                        recording_id=rid,
-                        title=rec.title,
-                        created_at=rec.created_at,
-                        duration_seconds=rec.duration_seconds,
-                        local_audio_path=str(target),
-                        source=rec.source,
-                        device_id=rec.device_id,
-                        checksum=checksum,
-                    )
                 done += 1
                 if ext == ".opus":
                     # The recorder uploads bare CBR Opus frames with no container; wrap them
@@ -134,10 +160,15 @@ def main() -> int:
                         ok, why = _wrap(target, wrapped)
                         if ok:
                             target.unlink(); target = wrapped; ext = ".ogg"
+                            checksum = sha256_file(target)
                         else:
                             print(f"  (left raw: {why})")
                     except Exception as exc:  # noqa: BLE001
                         print(f"  (wrap skipped: {type(exc).__name__})")
+                # Record the path only after any wrap: recording the pre-wrap .opus
+                # made every run re-download it (the .opus is deleted above).
+                if rec:
+                    record_audio(session, rec, target, checksum)
                 print(f"  {target.stat().st_size / 1e6:6.1f} MB  {ext}  {item.get('name', '')[:52]}")
             except NotLoggedIn:
                 raise
@@ -147,7 +178,7 @@ def main() -> int:
             time.sleep(PACE_SECONDS)
 
     elapsed = time.monotonic() - started
-    print(f"\n{done} downloaded ({total_bytes / 1e9:.2f} GB) · {skipped} skipped · {failed} failed · {elapsed:.0f}s")
+    print(f"\n{done} downloaded ({total_bytes / 1e9:.2f} GB) · {skipped} skipped ({repaired} paths repaired) · {failed} failed · {elapsed:.0f}s")
     return 1 if failed and not done else 0
 
 
