@@ -847,6 +847,29 @@ def run_graph(
         pipeline_progress.finish_phase(summary="No events to process")
         return 0
 
+    # The graph is rebuilt from scratch with one LLM call per event. When the
+    # input set is unchanged since the last build, the result would be the
+    # same graph, so skip it instead of paying for ~100 calls every 6 hours.
+    import hashlib
+
+    graph_cache_dir = Path(settings.chronos_graph_cache_dir)
+    graph_path = graph_cache_dir / "knowledge_graph.pkl"
+    fingerprint_path = graph_cache_dir / "knowledge_graph.fingerprint"
+    fingerprint = hashlib.sha256()
+    for db_event in sorted(events_to_process, key=lambda e: e.event_id):
+        fingerprint.update(f"{db_event.event_id}\0{db_event.clean_text or ''}\0".encode())
+    fingerprint = fingerprint.hexdigest()
+    if (
+        graph_path.exists()
+        and fingerprint_path.exists()
+        and fingerprint_path.read_text().strip() == fingerprint
+    ):
+        logger.info(
+            f"Graph inputs unchanged ({len(events_to_process)} events); keeping {graph_path}"
+        )
+        pipeline_progress.finish_phase(summary="Inputs unchanged; graph kept")
+        return 0
+
     pipeline_progress.update(total=len(events_to_process), step="Converting events")
     logger.info(f"Processing {len(events_to_process)} events for graph extraction")
 
@@ -898,10 +921,8 @@ def run_graph(
     communities = graph_extractor.detect_communities(graph)
 
     # Save graph to cache
-    graph_cache_dir = Path(settings.chronos_graph_cache_dir)
     graph_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    graph_path = graph_cache_dir / "knowledge_graph.pkl"
     with open(graph_path, "wb") as f:
         pickle.dump(
             {
@@ -912,6 +933,11 @@ def run_graph(
             f,
         )
 
+    # Only a clean build may be reused; a run hit by an API outage must retry.
+    if getattr(graph_extractor, "last_failed_events", 0) == 0:
+        fingerprint_path.write_text(fingerprint)
+    else:
+        fingerprint_path.unlink(missing_ok=True)
     logger.info(f"Saved graph to {graph_path}")
     logger.info(
         f"Graph stats: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges"

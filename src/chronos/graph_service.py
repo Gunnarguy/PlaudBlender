@@ -53,6 +53,7 @@ class ChronosGraphExtractor:
         # Reset for each extraction run.
         self._knowledge_graph = KnowledgeGraph()
         all_entities: List[Dict[str, Any]] = []
+        self.last_failed_events = 0
 
         # Extract entities from each event
         for event in events:
@@ -91,6 +92,7 @@ class ChronosGraphExtractor:
 
             except Exception as e:
                 logger.error(f"Failed to extract from event {event.event_id}: {e}")
+                self.last_failed_events += 1
                 xray_log("graph", "extract-error",
                          f"Skipped one — couldn't understand it",
                          detail=str(e)[:60], level="warn")
