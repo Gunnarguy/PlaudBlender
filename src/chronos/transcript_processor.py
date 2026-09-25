@@ -90,6 +90,40 @@ class TranscriptProcessor:
             return analyst_model
         return self._get_engine().model_name
 
+    def _anchor_event_times(self, events, rec, created_at) -> None:
+        """Replace the model's invented clock times with real ones.
+
+        The prompt only carries the recording date, so start_ts/end_ts come
+        back as made-up wall-clock times. See src/chronos/event_timing.py.
+        Notion recordings are re-anchored at read time by the data service.
+        """
+        if not events or created_at is None or str(getattr(rec, "source", "") or "") == "notion":
+            return
+        try:
+            from datetime import datetime
+            from pathlib import Path
+
+            from src.chronos.event_timing import EventTiming, load_transcript_lines, place_events
+            from src.config import get_local_timezone
+            from src.models.chronos_schemas import DayOfWeek
+
+            start = datetime.fromisoformat(created_at[:26]) if isinstance(created_at, str) else created_at
+            artifacts = Path(__file__).resolve().parents[2] / "data" / "artifacts"
+            lines = load_transcript_lines(artifacts, str(getattr(rec, "recording_id", "") or ""))
+            placements = place_events(
+                [EventTiming(e.start_ts, e.end_ts or e.start_ts, e.raw_transcript_snippet) for e in events],
+                start,
+                getattr(rec, "duration_seconds", None),
+                get_local_timezone(),
+                lines,
+            )
+            for event, placed in zip(events, placements):
+                event.start_ts, event.end_ts = placed.start, placed.end
+                event.day_of_week = DayOfWeek(placed.start.strftime("%A"))
+                event.hour_of_day = placed.start.hour
+        except Exception:  # noqa: BLE001 - never lose a processed recording over timing
+            logger.warning("Could not anchor event times; keeping model times", exc_info=True)
+
     def _emit_progress(
         self,
         progress_callback: Optional[ProgressCallback],
@@ -1428,6 +1462,8 @@ Extract events from this transcript following the schema exactly."""
                     error_message=failure_reason,
                 )
                 return False
+
+            self._anchor_event_times(output.events, rec, created_at)
 
             # Store events in database (convert Pydantic schema -> ORM model)
             # Generate real UUIDs instead of using Gemini's placeholder values
