@@ -859,8 +859,11 @@ def run_graph(
     for db_event in sorted(events_to_process, key=lambda e: e.event_id):
         fingerprint.update(f"{db_event.event_id}\0{db_event.clean_text or ''}\0".encode())
     fingerprint = fingerprint.hexdigest()
+    # A --recording-id build overwrites the same pickle with a one-recording
+    # graph, so only a full build may be skipped or recorded as reusable.
     if (
-        graph_path.exists()
+        recording_id is None
+        and graph_path.exists()
         and fingerprint_path.exists()
         and fingerprint_path.read_text().strip() == fingerprint
     ):
@@ -933,8 +936,9 @@ def run_graph(
             f,
         )
 
-    # Only a clean build may be reused; a run hit by an API outage must retry.
-    if getattr(graph_extractor, "last_failed_events", 0) == 0:
+    # Only a clean full build may be reused; a run hit by an API outage must
+    # retry, and a per-recording build forces the next full build to run.
+    if recording_id is None and getattr(graph_extractor, "last_failed_events", 0) == 0:
         fingerprint_path.write_text(fingerprint)
     else:
         fingerprint_path.unlink(missing_ok=True)

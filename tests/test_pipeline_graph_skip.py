@@ -32,7 +32,9 @@ def harness(tmp_path, monkeypatch):
 
     events = [SimpleNamespace(event_id="e1", clean_text="hello"), SimpleNamespace(event_id="e2", clean_text="world")]
     session = MagicMock()
-    session.query.return_value.filter.return_value.limit.return_value.all.side_effect = lambda: list(events)
+    q = session.query.return_value.filter.return_value
+    q.limit.return_value.all.side_effect = lambda: list(events)
+    q.filter.return_value.limit.return_value.all.side_effect = lambda: list(events[:1])  # --recording-id
     return SimpleNamespace(extractor=extractor, events=events, session=session, dir=tmp_path)
 
 
@@ -53,6 +55,21 @@ def test_changed_text_rebuilds(harness):
     harness.events[0].clean_text = "edited"
     pipeline.run_graph(harness.session)
     assert harness.extractor.extract_from_events.call_count == 2
+
+
+def test_per_recording_build_forces_next_full_build(harness):
+    pipeline.run_graph(harness.session)
+    pipeline.run_graph(harness.session, recording_id="r1")
+    assert not (harness.dir / "knowledge_graph.fingerprint").exists()
+    pipeline.run_graph(harness.session)
+    assert harness.extractor.extract_from_events.call_count == 3
+
+
+def test_per_recording_build_never_skips(harness):
+    pipeline.run_graph(harness.session)
+    pipeline.run_graph(harness.session, recording_id="r1")
+    pipeline.run_graph(harness.session, recording_id="r1")
+    assert harness.extractor.extract_from_events.call_count == 3
 
 
 def test_failed_build_is_retried(harness):
