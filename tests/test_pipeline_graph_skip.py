@@ -34,7 +34,6 @@ def harness(tmp_path, monkeypatch):
     session = MagicMock()
     q = session.query.return_value.filter.return_value
     q.limit.return_value.all.side_effect = lambda: list(events)
-    q.filter.return_value.limit.return_value.all.side_effect = lambda: list(events[:1])  # --recording-id
     return SimpleNamespace(extractor=extractor, events=events, session=session, dir=tmp_path)
 
 
@@ -57,19 +56,20 @@ def test_changed_text_rebuilds(harness):
     assert harness.extractor.extract_from_events.call_count == 2
 
 
-def test_per_recording_build_forces_next_full_build(harness):
+def test_per_recording_build_is_skipped_and_leaves_graph_alone(harness):
     pipeline.run_graph(harness.session)
-    pipeline.run_graph(harness.session, recording_id="r1")
-    assert not (harness.dir / "knowledge_graph.fingerprint").exists()
-    pipeline.run_graph(harness.session)
-    assert harness.extractor.extract_from_events.call_count == 3
+    before = (harness.dir / "knowledge_graph.pkl").read_bytes()
+    assert pipeline.run_graph(harness.session, recording_id="r1") == 0
+    assert harness.extractor.extract_from_events.call_count == 1
+    assert (harness.dir / "knowledge_graph.pkl").read_bytes() == before
+    assert (harness.dir / "knowledge_graph.fingerprint").exists()
 
 
-def test_per_recording_build_never_skips(harness):
+def test_full_build_still_skips_after_per_recording_run(harness):
     pipeline.run_graph(harness.session)
     pipeline.run_graph(harness.session, recording_id="r1")
-    pipeline.run_graph(harness.session, recording_id="r1")
-    assert harness.extractor.extract_from_events.call_count == 3
+    pipeline.run_graph(harness.session)
+    assert harness.extractor.extract_from_events.call_count == 1
 
 
 def test_failed_build_is_retried(harness):

@@ -818,6 +818,16 @@ def run_graph(
     logger.info("PHASE 4: GRAPH EXTRACTION")
     logger.info("=" * 60)
 
+    # There is one graph file. A per-recording build (auto_sync runs
+    # `--graph --recording-id X` for each new recording) replaced it with a
+    # one-recording graph until the next full build put it back, and paid an
+    # LLM call per event to do so. Nothing reads a per-recording graph.
+    if recording_id:
+        logger.info(f"Skipping graph for single recording {recording_id}; the full build owns the graph")
+        pipeline_progress.start_phase("graph", total_items=0)
+        pipeline_progress.finish_phase(summary="Skipped: full build owns the graph")
+        return 0
+
     from src.database.models import ChronosEvent as ChronosEventDB
     from src.chronos.graph_service import ChronosGraphExtractor
     from src.models.chronos_schemas import (
@@ -859,11 +869,8 @@ def run_graph(
     for db_event in sorted(events_to_process, key=lambda e: e.event_id):
         fingerprint.update(f"{db_event.event_id}\0{db_event.clean_text or ''}\0".encode())
     fingerprint = fingerprint.hexdigest()
-    # A --recording-id build overwrites the same pickle with a one-recording
-    # graph, so only a full build may be skipped or recorded as reusable.
     if (
-        recording_id is None
-        and graph_path.exists()
+        graph_path.exists()
         and fingerprint_path.exists()
         and fingerprint_path.read_text().strip() == fingerprint
     ):
@@ -936,9 +943,8 @@ def run_graph(
             f,
         )
 
-    # Only a clean full build may be reused; a run hit by an API outage must
-    # retry, and a per-recording build forces the next full build to run.
-    if recording_id is None and getattr(graph_extractor, "last_failed_events", 0) == 0:
+    # Only a clean build may be reused; a run hit by an API outage must retry.
+    if getattr(graph_extractor, "last_failed_events", 0) == 0:
         fingerprint_path.write_text(fingerprint)
     else:
         fingerprint_path.unlink(missing_ok=True)
