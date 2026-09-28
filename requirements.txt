@@ -3,11 +3,10 @@
 requests>=2.31.0
 python-dotenv>=1.0.0
 pydantic>=2.7.0
-sqlalchemy>=2.0.0
+sqlalchemy>=2.0.0,<2.1
 pytest>=7.4.0
 
 # AI Processing (Gemini)
-google-generativeai>=0.3.0
 google-genai>=1.0.0
 
 # OpenAI Responses API (for RAG / conversational queries)
@@ -39,6 +38,10 @@ flask-compress>=1.14
 # REST API (FastAPI backend for iOS app)
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
+
+# Security floor for a transitive dependency (starlette, httpx, openai, mcp):
+# GHSA-82r6-8w77-94w6, GHSA-3w57-8xmc-8v26 and GHSA-5p39-cfhj-2xmp, fixed in 4.14.2
+anyio>=4.14.2
 
 # ─────────────────────────────────────────────────────────────
 # Audio Processing (optional - install for local audio features)
