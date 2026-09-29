@@ -88,7 +88,13 @@ check_unit chronos-watchdog.timer "Watchdog timer"
 check_optional_unit chronos-auto-update.timer "Auto-update timer"
 
 echo "[2/5] Checking ports and health endpoints..."
-check_http http://127.0.0.1:8050/ "Dash UI"
+# The UI serves HTTPS with a self-signed cert when .certs/ exists (the Plaud
+# OAuth callback needs it); fall back to plain HTTP when it doesn't.
+if curl -fsSk --max-time 10 -o /dev/null https://127.0.0.1:8050/ 2>/dev/null; then
+    pass "Dash UI reachable at https://127.0.0.1:8050/"
+else
+    check_http http://127.0.0.1:8050/ "Dash UI"
+fi
 check_http http://127.0.0.1:8000/api/v1/health "FastAPI"
 check_http http://127.0.0.1:6333/healthz "Qdrant"
 check_http http://127.0.0.1:8090/health "Webhook listener"
