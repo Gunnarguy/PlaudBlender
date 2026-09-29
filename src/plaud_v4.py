@@ -30,6 +30,15 @@ from pathlib import Path
 from typing import Any, Iterator, Optional
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# Plaud's API drops connections for hours at a time ("Remote end closed
+# connection without response"); every 20-minute sync failed outright on
+# the first drop. Retry idempotent requests only (urllib3's default method
+# set excludes POST), on connection errors and 502/503/504.
+_RETRY = Retry(total=3, connect=3, read=3, status=3, backoff_factor=2,
+               status_forcelist=(502, 503, 504), raise_on_status=False)
 
 API_BASE = os.getenv("PLAUD_V4_API_BASE", "https://api-test.plaud.ai").rstrip("/")
 WEB_ORIGIN = "https://beta.plaud.ai"
@@ -101,6 +110,7 @@ class PlaudV4Client:
         self.session_file = session_file
         self.timeout = timeout
         self.http = requests.Session()
+        self.http.mount("https://", HTTPAdapter(max_retries=_RETRY))
         self.http.headers.update({
             "Accept": "application/json",
             "Origin": WEB_ORIGIN,
