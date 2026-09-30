@@ -275,6 +275,14 @@ def run_preflight(*, smoke_call: bool = False) -> int:
     if provider == "local" and not getattr(settings, "chronos_local_llm_enabled", False):
         logger.error("CHRONOS_PROCESSING_PROVIDER=local requires CHRONOS_LOCAL_LLM_ENABLED=1")
         return 2
+    if provider == "agy":
+        from src.chronos.agy_service import AgyBridgeService
+
+        if not AgyBridgeService(settings).available:
+            logger.warning(
+                "CHRONOS_PROCESSING_PROVIDER=agy but the bridge token is unreadable at %s",
+                settings.chronos_agy_token_file,
+            )
     if provider == "openai" and not settings.openai_api_key:
         logger.error("OpenAI provider requested but disabled or missing key; set CHRONOS_OPENAI_ENABLED=1 to opt in")
         return 2

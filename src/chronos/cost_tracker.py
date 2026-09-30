@@ -226,6 +226,15 @@ def _gemini_pricing_tier() -> str:
 def get_pricing(model: str) -> dict:
     """Return pricing dict for a model, with sensible fallback."""
     normalized = normalize_model_name(model)
+    # AGY bridge calls run on the owner's Google AI Ultra subscription: logged, never billed.
+    if normalized.startswith("agy/"):
+        return {
+            "provider": "agy",
+            "input_per_mtok": 0.0,
+            "output_per_mtok": 0.0,
+            "tier": "subscription",
+            "label": f"{normalized[4:]} (AGY subscription)",
+        }
     if normalized in _OPENAI_PRICING:
         return _OPENAI_PRICING[normalized]
     if normalized in _GEMINI_PRICING:

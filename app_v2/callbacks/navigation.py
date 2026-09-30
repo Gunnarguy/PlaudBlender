@@ -2699,6 +2699,10 @@ def create_settings_view(preferences=None) -> html.Div:
                                 id="setting-processing-provider",
                                 options=[
                                     {
+                                        "label": "agy (Gemini 3.8 Flash high on the AI Ultra subscription, no API cost)",
+                                        "value": "agy",
+                                    },
+                                    {
                                         "label": "gemini (recommended low-cost path)",
                                         "value": "gemini",
                                     },

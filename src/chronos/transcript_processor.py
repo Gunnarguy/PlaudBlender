@@ -32,6 +32,7 @@ from src.database.models import ChronosEvent as ChronosEventModel
 from src.models.chronos_schemas import ChronosEvent, EventCategory
 from src.chronos.engine import CHRONOS_CLEAN_PROMPT, ChronosEngine, GeminiEventOutput
 from src.chronos.openai_service import OpenAIResponseService
+from src.chronos.agy_service import AgyBridgeService
 from src.chronos.genai_helpers import (
     is_model_not_found,
     is_model_temporarily_unavailable,
@@ -288,12 +289,20 @@ BROKEN_JSON:
             if self._openai_processing_available():
                 return "openai"
             return "local"
+        if provider == "agy":
+            # Subscription path. If the bridge token is missing, only fall through to a
+            # metered provider when the owner allowed the OpenAI fallback.
+            if self._agy_processing_available():
+                return "agy"
+            if getattr(self.settings, "chronos_agy_fallback_openai", True) and self._openai_processing_available():
+                return "openai"
+            return "agy"
         if provider == "openai" and not self._openai_processing_available():
             if self._local_processing_available():
                 return "local"
             if getattr(self.settings, "gemini_api_key", None):
                 return "gemini"
-        if provider not in {"gemini", "openai", "local"}:
+        if provider not in {"gemini", "openai", "local", "agy"}:
             if getattr(self.settings, "gemini_api_key", None):
                 return "gemini"
             if self._local_processing_available():
@@ -307,6 +316,8 @@ BROKEN_JSON:
             return "Gemini"
         if resolved == "local":
             return "Local"
+        if resolved == "agy":
+            return "AGY"
         return "OpenAI"
 
     def _openai_processing_available(self) -> bool:
@@ -314,6 +325,9 @@ BROKEN_JSON:
             return False
         api_key = getattr(self.settings, "openai_api_key", None)
         return bool(str(api_key).strip()) if api_key is not None else False
+
+    def _agy_processing_available(self) -> bool:
+        return AgyBridgeService(self.settings).available
 
     def _local_processing_available(self) -> bool:
         return bool(getattr(self.settings, "chronos_local_llm_enabled", False))
@@ -446,6 +460,16 @@ BROKEN_JSON:
 
         if provider == "local":
             return self._process_transcript_text_local(
+                transcript_text,
+                recording_id,
+                verbose=verbose,
+                recording_date=recording_date,
+                plaud_context=plaud_context,
+                progress_callback=progress_callback,
+            )
+
+        if provider == "agy":
+            return self._process_transcript_text_agy_with_fallback(
                 transcript_text,
                 recording_id,
                 verbose=verbose,
@@ -609,6 +633,130 @@ BROKEN_JSON:
                 "cloud_ai_used": False,
             },
         )
+
+    def _process_transcript_text_agy_with_fallback(
+        self,
+        transcript_text: str,
+        recording_id: str,
+        *,
+        verbose: bool = True,
+        recording_date: str = "",
+        plaud_context: Optional[str] = None,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> Optional[GeminiEventOutput]:
+        """AGY first; on failure retry on OpenAI if CHRONOS_AGY_FALLBACK_OPENAI=1 and it is enabled."""
+        agy_output = self._process_transcript_text_agy(
+            transcript_text,
+            recording_id,
+            verbose=verbose,
+            recording_date=recording_date,
+            plaud_context=plaud_context,
+            progress_callback=progress_callback,
+        )
+        if agy_output and agy_output.events:
+            return agy_output
+
+        agy_error = self._last_processing_error
+        if not (
+            getattr(self.settings, "chronos_agy_fallback_openai", True)
+            and self._openai_processing_available()
+        ):
+            return None
+
+        from app_v2.services.xray import xray_log
+
+        xray_log(
+            "pipeline",
+            "fallback",
+            "AGY failed — trying OpenAI instead",
+            level="warn",
+        )
+        self._last_processing_error = None
+        openai_output = self._process_transcript_text_openai(
+            transcript_text,
+            recording_id,
+            verbose=verbose,
+            recording_date=recording_date,
+            plaud_context=plaud_context,
+            progress_callback=progress_callback,
+        )
+        if openai_output and openai_output.events:
+            return openai_output
+        self._last_processing_error = (
+            f"AGY failed: {agy_error}; OpenAI failed: {self._last_processing_error}"
+        )
+        return None
+
+    def _process_transcript_text_agy(
+        self,
+        transcript_text: str,
+        recording_id: str,
+        *,
+        verbose: bool = True,
+        recording_date: str = "",
+        plaud_context: Optional[str] = None,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> Optional[GeminiEventOutput]:
+        """Process transcript text through the AGY bridge (Google AI Ultra subscription)."""
+        prompt = self._build_prompt(recording_id, recording_date)
+        svc = AgyBridgeService(self.settings)
+        self._emit_progress(
+            progress_callback,
+            "Prompt built",
+            f"{len(transcript_text.split()):,} words ready for AGY",
+        )
+
+        plaud_section = ""
+        if plaud_context:
+            plaud_section = (
+                "\n\n**PLAUD AI CONTEXT** (use this to guide categorization, "
+                "sentiment, and structure — but always extract events from the "
+                "raw transcript below):\n\n"
+                f"{plaud_context}\n"
+            )
+
+        # Long material goes in the bridge's system field, which it splits into turns;
+        # the task stays one line (see agy_service module docstring).
+        instructions = f"""{prompt}{plaud_section}
+
+**RAW TRANSCRIPT:**
+
+{transcript_text}"""
+
+        if verbose:
+            print(
+                f"      📊 Transcript: {len(transcript_text.split()):,} words, {len(transcript_text):,} chars",
+                flush=True,
+            )
+            print(f"      🤖 Model: {svc.model} (AGY subscription)", flush=True)
+            print("      📤 Sending to the AGY bridge...", flush=True)
+
+        self._emit_progress(
+            progress_callback,
+            "AGY request sent",
+            f"{len(transcript_text.split()):,} words · {len(transcript_text):,} chars",
+        )
+
+        result = svc.extract_events(instructions, recording_id=recording_id)
+        if "error" in result:
+            self._last_processing_error = result["error"]
+            self._emit_progress(progress_callback, "AGY failed", result["error"][:80])
+            if verbose:
+                print(f"      ❌ Error: {result['error'][:80]}", flush=True)
+            return None
+
+        output = result.get("output")
+        if not output or not output.events:
+            self._last_processing_error = "AGY returned no events"
+            return None
+
+        self._emit_progress(progress_callback, "Events extracted", f"{output.total_events} events")
+        if verbose:
+            print(f"      ✅ Extracted {output.total_events} events", flush=True)
+            self._print_event_summary(output.events)
+
+        self._last_processing_error = None
+        return output
 
     def _process_transcript_text_openai(
         self,

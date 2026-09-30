@@ -246,7 +246,10 @@ PlaudBlender parses environment configuration from `.env` in the root directory.
 | `CHRONOS_ALLOW_SHARED_GEMINI_KEY` | Set to `1` to share global `GEMINI_API_KEY` across projects. | `0` |
 | `OPENAI_API_KEY` | OpenAI API Key. Presence auto-activates OpenAI model integrations. | None |
 | `CHRONOS_API_KEY` | Secret token for client JWT auth. Omit to run key-less on trusted networks. | None |
-| `CHRONOS_PROCESSING_PROVIDER` | Selection of AI reasoning engine (`gemini` or `local`). | `gemini` |
+| `CHRONOS_PROCESSING_PROVIDER` | Transcript extraction engine: `agy` (Gemini 3.8 Flash high on the AI Ultra subscription via the AGY bridge), `gemini`, `openai`, `local`, or `auto`. | `gemini` |
+| `CHRONOS_AGY_BRIDGE_URL` / `CHRONOS_AGY_TOKEN_FILE` | Where the AGY bridge listens and its shared token. | `http://127.0.0.1:8799` / `~/.config/jobscout-agy/token` |
+| `CHRONOS_AGY_MODEL` / `CHRONOS_AGY_TIMEOUT_SECONDS` | Model and per-call timeout for `agy`. | `gemini-3.8-flash-high` / `900` |
+| `CHRONOS_AGY_FALLBACK_OPENAI` | Retry a failed AGY extraction on OpenAI (metered) when OpenAI is enabled. | `1` |
 | `CHRONOS_CLEANING_MODEL` | Model used for transcribing and structural timeline cleaning. | `gemini-3.5-flash-lite` |
 | `CHRONOS_ANALYST_MODEL` | Model used for building graph RAG entities and timeline analysis. | `gpt-5.6-terra` |
 | `CHRONOS_LOCAL_LLM_ENABLED` | Set to `1` to route supported tasks locally via Ollama. | `0` |

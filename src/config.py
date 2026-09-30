@@ -171,6 +171,20 @@ class Settings:
         os.getenv("CHRONOS_LOCAL_EMBED_TIMEOUT_SECONDS", "300")
     )
     chronos_ollama_keep_alive: str = os.getenv("CHRONOS_OLLAMA_KEEP_ALIVE", "0s").strip()
+
+    # AGY (Antigravity) bridge: transcript extraction on the owner's Google AI Ultra
+    # subscription instead of a metered API (CHRONOS_PROCESSING_PROVIDER=agy). The
+    # bridge is JobScoutOS's user unit `jobscout-agy-bridge` on the Pi host.
+    chronos_agy_bridge_url: str = os.getenv(
+        "CHRONOS_AGY_BRIDGE_URL", "http://127.0.0.1:8799"
+    ).strip().rstrip("/")
+    chronos_agy_token_file: str = os.getenv(
+        "CHRONOS_AGY_TOKEN_FILE", os.path.expanduser("~/.config/jobscout-agy/token")
+    ).strip()
+    chronos_agy_model: str = os.getenv("CHRONOS_AGY_MODEL", "gemini-3.8-flash-high").strip()
+    chronos_agy_timeout_seconds: int = int(os.getenv("CHRONOS_AGY_TIMEOUT_SECONDS", "900"))
+    # On any bridge failure, retry the recording on OpenAI (metered) if it is enabled.
+    chronos_agy_fallback_openai: bool = _env_flag("CHRONOS_AGY_FALLBACK_OPENAI", "1")
     chronos_poll_interval: int = int(os.getenv("CHRONOS_POLL_INTERVAL", "1800"))
     chronos_enable_notion_import: bool = _env_flag(
         "CHRONOS_ENABLE_NOTION_IMPORT", "1"
