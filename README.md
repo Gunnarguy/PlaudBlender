@@ -96,9 +96,10 @@ git clone <your-fork-or-clone-url>
 cd PlaudBlender
 
 # 2. Initialize virtual environment and install dependencies
+#    requirements.lock pins the versions production runs (see the lock's header to update it)
 uv venv
 source .venv/bin/activate
-uv pip install -r requirements.txt
+uv pip install -r requirements.txt -c requirements.lock
 
 # 3. Setup environment overrides
 cp .env.example .env

@@ -36,7 +36,10 @@ fi
 # ── 3. Python dependencies ──────────────────────────────────
 echo "[3/7] Installing Python dependencies..."
 "$VENV/bin/pip" install --upgrade pip setuptools wheel -q
-"$VENV/bin/pip" install -r requirements.txt -q
+# requirements.lock pins the versions running in production; without it pip takes the newest
+# releases (mcp 2.x broke the MCP server on 2026-10-01). Constraints only cap what is listed.
+LOCK_ARGS=(); [ -f requirements.lock ] && LOCK_ARGS=(-c requirements.lock)
+"$VENV/bin/pip" install -r requirements.txt "${LOCK_ARGS[@]}" -q
 echo "  ✓ Python dependencies installed"
 
 # ── 4. Create directories ───────────────────────────────────
