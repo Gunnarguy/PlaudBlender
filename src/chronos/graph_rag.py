@@ -305,12 +305,31 @@ Return ONLY the JSON object, no other text."""
             .strip()
             .lower()
         )
-        self._provider = "gemini" if provider == "gemini" else "openai"
+        if provider == "agy":
+            self._provider = "agy"
+        else:
+            self._provider = "gemini" if provider == "gemini" else "openai"
         self.min_interval = 0.1
         self._last_call_ts: float = 0.0
+        self._agy = None
 
         if llm is None:
-            if self._provider == "gemini":
+            if self._provider == "agy":
+                # Subscription path (AI Ultra via the host's AGY bridge). No metered
+                # fallback here: a skipped event only costs the graph one node.
+                from src.chronos.agy_service import AgyBridgeService
+
+                svc = AgyBridgeService(self.settings)
+                if svc.available:
+                    self._agy = svc
+                    self.min_interval = 0.0
+                    self.llm = self._make_agy_wrapper()
+                else:
+                    logger.warning(
+                        "CHRONOS_PROCESSING_PROVIDER=agy but the AGY bridge token is unreadable; entity extraction disabled"
+                    )
+                    self.llm = None
+            elif self._provider == "gemini":
                 self.min_interval = (
                     max(60.0 / float(os.getenv("GEMINI_MAX_RPM", "10")), 0) + 0.5
                 )
@@ -680,6 +699,128 @@ Return ONLY the JSON object, no other text."""
 
             logger.error(f"Entity extraction failed: {e}")
             return [], []
+
+    def _make_agy_wrapper(self):
+        """AGY bridge wrapper matching the .complete() interface (one event per call)."""
+        from src.chronos.agy_service import parse_json_objects
+
+        svc = self._agy
+
+        class _AgyWrapper:
+            def __init__(self):
+                self.model = f"agy/{svc.model}"
+
+            def complete(self, prompt: str) -> _CompletionResult:
+                result = svc.complete(prompt, "Return only the JSON object.")
+                if not result.get("ok"):
+                    raise RuntimeError(f"AGY bridge: {result.get('error')}")
+                text = result.get("text") or ""
+                found = parse_json_objects(text)
+                usage = result.get("usage") or {}
+                return _CompletionResult(
+                    # agy can return the object twice; hand back the last one
+                    text=json.dumps(found[-1]) if found else text,
+                    input_tokens=int(usage.get("input_tokens") or 0),
+                    output_tokens=int(usage.get("output_tokens") or 0),
+                )
+
+        return _AgyWrapper()
+
+    @property
+    def supports_batch(self) -> bool:
+        """True when many events can share one model call (the AGY path)."""
+        return self._agy is not None and self.llm is not None
+
+    BATCH_PROMPT = """Extract entities from EACH event below. Every event is a cleaned moment from the
+owner's voice recordings, introduced by a line "=== EVENT <event_id> ===".
+
+For every event return one object with its exact event_id and these lists:
+people [{name, role}], projects [{name, status}], topics [strings], actions [{task, assignee, deadline}],
+dates [strings], metrics [{value, context}], organizations [strings].
+
+CRITICAL TOPIC RULES:
+- Topics MUST be concrete subject nouns, proper nouns, technologies, projects, or multi-word concept phrases (e.g., "Raspberry Pi", "Notion Sync", "API Billing", "iOS App", "Tailscale").
+- NEVER extract single verbs, action words, gerunds, or conversational filler as topics (e.g. NEVER output "going", "using", "swapping", "talking", "asking", "doing", "running", "wants").
+- Every topic must be a distinct, meaningful subject entity.
+
+Only include entities clearly mentioned in THAT event. Be specific with names. Use empty lists when
+nothing is found. Include every event_id exactly once, even when all its lists are empty.
+"""
+
+    @staticmethod
+    def _batch_schema() -> Dict[str, Any]:
+        def obj(*keys):
+            return {"type": "object", "properties": {k: {"type": "string"} for k in keys}}
+
+        strings = {"type": "array", "items": {"type": "string"}}
+        item = {
+            "type": "object",
+            "properties": {
+                "event_id": {"type": "string"},
+                "people": {"type": "array", "items": obj("name", "role")},
+                "projects": {"type": "array", "items": obj("name", "status")},
+                "topics": strings,
+                "actions": {"type": "array", "items": obj("task", "assignee", "deadline")},
+                "dates": strings,
+                "metrics": {"type": "array", "items": obj("value", "context")},
+                "organizations": strings,
+            },
+            "required": ["event_id"],
+        }
+        return {
+            "type": "object",
+            "properties": {"events": {"type": "array", "items": item}},
+            "required": ["events"],
+        }
+
+    def extract_entities_batch(
+        self,
+        items: List[Tuple[str, str]],
+        max_text_chars: int = 4000,
+    ) -> Dict[str, Tuple[List[Entity], List[Relationship]]]:
+        """Extract entities for many (doc_id, text) pairs in ONE AGY call.
+
+        Returns {doc_id: (entities, relationships)} for every event the model answered;
+        ids it skipped are simply absent. Raises on a bridge failure.
+        """
+        from src.chronos.agy_service import parse_json_objects
+        from src.chronos.cost_tracker import track_usage
+
+        if not self.supports_batch:
+            raise RuntimeError("batch extraction needs the AGY provider")
+        texts = {doc_id: (text or "")[:max_text_chars] for doc_id, text in items}
+        blocks = "".join(f"\n=== EVENT {doc_id} ===\n{text}\n" for doc_id, text in texts.items())
+        _t0 = time.monotonic()
+        result = self._agy.complete(
+            self.BATCH_PROMPT + blocks,
+            f"Return only the JSON object with one entry per event ({len(texts)} events).",
+            self._batch_schema(),
+        )
+        if not result.get("ok"):
+            raise RuntimeError(f"AGY bridge: {result.get('error')}")
+        usage = result.get("usage") or {}
+        track_usage(
+            self.llm.model,
+            "entity",
+            input_tokens=int(usage.get("input_tokens") or 0),
+            output_tokens=int(usage.get("output_tokens") or 0),
+        )
+
+        answers: List[Dict[str, Any]] = []
+        for candidate in reversed(parse_json_objects(result.get("text") or "")):
+            if isinstance(candidate.get("events"), list):
+                answers = [a for a in candidate["events"] if isinstance(a, dict)]
+                break
+        out: Dict[str, Tuple[List[Entity], List[Relationship]]] = {}
+        for answer in answers:
+            doc_id = str(answer.get("event_id") or "")
+            if doc_id in texts and doc_id not in out:
+                out[doc_id] = self._parse_entities_from_response(answer, doc_id, len(texts[doc_id]))
+        logger.info(
+            "AGY entity batch: %d/%d events answered in %.0fs",
+            len(out), len(texts), time.monotonic() - _t0,
+        )
+        return out
 
     def _respect_rate_limit(self) -> None:
         """Sleep if the previous call was too recent."""
