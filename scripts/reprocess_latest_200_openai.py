@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Safely rebuild a Plaud MCP recording batch under the current OpenAI path.
+"""Safely rebuild a Plaud MCP recording batch under the configured processing provider.
+
+Works with any CHRONOS_PROCESSING_PROVIDER (agy, openai, gemini, local); the file name predates that.
 
 Replaces existing Chronos events and Qdrant vectors only after a new extraction
 successfully completes, so previously processed recordings do not lose data on a
@@ -236,7 +238,7 @@ def reprocess_batch(
 
     try:
         print(
-            f"Rebuilding {len(ids)} Plaud MCP recordings with current OpenAI settings...",
+            f"Rebuilding {len(ids)} Plaud MCP recordings with provider {processor._provider_label()}...",
             flush=True,
         )
 
@@ -314,6 +316,11 @@ def reprocess_batch(
                         preserved += 1
                         print(f"   KEEP {err[:140]}", flush=True)
                     continue
+
+                # Same as process_recording: replace the model's invented clock times with
+                # times anchored on the recording (src/chronos/event_timing.py). Without this,
+                # a rebuild reintroduces the made-up times repair_event_times.py fixed.
+                processor._anchor_event_times(output.events, rec, getattr(rec, "created_at", None))
 
                 deleted_points = qdrant.delete_by_recording_id(recording_id)
                 deleted_events = delete_chronos_events_by_recording(session, recording_id)
