@@ -849,14 +849,19 @@ def run_graph(
     from src.config import get_settings
 
     settings = get_settings()
-    graph_extractor = ChronosGraphExtractor()
+    # Per-event extractions are cached, so a rebuild only pays for new or edited events.
+    graph_extractor = ChronosGraphExtractor(
+        cache_path=Path(settings.chronos_graph_cache_dir) / "entity_cache.json"
+    )
 
-    # Fetch events that have been indexed
+    # The most recent indexed events. This used to be `limit * 10` rows in rowid
+    # order -- the same ~100 oldest events (Feb 2026) every build.
+    graph_max_events = max(1, int(os.getenv("CHRONOS_GRAPH_MAX_EVENTS", "500")))
     q = session.query(ChronosEventDB).filter(ChronosEventDB.qdrant_point_id.isnot(None))
     if recording_id:
         q = q.filter(ChronosEventDB.recording_id == recording_id)
 
-    events_to_process = q.limit(limit * 10).all()
+    events_to_process = q.order_by(ChronosEventDB.start_ts.desc()).limit(graph_max_events).all()
 
     pipeline_progress.start_phase("graph", total_items=len(events_to_process))
 
