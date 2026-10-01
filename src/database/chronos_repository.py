@@ -23,6 +23,16 @@ from .models import (
 # ═══════════════════════════════════════════════════════════════════
 
 
+def get_tombstoned_recording_ids(session: Session) -> set:
+    """Recording ids the janitor deliberately deleted (see upsert_chronos_recording)."""
+    from sqlalchemy import text as _sql_text
+    try:
+        rows = session.execute(_sql_text("SELECT recording_id FROM janitor_tombstones")).fetchall()
+    except Exception:  # fresh databases have no tombstone table yet
+        return set()
+    return {str(row[0]) for row in rows}
+
+
 def upsert_chronos_recording(
     session: Session,
     recording_id: str,

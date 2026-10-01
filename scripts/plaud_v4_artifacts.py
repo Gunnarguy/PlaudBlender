@@ -29,7 +29,7 @@ from sqlalchemy import text  # noqa: E402
 
 from src.database import SessionLocal, init_db  # noqa: E402
 from src.database.models import ChronosRecordingArtifact  # noqa: E402
-from src.plaud_v4 import NotLoggedIn, PlaudV4Client, PlaudV4Error, classic_id  # noqa: E402
+from src.plaud_v4 import NotLoggedIn, PlaudV4Client, PlaudV4Error, PlaudV4NotFound, classic_id  # noqa: E402
 
 SKIP = {"AUDIO", "AUDIO_TRANSCODED"}
 PACE = 0.1
@@ -76,7 +76,7 @@ def main() -> int:
     init_db()
     root = artifact_root()
 
-    fetched = skipped = failed = unchanged = 0; by_type: dict[str, int] = {}; seen = 0
+    fetched = skipped = failed = unchanged = not_ready = 0; by_type: dict[str, int] = {}; seen = 0
     started = time.monotonic()
     # Asking Plaud for the detail of all ~700 recordings every 20 minutes cost
     # ~90 s and found nothing almost every time. Only recordings whose
@@ -97,6 +97,8 @@ def main() -> int:
             failed_before = failed
             try:
                 detail = client.file_detail(item["file_id"])
+            except PlaudV4NotFound:
+                not_ready += 1; continue  # still uploading; not marked seen, so retried next run
             except PlaudV4Error as error:
                 failed += 1; print(f"  FAILED detail {rid[:12]}: {error}", file=sys.stderr); continue
             for obj in detail.get("objects") or []:
@@ -127,7 +129,7 @@ def main() -> int:
         state["last_full"] = time.time()
     save_state(state)
     mode = "full sweep" if full else f"{unchanged} unchanged"
-    print(f"\n{seen} recordings ({mode}) · {fetched} artifacts fetched {by_type} · {skipped} already held · {failed} failed · {time.monotonic() - started:.0f}s")
+    print(f"\n{seen} recordings ({mode}) · {fetched} artifacts fetched {by_type} · {skipped} already held · {not_ready} not ready · {failed} failed · {time.monotonic() - started:.0f}s")
     return 1 if failed and not fetched else 0
 
 

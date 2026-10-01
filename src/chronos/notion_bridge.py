@@ -553,6 +553,9 @@ def import_notion_recording(
             time_is_estimated=time_is_estimated,
             time_estimate_reason=time_estimate_reason,
         )
+        if rec is None:
+            # upsert_chronos_recording returns None for janitor tombstones.
+            return True, f"Skipped '{page.title}': deliberately deleted (janitor tombstone)"
         xray_log("data", "notion-import", f"Created Chronos recording for '{page.title}'")
 
         # Step 3: Cache transcript
@@ -998,12 +1001,20 @@ def import_all_unmatched(
     # Also check fuzzy matches (recordings already in Chronos via Plaud)
     matches = match_notion_to_chronos(recordings, session)
 
+    # The janitor deleted these on purpose; upsert refuses to re-create them, so trying
+    # every cycle only re-fetched the page and failed (6 pages, 533 errors / 48 h on 2026-09-30).
+    from src.database.chronos_repository import get_tombstoned_recording_ids
+
+    tombstoned = get_tombstoned_recording_ids(session)
+
     to_import = []
     for nrec in recordings:
         if nrec.page_id in completed_notion:
             continue  # Already fully imported
         if matches.get(nrec.page_id):
             continue  # Already in Chronos via Plaud
+        if f"notion:{nrec.page_id}" in tombstoned:
+            continue  # Deliberately deleted by the janitor
         to_import.append(nrec)
 
     # Sort newest first — prioritize recent recordings
