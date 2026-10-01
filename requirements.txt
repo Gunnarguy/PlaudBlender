@@ -19,7 +19,7 @@ notion-client>=3.0.0
 qdrant-client>=1.12.0
 
 # Model Context Protocol server
-mcp>=0.1.0
+mcp>=0.1.0,<2  # 2.x moved FastMCP out of mcp.server (scripts/mcp_server.py); requirements.lock pins the tested version
 
 # Visualization & Graph
 networkx>=3.0
