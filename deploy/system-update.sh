@@ -26,10 +26,15 @@ echo "[1/2] Updating system packages (apt)..."
 # Use nice and ionice to keep resource usage low
 sudo nice -n 19 ionice -c 3 apt-get update -q
 sudo DEBIAN_FRONTEND=noninteractive nice -n 19 ionice -c 3 apt-get upgrade -y -q
+# The installed .debs are never needed again; kept, they reached 3.6 GB (2026-09-30).
+sudo apt-get clean -q
 
 echo "[2/2] Updating global npm packages..."
 if command -v npm >/dev/null 2>&1; then
     nice -n 19 ionice -c 3 npm update -g
+    # Each daily update leaves the old tarballs (38 codex versions, 3.2 GB by 2026-09-30).
+    # `cache clean` empties _cacache only; ~/.npm/_npx (MCP servers) is untouched.
+    npm cache clean --force >/dev/null 2>&1 || true
 else
     echo "npm not found, skipping."
 fi
