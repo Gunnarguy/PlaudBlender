@@ -23,7 +23,7 @@ def harness(tmp_path, monkeypatch):
     extractor.extract_from_events.return_value = ([], nx.Graph())
     extractor.detect_communities.return_value = {}
     extractor.last_failed_events = 0
-    monkeypatch.setattr("src.chronos.graph_service.ChronosGraphExtractor", lambda: extractor)
+    monkeypatch.setattr("src.chronos.graph_service.ChronosGraphExtractor", lambda **_kwargs: extractor)
     monkeypatch.setattr(
         "src.config.get_settings",
         lambda: SimpleNamespace(chronos_graph_cache_dir=str(tmp_path)),
@@ -34,6 +34,7 @@ def harness(tmp_path, monkeypatch):
     session = MagicMock()
     q = session.query.return_value.filter.return_value
     q.limit.return_value.all.side_effect = lambda: list(events)
+    q.order_by.return_value.limit.return_value.all.side_effect = lambda: list(events)  # most-recent-first query
     return SimpleNamespace(extractor=extractor, events=events, session=session, dir=tmp_path)
 
 

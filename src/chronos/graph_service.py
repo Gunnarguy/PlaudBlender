@@ -11,7 +11,15 @@ from typing import List, Dict, Any, Tuple
 
 import networkx as nx
 
-from src.chronos.graph_rag import EntityExtractor, KnowledgeGraph, CommunityDetector
+from src.chronos.graph_rag import (
+    CommunityDetector,
+    Entity,
+    EntityExtractor,
+    EntityType,
+    KnowledgeGraph,
+    Relationship,
+    RelationType,
+)
 from src.models.chronos_schemas import ChronosEvent
 
 logger = logging.getLogger(__name__)
@@ -20,8 +28,17 @@ logger = logging.getLogger(__name__)
 class ChronosGraphExtractor:
     """Extract entities and build knowledge graph from Chronos events."""
 
-    def __init__(self):
-        """Initialize graph extraction components."""
+    CACHE_VERSION = 1
+
+    def __init__(self, cache_path=None):
+        """Initialize graph extraction components.
+
+        Args:
+            cache_path: optional JSON file of per-event extractions. With it, a rebuild
+                only calls the model for events that are new or whose text changed.
+        """
+        self.cache_path = cache_path
+        self._fresh: Dict[str, Dict[str, Any]] = {}
         self.entity_extractor = EntityExtractor()
         self.community_detector = CommunityDetector()
 
@@ -56,10 +73,13 @@ class ChronosGraphExtractor:
         all_entities: List[Dict[str, Any]] = []
         self.last_failed_events = 0
 
-        if getattr(self.entity_extractor, "supports_batch", False) is True:
-            self._extract_batched(events, all_entities, progress_callback)
-        else:
-            self._extract_one_by_one(events, all_entities, progress_callback)
+        todo = self._apply_cache(events, all_entities, progress_callback)
+        if todo:
+            if getattr(self.entity_extractor, "supports_batch", False) is True:
+                self._extract_batched(todo, all_entities, progress_callback)
+            else:
+                self._extract_one_by_one(todo, all_entities, progress_callback)
+        self._save_cache(events)
 
         _ext_ms = (_time.perf_counter() - _ext_t0) * 1000
         xray_log("graph", "extract",
@@ -98,7 +118,81 @@ class ChronosGraphExtractor:
 
         return all_entities, graph
 
+    @staticmethod
+    def _text_hash(event) -> str:
+        import hashlib
+
+        return hashlib.sha1((event.clean_text or "").encode()).hexdigest()
+
+    def _load_cache(self) -> Dict[str, Any]:
+        import json
+        from pathlib import Path
+
+        if not self.cache_path or not Path(self.cache_path).exists():
+            return {}
+        try:
+            data = json.loads(Path(self.cache_path).read_text())
+            if data.get("version") == self.CACHE_VERSION:
+                return data.get("events") or {}
+        except Exception as e:  # a bad cache only costs a re-extraction
+            logger.warning(f"Ignoring unreadable entity cache {self.cache_path}: {e}")
+        return {}
+
+    def _apply_cache(self, events, all_entities, progress_callback) -> list:
+        """Replay cached extractions; return the events that still need the model."""
+        self._fresh = {}
+        cache = self._load_cache()
+        todo = []
+        for event in events:
+            hit = cache.get(event.event_id)
+            if not hit or hit.get("h") != self._text_hash(event):
+                todo.append(event)
+                continue
+            try:
+                entities = [
+                    Entity(id=d["id"], name=d["name"], entity_type=EntityType(d["type"]),
+                           aliases=d.get("aliases") or [], metadata=d.get("metadata") or {},
+                           mention_count=d.get("mention_count", 1))
+                    for d in hit.get("entities") or []
+                ]
+                relationships = [
+                    Relationship(source_id=d["source"], target_id=d["target"],
+                                 relation_type=RelationType(d["type"]),
+                                 weight=d.get("weight", 1.0), metadata=d.get("metadata") or {})
+                    for d in hit.get("relationships") or []
+                ]
+            except Exception:
+                todo.append(event)
+                continue
+            self._add_event_result(event, entities, relationships, all_entities)
+            if progress_callback:
+                progress_callback(event.event_id)
+        if self.cache_path:
+            logger.info(f"Entity cache: {len(events) - len(todo)} reused, {len(todo)} to extract")
+        return todo
+
+    def _save_cache(self, events) -> None:
+        import json
+        from pathlib import Path
+
+        if not self.cache_path:
+            return
+        wanted = {e.event_id for e in events}
+        merged = {k: v for k, v in self._load_cache().items() if k in wanted}
+        merged.update(self._fresh)
+        path = Path(self.cache_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps({"version": self.CACHE_VERSION, "events": merged}))
+        os.replace(tmp, path)
+
     def _add_event_result(self, event, entities, relationships, all_entities) -> None:
+        # Snapshot for the cache before KnowledgeGraph merges (and mutates) entities.
+        self._fresh[event.event_id] = {
+            "h": self._text_hash(event),
+            "entities": [e.to_dict() for e in entities if hasattr(e, "to_dict")],
+            "relationships": [r.to_dict() for r in relationships if hasattr(r, "to_dict")],
+        }
         for ent in entities:
             self._knowledge_graph.add_entity(ent)
             # Preserve provenance in the exported dicts (helpful for debugging/UI).

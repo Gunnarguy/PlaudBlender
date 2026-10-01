@@ -107,6 +107,8 @@ def _graph_extractor(extractor):
     gx = ChronosGraphExtractor.__new__(ChronosGraphExtractor)
     gx.entity_extractor = extractor
     gx.community_detector = None
+    gx.cache_path = None
+    gx._fresh = {}
     return gx
 
 
