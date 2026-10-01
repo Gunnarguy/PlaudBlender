@@ -5,6 +5,7 @@ to extract entities and relationships from cleaned narrative events.
 """
 
 import logging
+import os
 import time as _time
 from typing import List, Dict, Any, Tuple
 
@@ -55,50 +56,10 @@ class ChronosGraphExtractor:
         all_entities: List[Dict[str, Any]] = []
         self.last_failed_events = 0
 
-        # Extract entities from each event
-        for event in events:
-            try:
-                # graph_rag.EntityExtractor expects a doc_id and returns strongly-typed
-                # Entity and Relationship objects.
-                entities, relationships = self.entity_extractor.extract_entities(
-                    event.clean_text,
-                    doc_id=event.event_id,
-                )
-
-                for ent in entities:
-                    self._knowledge_graph.add_entity(ent)
-                    # Preserve provenance in the exported dicts (helpful for debugging/UI).
-                    ent_dict = (
-                        ent.to_dict()
-                        if hasattr(ent, "to_dict")
-                        else {
-                            "id": getattr(ent, "id", None),
-                            "name": getattr(ent, "name", None),
-                        }
-                    )
-                    ent_dict["source_event_id"] = event.event_id
-                    ent_dict["source_recording_id"] = event.recording_id
-                    ent_dict["timestamp"] = event.start_ts.isoformat()
-                    ent_dict["category"] = event.category.value
-                    all_entities.append(ent_dict)
-
-                for rel in relationships:
-                    self._knowledge_graph.add_relationship(rel)
-
-                self._knowledge_graph.link_document(
-                    event.event_id,
-                    [e.id for e in entities],
-                )
-
-            except Exception as e:
-                logger.error(f"Failed to extract from event {event.event_id}: {e}")
-                self.last_failed_events += 1
-                xray_log("graph", "extract-error",
-                         f"Skipped one — couldn't understand it",
-                         detail=str(e)[:60], level="warn")
-            finally:
-                if progress_callback:
-                    progress_callback(event.event_id)
+        if getattr(self.entity_extractor, "supports_batch", False) is True:
+            self._extract_batched(events, all_entities, progress_callback)
+        else:
+            self._extract_one_by_one(events, all_entities, progress_callback)
 
         _ext_ms = (_time.perf_counter() - _ext_t0) * 1000
         xray_log("graph", "extract",
@@ -136,6 +97,89 @@ class ChronosGraphExtractor:
                  duration_ms=round(_graph_ms, 1))
 
         return all_entities, graph
+
+    def _add_event_result(self, event, entities, relationships, all_entities) -> None:
+        for ent in entities:
+            self._knowledge_graph.add_entity(ent)
+            # Preserve provenance in the exported dicts (helpful for debugging/UI).
+            ent_dict = (
+                ent.to_dict()
+                if hasattr(ent, "to_dict")
+                else {
+                    "id": getattr(ent, "id", None),
+                    "name": getattr(ent, "name", None),
+                }
+            )
+            ent_dict["source_event_id"] = event.event_id
+            ent_dict["source_recording_id"] = event.recording_id
+            ent_dict["timestamp"] = event.start_ts.isoformat()
+            ent_dict["category"] = event.category.value
+            all_entities.append(ent_dict)
+
+        for rel in relationships:
+            self._knowledge_graph.add_relationship(rel)
+
+        self._knowledge_graph.link_document(
+            event.event_id,
+            [e.id for e in entities],
+        )
+
+    def _extract_one_by_one(self, events, all_entities, progress_callback) -> None:
+        from app_v2.services.xray import xray_log
+
+        for event in events:
+            try:
+                # graph_rag.EntityExtractor expects a doc_id and returns strongly-typed
+                # Entity and Relationship objects.
+                entities, relationships = self.entity_extractor.extract_entities(
+                    event.clean_text,
+                    doc_id=event.event_id,
+                )
+                self._add_event_result(event, entities, relationships, all_entities)
+            except Exception as e:
+                logger.error(f"Failed to extract from event {event.event_id}: {e}")
+                self.last_failed_events += 1
+                xray_log("graph", "extract-error",
+                         f"Skipped one — couldn't understand it",
+                         detail=str(e)[:60], level="warn")
+            finally:
+                if progress_callback:
+                    progress_callback(event.event_id)
+
+    def _extract_batched(self, events, all_entities, progress_callback) -> None:
+        """AGY path: CHRONOS_AGY_ENTITY_BATCH_SIZE events per model call (default 25).
+
+        One agy call costs a 250-400 MB process for 12 s-2 min on the Pi, so ~650
+        per-event calls a day were never an option; ~4 batched calls per build are.
+        """
+        from app_v2.services.xray import xray_log
+
+        size = max(1, int(os.getenv("CHRONOS_AGY_ENTITY_BATCH_SIZE", "25")))
+        for start in range(0, len(events), size):
+            chunk = events[start : start + size]
+            results = {}
+            for attempt in (1, 2):
+                try:
+                    results = self.entity_extractor.extract_entities_batch(
+                        [(e.event_id, e.clean_text) for e in chunk]
+                    )
+                    break
+                except Exception as e:
+                    logger.error(
+                        f"AGY entity batch {start // size + 1} attempt {attempt} failed: {e}"
+                    )
+            for event in chunk:
+                if event.event_id in results:
+                    entities, relationships = results[event.event_id]
+                    self._add_event_result(event, entities, relationships, all_entities)
+                else:
+                    self.last_failed_events += 1
+                if progress_callback:
+                    progress_callback(event.event_id)
+            if len(results) < len(chunk):
+                xray_log("graph", "extract-error",
+                         f"Skipped {len(chunk) - len(results)} of {len(chunk)} moments in one batch",
+                         level="warn")
 
     def detect_communities(self, graph: nx.Graph) -> List[Dict[str, Any]]:
         """Detect communities in the graph.
