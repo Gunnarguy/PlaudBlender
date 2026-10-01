@@ -65,6 +65,16 @@ class NotLoggedIn(PlaudV4Error):
     pass
 
 
+class PlaudV4NotFound(PlaudV4Error):
+    """Plaud api status -1800311 "file not found".
+
+    Seen for a recording that is still uploading: it is listed (as an f_s_ id) before
+    files/detail can serve it. Treat as "not ready yet", not as a sync failure.
+    """
+
+    STATUS = -1800311
+
+
 def classic_id(file_id: str) -> str:
     """Map a v4 file id onto the id every other system already uses.
 
@@ -198,7 +208,8 @@ class PlaudV4Client:
             raise PlaudV4Error(f"{resp.request.method} {resp.url} -> non-JSON {resp.status_code}: {resp.text[:200]}")
         # Plaud wraps as {"status": 0, "data": ..., "msg": ...}; status 0 is success.
         if isinstance(body, dict) and "status" in body and body["status"] not in (0, "0", None):
-            raise PlaudV4Error(f"{resp.request.method} {resp.url} -> api status {body['status']}: {body.get('msg')}")
+            cls = PlaudV4NotFound if str(body["status"]) == str(PlaudV4NotFound.STATUS) else PlaudV4Error
+            raise cls(f"{resp.request.method} {resp.url} -> api status {body['status']}: {body.get('msg')}")
         return body
 
     def _request(self, method: str, path: str, *, retry_auth: bool = True, want_text: bool = False, **kw):

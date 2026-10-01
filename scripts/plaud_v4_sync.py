@@ -34,7 +34,7 @@ from src.database.chronos_repository import (  # noqa: E402
     set_chronos_recording_transcript,
     upsert_chronos_recording,
 )
-from src.plaud_v4 import NotLoggedIn, PlaudV4Client, PlaudV4Error, classic_id, device_code  # noqa: E402
+from src.plaud_v4 import NotLoggedIn, PlaudV4Client, PlaudV4Error, PlaudV4NotFound, classic_id, device_code  # noqa: E402
 
 try:
     from src.chronos.qdrant_client import ChronosQdrantClient  # noqa: E402
@@ -144,7 +144,7 @@ def transcript_text(segments) -> str:
 
 
 def sync(client: PlaudV4Client, *, limit: int | None, dry_run: bool, refresh_complete: bool, qdrant=None) -> int:
-    created = updated = skipped = failed = reclocked = 0
+    created = updated = skipped = failed = reclocked = not_ready = 0
     seen = 0
     started = time.monotonic()
 
@@ -239,13 +239,17 @@ def sync(client: PlaudV4Client, *, limit: int | None, dry_run: bool, refresh_com
                 print(f"  {'updated' if existing else 'created'}  {created_at:%Y-%m-%d %H:%M}  {duration_s // 60:4}m  {device or '?':16}  {title[:52]}")
             except NotLoggedIn:
                 raise
+            except PlaudV4NotFound:
+                # Still uploading (listed before files/detail can serve it): next run picks it up.
+                not_ready += 1
+                print(f"  NOT READY  {title[:52]} (still uploading; retried next run)")
             except PlaudV4Error as error:
                 failed += 1
                 print(f"  FAILED  {title[:52]}: {error}", file=sys.stderr)
             time.sleep(PACE_SECONDS)
 
     elapsed = time.monotonic() - started
-    print(f"\n{seen} listed · {created} created · {updated} updated · {reclocked} re-clocked · {skipped} already complete · {failed} failed · {elapsed:.0f}s")
+    print(f"\n{seen} listed · {created} created · {updated} updated · {reclocked} re-clocked · {skipped} already complete · {not_ready} not ready · {failed} failed · {elapsed:.0f}s")
     return 1 if failed and not (created or updated) else 0
 
 
