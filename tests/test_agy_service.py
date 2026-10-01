@@ -149,3 +149,27 @@ def test_agy_failure_falls_back_to_openai_when_allowed(tmp_path):
     processor._process_transcript_text_openai.assert_not_called()
     assert processor._last_processing_error == "bridge busy"
 
+
+
+def test_bridges_are_tried_in_order_until_one_answers(tmp_path, monkeypatch):
+    svc = AgyBridgeService(_settings(tmp_path, chronos_agy_bridge_url="http://127.0.0.1:8798, http://127.0.0.1:8799"))
+    assert svc.urls == ["http://127.0.0.1:8798", "http://127.0.0.1:8799"]
+    calls = []
+
+    def fake(url, token, system, user, schema):
+        calls.append(url)
+        if url.endswith("8798"):
+            return {"ok": False, "error": "authentication failed or timed out"}
+        return {"ok": True, "text": "{}"}
+
+    monkeypatch.setattr(svc, "_complete_at", fake)
+    result = svc.complete("s", "u")
+    assert result["ok"] and result["bridge"] == "http://127.0.0.1:8799" and calls == ["http://127.0.0.1:8798", "http://127.0.0.1:8799"]
+
+    calls.clear()
+    monkeypatch.setattr(svc, "_complete_at", lambda url, *a: calls.append(url) or {"ok": True, "text": "{}"})
+    assert svc.complete("s", "u")["bridge"] == "http://127.0.0.1:8798" and calls == ["http://127.0.0.1:8798"]
+
+    monkeypatch.setattr(svc, "_complete_at", lambda url, *a: {"ok": False, "error": f"down {url[-4:]}"})
+    failed = svc.complete("s", "u")
+    assert not failed["ok"] and "down 8798" in failed["error"] and "down 8799" in failed["error"]

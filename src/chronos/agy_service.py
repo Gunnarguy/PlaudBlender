@@ -90,7 +90,11 @@ class AgyBridgeService:
 
     def __init__(self, settings=None):
         self.settings = settings or get_settings()
-        self.url = getattr(self.settings, "chronos_agy_bridge_url", "http://127.0.0.1:8799")
+        # Comma-separated, tried in order: e.g. the GPD's bridge through the Pi's SSH tunnel
+        # first (its RAM, not the Pi's), then the Pi's own bridge when the GPD is away.
+        raw = getattr(self.settings, "chronos_agy_bridge_url", "http://127.0.0.1:8799") or ""
+        self.urls = [u.strip().rstrip("/") for u in raw.split(",") if u.strip()] or ["http://127.0.0.1:8799"]
+        self.url = self.urls[0]
         self.model = getattr(self.settings, "chronos_agy_model", "gemini-3.8-flash-high")
         self.timeout_s = int(getattr(self.settings, "chronos_agy_timeout_seconds", 900))
         self.token_file = getattr(self.settings, "chronos_agy_token_file", "")
@@ -107,10 +111,24 @@ class AgyBridgeService:
         return bool(self._token())
 
     def complete(self, system: str, user: str, schema: Optional[dict] = None) -> dict:
-        """POST /complete. Always returns a dict with ``ok``; never raises."""
+        """POST /complete to each configured bridge in turn until one answers ok.
+
+        Always returns a dict with ``ok``; never raises. ``bridge`` names the one that answered.
+        """
         token = self._token()
         if not token:
             return {"ok": False, "error": f"AGY bridge token not readable at {self.token_file}"}
+        errors = []
+        for url in self.urls:
+            result = self._complete_at(url, token, system, user, schema)
+            if result.get("ok"):
+                result["bridge"] = url
+                return result
+            errors.append(f"{url}: {result.get('error')}")
+            logger.warning("AGY bridge %s failed: %s", url, str(result.get("error"))[:200])
+        return {"ok": False, "error": " | ".join(errors)}
+
+    def _complete_at(self, url: str, token: str, system: str, user: str, schema: Optional[dict]) -> dict:
         body = {
             "system": system,
             "user": user,
@@ -119,7 +137,7 @@ class AgyBridgeService:
             "timeout_s": self.timeout_s,
         }
         request = urllib.request.Request(
-            self.url + "/complete",
+            url + "/complete",
             data=json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json", "X-Bridge-Token": token},
         )
@@ -130,7 +148,7 @@ class AgyBridgeService:
         except urllib.error.HTTPError as exc:
             return {"ok": False, "error": f"AGY bridge HTTP {exc.code}: {exc.read()[:200]!r}"}
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-            return {"ok": False, "error": f"AGY bridge unreachable at {self.url}: {exc}"}
+            return {"ok": False, "error": f"AGY bridge unreachable at {url}: {exc}"}
 
     def extract_events(self, instructions: str, *, recording_id: str) -> dict:
         """Same contract as ``OpenAIResponseService.extract_events``:
