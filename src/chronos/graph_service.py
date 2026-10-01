@@ -73,6 +73,9 @@ class ChronosGraphExtractor:
         all_entities: List[Dict[str, Any]] = []
         self.last_failed_events = 0
 
+        # Saved after every batch below, so a run killed by the unit's TimeoutStartSec
+        # (900 s) keeps its progress; the first 500-event build takes ~35 min.
+        self._all_events = events
         todo = self._apply_cache(events, all_entities, progress_callback)
         if todo:
             if getattr(self.entity_extractor, "supports_batch", False) is True:
@@ -221,7 +224,7 @@ class ChronosGraphExtractor:
     def _extract_one_by_one(self, events, all_entities, progress_callback) -> None:
         from app_v2.services.xray import xray_log
 
-        for event in events:
+        for done, event in enumerate(events, 1):
             try:
                 # graph_rag.EntityExtractor expects a doc_id and returns strongly-typed
                 # Entity and Relationship objects.
@@ -239,6 +242,8 @@ class ChronosGraphExtractor:
             finally:
                 if progress_callback:
                     progress_callback(event.event_id)
+            if done % 25 == 0:
+                self._save_cache(getattr(self, "_all_events", events))
 
     def _extract_batched(self, events, all_entities, progress_callback) -> None:
         """AGY path: CHRONOS_AGY_ENTITY_BATCH_SIZE events per model call (default 25).
@@ -270,6 +275,7 @@ class ChronosGraphExtractor:
                     self.last_failed_events += 1
                 if progress_callback:
                     progress_callback(event.event_id)
+            self._save_cache(getattr(self, "_all_events", events))
             if len(results) < len(chunk):
                 xray_log("graph", "extract-error",
                          f"Skipped {len(chunk) - len(results)} of {len(chunk)} moments in one batch",

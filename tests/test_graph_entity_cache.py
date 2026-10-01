@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from src.chronos.graph_rag import Entity, EntityType
@@ -9,7 +9,7 @@ from src.chronos.graph_service import ChronosGraphExtractor
 def _events(texts):
     return [
         SimpleNamespace(event_id=f"e{i}", recording_id="r1", clean_text=t,
-                        start_ts=datetime(2026, 9, 30, 9, i), category=SimpleNamespace(value="work"))
+                        start_ts=datetime(2026, 9, 30, 9, 0) + timedelta(minutes=i), category=SimpleNamespace(value="work"))
         for i, t in enumerate(texts)
     ]
 
@@ -76,3 +76,29 @@ def test_no_cache_path_keeps_old_behaviour(tmp_path):
     _gx(ex, None).extract_from_events(_events(["x", "y"]))
     assert ex.seen == ["e0", "e1", "e0", "e1"]
     assert list(tmp_path.iterdir()) == []
+
+
+class _Killed(BaseException):
+    """Like the SIGTERM a unit timeout delivers: not an Exception, so nothing catches it."""
+
+
+class _DiesOnThirdBatch(_CountingBatch):
+    def extract_entities_batch(self, items):
+        if len(self.seen) >= 2 * 25:
+            raise _Killed()
+        return super().extract_entities_batch(items)
+
+
+def test_progress_survives_a_killed_build(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHRONOS_AGY_ENTITY_BATCH_SIZE", "25")
+    cache = tmp_path / "entity_cache.json"
+    texts = [f"topic {i}" for i in range(80)]
+    import pytest
+    with pytest.raises(_Killed):
+        _gx(_DiesOnThirdBatch(), cache).extract_from_events(_events(texts))
+    saved = json.loads(cache.read_text())["events"]
+    assert len(saved) == 50  # the two finished batches were kept
+
+    resume = _CountingBatch()
+    entities, _ = _gx(resume, cache).extract_from_events(_events(texts))
+    assert len(resume.seen) == 30 and len(entities) == 80  # only the unfinished events go to the model
