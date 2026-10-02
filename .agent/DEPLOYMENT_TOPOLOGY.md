@@ -11,4 +11,4 @@
 
 ## Tunnels & Proxies
 * **ngrok Tunnels**: Public URLs are mapped to ports 8000, 8050, and 8090.
-* **Tailscale**: Node `gunzino` provides private authenticated network access via Tailscale IP `100.76.130.109`.
+* **Tailscale**: Node `gunzino` provides private authenticated network access via its Tailscale address (MagicDNS name `gunzino`).
