@@ -34,8 +34,9 @@ class ChronosGraphExtractor:
     CO_MENTION_TYPES = ("person", "project", "organization", "location", "topic")
     CO_MENTION_CAP = 10  # entities per moment considered for co-mention links (<= 45 pairs)
     # Bump when graph assembly changes (fed into the pipeline fingerprint): 2 = drop
-    # transcript speaker labels ("Speaker 10") that the model reported as people.
-    ASSEMBLY_VERSION = 2
+    # transcript speaker labels ("Speaker 10") that the model reported as people;
+    # 3 = the export carries the constellation (communities, x/y, weeks) and entity_index.json.
+    ASSEMBLY_VERSION = 3
 
     def __init__(self, cache_path=None):
         """Initialize graph extraction components.
@@ -49,6 +50,7 @@ class ChronosGraphExtractor:
         self._cache: Optional[Dict[str, Any]] = None
         self.pending_events = 0
         self._entity_stats: Dict[str, Dict[str, Any]] = {}
+        self._moments: Dict[str, Tuple[str, str]] = {}  # event_id -> (recording_id, start ISO)
         self.entity_extractor = EntityExtractor()
         self.community_detector = CommunityDetector()
 
@@ -85,6 +87,7 @@ class ChronosGraphExtractor:
         # Reset for each extraction run.
         self._knowledge_graph = KnowledgeGraph()
         self._entity_stats = {}
+        self._moments = {}
         all_entities: List[Dict[str, Any]] = []
         self.last_failed_events = 0
         self.pending_events = 0
@@ -273,6 +276,7 @@ class ChronosGraphExtractor:
 
         # When each entity was seen (first/last, which moments) -- for the export and Ask.
         when = event.start_ts.isoformat() if getattr(event, "start_ts", None) else ""
+        self._moments[event.event_id] = (str(getattr(event, "recording_id", "") or ""), when)
         for ent in entities:
             stat = self._entity_stats.setdefault(
                 ent.id, {"first": when, "last": when, "events": [], "seen": set()}
@@ -360,26 +364,42 @@ class ChronosGraphExtractor:
                          level="warn")
 
     def export_json(
-        self, path, max_events_per_entity: int = 20, min_topic_moments: int = 2
+        self,
+        path,
+        max_events_per_entity: int = 20,
+        min_topic_moments: int = 2,
+        recording_days: Optional[Dict[str, str]] = None,
     ) -> Dict[str, int]:
         """Write the entity graph as plain JSON for the API, the app and Ask.
 
-        nodes: id, name, type, mentions, aliases, first_seen, last_seen, events (latest first)
+        nodes: id, name, type, mentions, aliases, first_seen, last_seen, events (latest first),
+               and for the constellation x, y (in [-1, 1]), community and weeks
+               ({"YYYY-Www": moments})
         edges: source, target, type, weight, evidence (up to 3 quotes)
+        communities: id, label, size, x, y, radius, top; layout: how the map was made
+
+        Also writes entity_index.json next to it: entity counts per recording and per day.
+        ``recording_days`` maps recording ids to the day the timeline lists them under
+        (constellation.recording_days_from_db); without it a recording's earliest moment
+        decides. The previous file seeds the layout, so the map stays put between builds.
 
         Topics named in fewer than ``min_topic_moments`` moments are left out (they stay in
         the pickle): on 2026-10-01 they were 932 of 1,115 topics and 2,648 of 3,749 edges,
         and at full history they would fill the API's memory with one-off phrases.
         """
-        import json
+        from datetime import datetime, timezone
         from pathlib import Path
+
+        from src.chronos import constellation
 
         kg = self._knowledge_graph
         nodes = []
+        dropped_topics = 0
         for entity_id, entity in kg.entities.items():
             stat = self._entity_stats.get(entity_id, {})
             entity_type = getattr(entity.entity_type, "value", str(entity.entity_type))
             if entity_type == "topic" and len(stat.get("events", [])) < min_topic_moments:
+                dropped_topics += 1
                 continue
             events = sorted(stat.get("events", []), key=lambda pair: pair[1], reverse=True)
             nodes.append({
@@ -404,18 +424,56 @@ class ChronosGraphExtractor:
             for rel in kg.relationships
             if rel.source_id in kept and rel.target_id in kept
         ]
-        payload = {
-            "version": 1,
-            "events": len(kg.document_entities),
-            "nodes": nodes,
-            "edges": edges,
-        }
         target = Path(path)
+        payload: Dict[str, Any] = {
+            "version": 2,
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "events": len(kg.document_entities),
+            "dropped_topics": dropped_topics,
+        }
+
+        # The constellation never costs the plain export: on any error the file is written
+        # without it and Ask and the entity endpoints keep working.
+        try:
+            built = constellation.build(nodes, edges, constellation.read_previous_layout(target))
+            weeks, index = constellation.build_activity(
+                kept,
+                {node_id: self._entity_stats.get(node_id, {}).get("events", []) for node_id in kept},
+                getattr(self, "_moments", {}) or {},
+                recording_days,
+            )
+            for node in nodes:
+                x, y = built["positions"][node["id"]]
+                node.update(x=round(x, 4), y=round(y, 4), community=built["community"][node["id"]],
+                            weeks=weeks.get(node["id"], {}))
+            payload["layout"] = built["layout"]
+            payload["communities"] = built["communities"]
+            index_payload = {"version": 1, "generated_at": payload["generated_at"], **index}
+            self._write_json(target.with_name("entity_index.json"), index_payload)
+            logger.info(
+                f"Constellation: {len(built['communities'])} communities, layout "
+                f"{built['layout'].get('mode')} in {built['layout'].get('seconds')} s; index of "
+                f"{len(index['recordings'])} recordings, {len(index['days'])} days"
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Constellation skipped: {exc}", exc_info=True)
+
+        payload["nodes"] = nodes
+        payload["edges"] = edges
+        self._write_json(target, payload)
+        return {"nodes": len(nodes), "edges": len(edges)}
+
+    @staticmethod
+    def _write_json(target, payload) -> None:
+        """Write atomically: readers see the old file or the new one, never half of it."""
+        import json
+        from pathlib import Path
+
+        target = Path(target)
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_suffix(target.suffix + ".tmp")
         tmp.write_text(json.dumps(payload))
         os.replace(tmp, target)
-        return {"nodes": len(nodes), "edges": len(edges)}
 
     def detect_communities(self, graph: nx.Graph) -> List[Dict[str, Any]]:
         """Detect communities in the graph.

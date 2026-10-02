@@ -102,3 +102,28 @@ def test_partial_backfill_build_is_not_reused(harness):
     pipeline.run_graph(harness.session)
     assert harness.extractor.extract_from_events.call_count == 2
     assert (harness.dir / "knowledge_graph.fingerprint").exists()
+
+
+def test_export_gets_the_timeline_day_of_each_recording(harness, monkeypatch):
+    """entity_index.json files moments under the day /api/v1/timeline/days lists them."""
+    asked = {}
+
+    def fake_days(session, recording_ids):
+        asked["ids"] = set(recording_ids)
+        return {"r1": "2026-10-01"}
+
+    monkeypatch.setattr("src.chronos.constellation.recording_days_from_db", fake_days)
+    for event in harness.events:
+        event.recording_id = "r1"
+    pipeline.run_graph(harness.session)
+    assert asked["ids"] == {"r1"}
+    assert harness.extractor.export_json.call_args.kwargs["recording_days"] == {"r1": "2026-10-01"}
+
+
+def test_export_runs_without_recording_days_when_the_lookup_fails(harness, monkeypatch):
+    def broken(session, recording_ids):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr("src.chronos.constellation.recording_days_from_db", broken)
+    pipeline.run_graph(harness.session)
+    assert harness.extractor.export_json.call_args.kwargs["recording_days"] == {}
