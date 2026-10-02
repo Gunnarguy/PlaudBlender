@@ -26,6 +26,8 @@ router = APIRouter(
 
 _ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 
+_PROCESSING_PROVIDERS = {"agy", "openai", "gemini", "local", "auto"}
+
 _FIELD_TO_ENV = {
     "processing_provider": "CHRONOS_PROCESSING_PROVIDER",
     "cleaning_model": "CHRONOS_CLEANING_MODEL",
@@ -179,6 +181,39 @@ async def update_server_settings(body: ServerSettingsUpdateRequest):
     payload = body.model_dump(exclude_none=True)
     if not payload:
         return SuccessResponse(message="No changes supplied")
+
+    # Fields a remote client may not change (2026-10-02, when the phone got Save): a new
+    # embedding model or dimension needs a full re-index, and another Qdrant URL or
+    # collection points search at a different store. Sending the current value is fine.
+    current = get_settings()
+    locked = {
+        "embedding_model": current.chronos_embedding_model,
+        "embedding_dim": current.chronos_embedding_dim,
+        "qdrant_url": current.qdrant_url,
+        "qdrant_collection_name": current.qdrant_collection_name,
+    }
+    refused = sorted(
+        field for field, value in locked.items()
+        if field in payload and str(payload[field]).strip() != str(value).strip()
+    )
+    if refused:
+        raise HTTPException(
+            status_code=409,
+            detail="These settings can only be changed on the server (re-index or a "
+            "different vector store): " + ", ".join(refused),
+        )
+    for field in locked:
+        payload.pop(field, None)
+
+    provider = payload.get("processing_provider")
+    if provider is not None:
+        provider = str(provider).strip().lower()
+        if provider not in _PROCESSING_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail="processing_provider must be one of: " + ", ".join(sorted(_PROCESSING_PROVIDERS)),
+            )
+        payload["processing_provider"] = provider
 
     weekday = payload.get("notion_weekday_start")
     weekend = payload.get("notion_weekend_start")

@@ -978,6 +978,50 @@ class TestSettings:
         assert updates["CHRONOS_AUTOSYNC_MAX_SWAP_USED_MB"] == "256"
         assert updates["CHRONOS_AUTOSYNC_DEFER_SECONDS"] == "60"
 
+    def _locked_settings(self, test_settings_factory):
+        return test_settings_factory(
+            chronos_embedding_model="text-embedding-3-large",
+            chronos_embedding_dim=3072,
+            qdrant_url="http://localhost:6333",
+            qdrant_collection_name="chronos_events_openai_v2",
+        )
+
+    def test_update_settings_refuses_reindex_and_vector_store_changes(
+        self, authed_client, test_settings_factory
+    ):
+        """A phone tap must not switch the embedding model or the Qdrant store (2026-10-02)."""
+        with patch("api.routes.settings.get_settings", return_value=self._locked_settings(test_settings_factory)), \
+             patch("api.routes.settings._write_env_updates") as mock_write:
+            response = authed_client.put(
+                "/api/v1/settings", headers=AUTH_HEADER,
+                json={"embedding_model": "gemini-embedding-2", "qdrant_collection_name": "other", "log_level": "INFO"},
+            )
+        assert response.status_code == 409
+        assert "embedding_model" in response.json()["detail"] and "qdrant_collection_name" in response.json()["detail"]
+        mock_write.assert_not_called()
+
+    def test_update_settings_accepts_unchanged_locked_values_and_normalizes_provider(
+        self, authed_client, test_settings_factory
+    ):
+        with patch("api.routes.settings.get_settings", return_value=self._locked_settings(test_settings_factory)), \
+             patch("api.routes.settings._write_env_updates", return_value=1) as mock_write:
+            response = authed_client.put(
+                "/api/v1/settings", headers=AUTH_HEADER,
+                json={"embedding_model": "text-embedding-3-large", "embedding_dim": 3072,
+                      "qdrant_url": "http://localhost:6333", "processing_provider": " AGY "},
+            )
+        assert response.status_code == 200
+        updates = mock_write.call_args.args[0]
+        assert updates == {"CHRONOS_PROCESSING_PROVIDER": "agy"}  # locked fields dropped, not rewritten
+
+    def test_update_settings_rejects_unknown_provider(self, authed_client):
+        with patch("api.routes.settings._write_env_updates") as mock_write:
+            response = authed_client.put(
+                "/api/v1/settings", headers=AUTH_HEADER, json={"processing_provider": "claude"}
+            )
+        assert response.status_code == 400
+        mock_write.assert_not_called()
+
     def test_refresh_workflows(self, client, mock_svc):
         r = client.post(
             "/api/v1/sync/workflows/refresh",
@@ -1099,6 +1143,49 @@ class TestXRay:
 # ═══════════════════════════════════════════════════════════
 # COSTS
 # ═══════════════════════════════════════════════════════════
+
+
+class TestAdminStackOnSystemd:
+    """On the Pi the stack runs under systemd: the phone's admin buttons must use systemctl,
+    restart the API last and never touch Qdrant -- `./chronos stop` kills by port (2026-10-02)."""
+
+    UNITS = ["chronos-ngrok", "chronos-ui", "chronos-auto-sync", "chronos-api"]
+
+    def _run(self, client, path):
+        import subprocess
+        from unittest.mock import AsyncMock
+
+        calls = []
+
+        def fake_run(args, timeout=3):
+            calls.append(list(args))
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+        with patch("api.routes.admin._systemd_managed", return_value=True), \
+             patch("api.routes.admin._installed_units", return_value=list(self.UNITS)), \
+             patch("api.routes.admin._run_status_command", side_effect=fake_run), \
+             patch("api.routes.admin._get_public_url_async", new=AsyncMock(return_value=None)), \
+             patch("api.routes.admin._run_chronos_async") as chronos_script, \
+             patch("api.routes.admin.subprocess.Popen") as popen:
+            response = client.post(path)
+        chronos_script.assert_not_called()
+        popen.assert_not_called()
+        return response, calls
+
+    def test_restart_public_uses_systemd_with_api_last_and_no_qdrant(self, client):
+        response, calls = self._run(client, "/api/v1/admin/stack/restart-public")
+        assert response.status_code == 200 and response.json()["status"] == "scheduled"
+        (cmd,) = calls
+        assert cmd[:3] == ["sudo", "-n", "systemd-run"]
+        script = cmd[-1]
+        assert script == ("systemctl restart chronos-ngrok chronos-ui chronos-auto-sync"
+                          " && systemctl restart chronos-api")
+        assert "qdrant" not in " ".join(cmd) and "chronos stop" not in " ".join(cmd)
+
+    def test_ensure_public_only_starts_units(self, client):
+        response, calls = self._run(client, "/api/v1/admin/stack/ensure-public")
+        assert response.status_code == 200 and response.json()["status"] == "ok"
+        assert calls == [["sudo", "-n", "systemctl", "start", *self.UNITS]]
 
 
 class TestCosts:
