@@ -425,6 +425,8 @@ class OpenAIResponseService:
 
             if kind == "expanded_day":
                 header = f"[Expanded day {date}] ({category})"
+            elif kind == "graph_entity":
+                header = f"[Knowledge graph: {evt.get('name', '?')} ({category}), last seen {date}]"
             else:
                 rank = evt.get("rank")
                 score = evt.get("score")
