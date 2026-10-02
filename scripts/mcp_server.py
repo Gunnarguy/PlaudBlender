@@ -626,7 +626,7 @@ async def ask_chronos(question: str, reasoning: str = "none") -> str:
         ds = _get_data_service()
         results, context_events = build_ask_context(ds, question, limit=15)
 
-        if not results:
+        if not results and not context_events:  # graph evidence alone is enough to answer
             return json.dumps(
                 {
                     "answer": "I couldn't find any relevant events for your question.",
