@@ -69,6 +69,22 @@ class RelationType(str, Enum):
     WORKS_ON = "works_on"  # Person works on project
     REPORTS_TO = "reports_to"  # Person reports to another
     DEADLINE = "deadline"  # Action has deadline
+    WORKS_WITH = "works_with"  # Person works alongside another person
+    MEMBER_OF = "member_of"  # Person belongs to an organization or team
+    PART_OF = "part_of"  # Project/topic is part of a larger one
+    USES = "uses"  # Person/project uses a tool or technology
+    LOCATED_IN = "located_in"  # Something happens at / belongs to a place
+    KNOWS = "knows"  # Personal tie (friend, family, acquaintance)
+    CO_MENTIONED = "co_mentioned"  # Mentioned in the same moment (derived, no model call)
+
+
+# Relations the model may state; CO_MENTIONED and MENTIONS are derived, never asked for.
+STATED_RELATIONS = {
+    "works_with", "works_on", "member_of", "reports_to", "assigned_to",
+    "part_of", "uses", "located_in", "knows", "related_to",
+}
+LINKABLE_TYPES = {"person", "project", "topic", "organization", "location"}
+_HONORIFIC = re.compile(r"^(dr|mr|mrs|ms|mx|miss|prof|professor|sir)\.?\s+", re.IGNORECASE)
 
 
 @dataclass
@@ -93,9 +109,17 @@ class Entity:
         }
 
     @staticmethod
+    def canonical_name(name: str, entity_type: EntityType) -> str:
+        """Lower-cased, trimmed name; people also lose an honorific ("Dr. Patel" == "Patel")."""
+        text = re.sub(r"\s+", " ", str(name or "")).strip().strip(" .,;:!?\"'()[]")
+        if entity_type == EntityType.PERSON:
+            text = _HONORIFIC.sub("", text)
+        return text.casefold()
+
+    @staticmethod
     def generate_id(name: str, entity_type: EntityType) -> str:
-        """Generate deterministic entity ID."""
-        content = f"{entity_type.value}:{name.lower().strip()}"
+        """Generate deterministic entity ID (from the canonical name)."""
+        content = f"{entity_type.value}:{Entity.canonical_name(name, entity_type)}"
         return hashlib.md5(content.encode()).hexdigest()[:12]
 
 
@@ -153,6 +177,10 @@ class KnowledgeGraph:
                 and existing.relation_type == rel.relation_type
             ):
                 existing.weight += rel.weight
+                for quote in (rel.metadata or {}).get("evidence", []):
+                    bucket = existing.metadata.setdefault("evidence", [])
+                    if quote not in bucket and len(bucket) < 3:
+                        bucket.append(quote)
                 return
         self.relationships.append(rel)
 
@@ -273,8 +301,13 @@ class EntityExtractor:
   "actions": [{"task": "Task description", "assignee": "Person (if mentioned)", "deadline": "Date (if mentioned)"}],
   "dates": ["2024-10-15", "Q3 2024"],
   "metrics": [{"value": "15%", "context": "revenue growth"}],
-  "organizations": ["Company/Org Name"]
+  "organizations": ["Company/Org Name"],
+  "locations": ["Place Name"],
+  "relationships": [{"source": "Name", "source_type": "person", "relation": "works_with", "target": "Name", "target_type": "person", "evidence": "<=15 words from the text"}]
 }
+
+Relationship relation values: works_with, works_on, member_of, reports_to, assigned_to, part_of, uses, located_in, knows, related_to.
+Types: person, project, topic, organization, location. Only relationships the text states or clearly implies.
 
 CRITICAL TOPIC RULES:
 - Topics MUST be concrete subject nouns, proper nouns, technologies, projects, or multi-word concept phrases (e.g., "Raspberry Pi", "Notion Sync", "API Billing", "iOS App", "Tailscale").
@@ -736,7 +769,15 @@ owner's voice recordings, introduced by a line "=== EVENT <event_id> ===".
 
 For every event return one object with its exact event_id and these lists:
 people [{name, role}], projects [{name, status}], topics [strings], actions [{task, assignee, deadline}],
-dates [strings], metrics [{value, context}], organizations [strings].
+dates [strings], metrics [{value, context}], organizations [strings], locations [strings],
+relationships [{source, source_type, relation, target, target_type, evidence}].
+
+RELATIONSHIP RULES:
+- Only relationships stated or clearly implied in THAT event, between named entities you listed above.
+- source_type/target_type: person, project, topic, organization, location.
+- relation: works_with, works_on, member_of, reports_to, assigned_to, part_of, uses, located_in, knows, related_to.
+  (knows = personal tie such as friend or family; related_to only when nothing more specific fits.)
+- evidence: at most 15 words copied from the event that show the relationship.
 
 CRITICAL TOPIC RULES:
 - Topics MUST be concrete subject nouns, proper nouns, technologies, projects, or multi-word concept phrases (e.g., "Raspberry Pi", "Notion Sync", "API Billing", "iOS App", "Tailscale").
@@ -764,6 +805,22 @@ nothing is found. Include every event_id exactly once, even when all its lists a
                 "dates": strings,
                 "metrics": {"type": "array", "items": obj("value", "context")},
                 "organizations": strings,
+                "locations": strings,
+                "relationships": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "source": {"type": "string"},
+                            "source_type": {"type": "string", "enum": sorted(LINKABLE_TYPES)},
+                            "relation": {"type": "string", "enum": sorted(STATED_RELATIONS)},
+                            "target": {"type": "string"},
+                            "target_type": {"type": "string", "enum": sorted(LINKABLE_TYPES)},
+                            "evidence": {"type": "string"},
+                        },
+                        "required": ["source", "source_type", "relation", "target", "target_type"],
+                    },
+                },
             },
             "required": ["event_id"],
         }
@@ -965,6 +1022,60 @@ nothing is found. Include every event_id exactly once, even when all its lists a
                         relation_type=RelationType.MENTIONS,
                     )
                 )
+
+        # Process locations
+        for place in data.get("locations", []) or []:
+            if place and isinstance(place, str):
+                entity = Entity(
+                    id=Entity.generate_id(place, EntityType.LOCATION),
+                    name=place,
+                    entity_type=EntityType.LOCATION,
+                )
+                entities.append(entity)
+                relationships.append(
+                    Relationship(
+                        source_id=doc_id,
+                        target_id=entity.id,
+                        relation_type=RelationType.MENTIONS,
+                    )
+                )
+
+        # Typed entity-to-entity relationships the model stated (with evidence)
+        known = {e.id for e in entities}
+        for rel in data.get("relationships", []) or []:
+            if not isinstance(rel, dict):
+                continue
+            relation = str(rel.get("relation") or "").strip().lower()
+            source_type = str(rel.get("source_type") or "").strip().lower()
+            target_type = str(rel.get("target_type") or "").strip().lower()
+            source = str(rel.get("source") or "").strip()
+            target = str(rel.get("target") or "").strip()
+            if (
+                relation not in STATED_RELATIONS
+                or source_type not in LINKABLE_TYPES
+                or target_type not in LINKABLE_TYPES
+                or not source
+                or not target
+            ):
+                continue
+            ends = []
+            for name, kind in ((source, EntityType(source_type)), (target, EntityType(target_type))):
+                entity_id = Entity.generate_id(name, kind)
+                if entity_id not in known:  # the model named it only inside the relationship
+                    entities.append(Entity(id=entity_id, name=name, entity_type=kind))
+                    known.add(entity_id)
+                ends.append(entity_id)
+            if ends[0] == ends[1]:
+                continue
+            evidence = str(rel.get("evidence") or "").strip()
+            relationships.append(
+                Relationship(
+                    source_id=ends[0],
+                    target_id=ends[1],
+                    relation_type=RelationType(relation),
+                    metadata={"evidence": [evidence[:200]]} if evidence else {},
+                )
+            )
 
         logger.info(
             f"   📊 Extracted {len(entities)} entities, {len(relationships)} relationships"

@@ -28,7 +28,11 @@ logger = logging.getLogger(__name__)
 class ChronosGraphExtractor:
     """Extract entities and build knowledge graph from Chronos events."""
 
-    CACHE_VERSION = 1
+    # 2: extraction adds locations + typed relationships with evidence (2026-10-01).
+    CACHE_VERSION = 2
+    # Entity types that get co-mention links; actions/dates/metrics would only add noise.
+    CO_MENTION_TYPES = ("person", "project", "organization", "location", "topic")
+    CO_MENTION_CAP = 10  # entities per moment considered for co-mention links (<= 45 pairs)
 
     def __init__(self, cache_path=None):
         """Initialize graph extraction components.
@@ -39,6 +43,7 @@ class ChronosGraphExtractor:
         """
         self.cache_path = cache_path
         self._fresh: Dict[str, Dict[str, Any]] = {}
+        self._entity_stats: Dict[str, Dict[str, Any]] = {}
         self.entity_extractor = EntityExtractor()
         self.community_detector = CommunityDetector()
 
@@ -70,6 +75,7 @@ class ChronosGraphExtractor:
 
         # Reset for each extraction run.
         self._knowledge_graph = KnowledgeGraph()
+        self._entity_stats = {}
         all_entities: List[Dict[str, Any]] = []
         self.last_failed_events = 0
 
@@ -221,6 +227,34 @@ class ChronosGraphExtractor:
             [e.id for e in entities],
         )
 
+        # When each entity was seen (first/last, which moments) -- for the export and Ask.
+        when = event.start_ts.isoformat() if getattr(event, "start_ts", None) else ""
+        for ent in entities:
+            stat = self._entity_stats.setdefault(
+                ent.id, {"first": when, "last": when, "events": [], "seen": set()}
+            )
+            if when and (not stat["first"] or when < stat["first"]):
+                stat["first"] = when
+            if when and when > stat["last"]:
+                stat["last"] = when
+            if event.event_id not in stat["seen"]:  # a set: people appear in thousands of moments
+                stat["seen"].add(event.event_id)
+                stat["events"].append((event.event_id, when))
+
+        # Co-mention links: entities named in the same moment are related (no model call).
+        linked: List[str] = []
+        for ent in entities:
+            kind = getattr(ent.entity_type, "value", str(ent.entity_type))
+            if kind in self.CO_MENTION_TYPES and ent.id not in linked:
+                linked.append(ent.id)
+        linked = linked[: self.CO_MENTION_CAP]
+        for i, first in enumerate(linked):
+            for second in linked[i + 1 :]:
+                a, b = sorted((first, second))
+                self._knowledge_graph.add_relationship(
+                    Relationship(source_id=a, target_id=b, relation_type=RelationType.CO_MENTIONED)
+                )
+
     def _extract_one_by_one(self, events, all_entities, progress_callback) -> None:
         from app_v2.services.xray import xray_log
 
@@ -280,6 +314,54 @@ class ChronosGraphExtractor:
                 xray_log("graph", "extract-error",
                          f"Skipped {len(chunk) - len(results)} of {len(chunk)} moments in one batch",
                          level="warn")
+
+    def export_json(self, path, max_events_per_entity: int = 20) -> Dict[str, int]:
+        """Write the entity graph as plain JSON for the API, the app and Ask.
+
+        nodes: id, name, type, mentions, aliases, first_seen, last_seen, events (latest first)
+        edges: source, target, type, weight, evidence (up to 3 quotes)
+        """
+        import json
+        from pathlib import Path
+
+        kg = self._knowledge_graph
+        nodes = []
+        for entity_id, entity in kg.entities.items():
+            stat = self._entity_stats.get(entity_id, {})
+            events = sorted(stat.get("events", []), key=lambda pair: pair[1], reverse=True)
+            nodes.append({
+                "id": entity_id,
+                "name": entity.name,
+                "type": getattr(entity.entity_type, "value", str(entity.entity_type)),
+                "mentions": entity.mention_count,
+                "aliases": list(entity.aliases),
+                "first_seen": stat.get("first", ""),
+                "last_seen": stat.get("last", ""),
+                "events": [event_id for event_id, _ in events[:max_events_per_entity]],
+            })
+        edges = [
+            {
+                "source": rel.source_id,
+                "target": rel.target_id,
+                "type": getattr(rel.relation_type, "value", str(rel.relation_type)),
+                "weight": rel.weight,
+                "evidence": list((rel.metadata or {}).get("evidence", []))[:3],
+            }
+            for rel in kg.relationships
+            if rel.source_id in kg.entities and rel.target_id in kg.entities
+        ]
+        payload = {
+            "version": 1,
+            "events": len(kg.document_entities),
+            "nodes": nodes,
+            "edges": edges,
+        }
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload))
+        os.replace(tmp, target)
+        return {"nodes": len(nodes), "edges": len(edges)}
 
     def detect_communities(self, graph: nx.Graph) -> List[Dict[str, Any]]:
         """Detect communities in the graph.
