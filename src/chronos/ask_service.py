@@ -48,7 +48,9 @@ class ChronosAskService:
         return (
             "You are Chronos, an AI assistant answering questions about the user's "
             "voice recordings and daily events. Use only the retrieved evidence blocks, "
-            "which may include exact search hits and expanded day summaries for relevant dates. "
+            "which may include exact search hits, expanded day summaries for relevant dates, "
+            "and knowledge-graph profiles of the people, places and projects the question names "
+            "(their links, with quoted evidence, and latest moments). "
             "Honor the time window implied by the question. If the question asks about lately, recently, "
             "this week, or the last few weeks, stay anchored to those dates instead of drifting to older evidence. "
             "Start with a direct answer, then support it with the strongest concrete evidence. "
@@ -66,6 +68,8 @@ class ChronosAskService:
 
         if kind == "expanded_day":
             header = f"[Expanded day {date}] ({category})"
+        elif kind == "graph_entity":
+            header = f"[Knowledge graph: {event.get('name', '?')} ({category}), last seen {date}]"
         else:
             rank = event.get("rank")
             score = event.get("score")

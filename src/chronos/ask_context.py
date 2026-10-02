@@ -482,4 +482,13 @@ def build_ask_context(
         raw_results = svc.search(query=question, limit=profile.raw_search_limit, task_type=task_type)
 
     results = _select_results_for_context(list(raw_results or []), profile)
-    return results, build_context_from_results(svc, results, question_profile=profile)
+    context = build_context_from_results(svc, results, question_profile=profile)
+    # People/places/orgs/projects the question names: their links and latest moments from
+    # the entity graph (never fatal -- Ask works without it).
+    try:
+        from src.chronos.entity_graph import ask_graph_context
+
+        context.extend(ask_graph_context(svc, question))
+    except Exception:  # noqa: BLE001
+        pass
+    return results, context

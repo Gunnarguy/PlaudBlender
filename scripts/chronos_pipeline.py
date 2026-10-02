@@ -879,6 +879,9 @@ def run_graph(
     graph_path = graph_cache_dir / "knowledge_graph.pkl"
     fingerprint_path = graph_cache_dir / "knowledge_graph.fingerprint"
     fingerprint = hashlib.sha256()
+    # A new extraction format must rebuild even when the events are the same (2026-10-01:
+    # the v2 relationships format was skipped as "inputs unchanged").
+    fingerprint.update(f"entity-cache-v{ChronosGraphExtractor.CACHE_VERSION}\0".encode())
     for db_event in sorted(events_to_process, key=lambda e: e.event_id):
         fingerprint.update(f"{db_event.event_id}\0{db_event.clean_text or ''}\0".encode())
     fingerprint = fingerprint.hexdigest()
