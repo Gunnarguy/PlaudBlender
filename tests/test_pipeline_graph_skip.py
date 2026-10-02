@@ -23,6 +23,7 @@ def harness(tmp_path, monkeypatch):
     extractor.extract_from_events.return_value = ([], nx.Graph())
     extractor.detect_communities.return_value = {}
     extractor.last_failed_events = 0
+    extractor.pending_events = 0
     monkeypatch.setattr("src.chronos.graph_service.ChronosGraphExtractor", lambda **_kwargs: extractor)
     monkeypatch.setattr(
         "src.config.get_settings",
@@ -35,6 +36,7 @@ def harness(tmp_path, monkeypatch):
     q = session.query.return_value.filter.return_value
     q.limit.return_value.all.side_effect = lambda: list(events)
     q.order_by.return_value.limit.return_value.all.side_effect = lambda: list(events)  # most-recent-first query
+    q.order_by.return_value.all.side_effect = lambda: list(events)  # whole history (default)
     return SimpleNamespace(extractor=extractor, events=events, session=session, dir=tmp_path)
 
 
@@ -79,3 +81,24 @@ def test_failed_build_is_retried(harness):
     assert not (harness.dir / "knowledge_graph.fingerprint").exists()
     pipeline.run_graph(harness.session)
     assert harness.extractor.extract_from_events.call_count == 2
+
+
+def test_backfill_budget_reaches_the_extractor(harness, monkeypatch):
+    monkeypatch.delenv("CHRONOS_GRAPH_MAX_NEW_PER_RUN", raising=False)
+    pipeline.run_graph(harness.session)
+    assert harness.extractor.extract_from_events.call_args.kwargs["max_new"] == 100
+    monkeypatch.setenv("CHRONOS_GRAPH_MAX_NEW_PER_RUN", "0")  # 0 = no budget
+    (harness.dir / "knowledge_graph.fingerprint").unlink()
+    pipeline.run_graph(harness.session)
+    assert "max_new" not in harness.extractor.extract_from_events.call_args.kwargs
+
+
+def test_partial_backfill_build_is_not_reused(harness):
+    """Inputs can be unchanged while history is still pending: the next run must continue."""
+    harness.extractor.pending_events = 1200
+    pipeline.run_graph(harness.session)
+    assert not (harness.dir / "knowledge_graph.fingerprint").exists()
+    harness.extractor.pending_events = 0
+    pipeline.run_graph(harness.session)
+    assert harness.extractor.extract_from_events.call_count == 2
+    assert (harness.dir / "knowledge_graph.fingerprint").exists()

@@ -7,7 +7,7 @@ to extract entities and relationships from cleaned narrative events.
 import logging
 import os
 import time as _time
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 
 import networkx as nx
 
@@ -46,6 +46,8 @@ class ChronosGraphExtractor:
         """
         self.cache_path = cache_path
         self._fresh: Dict[str, Dict[str, Any]] = {}
+        self._cache: Optional[Dict[str, Any]] = None
+        self.pending_events = 0
         self._entity_stats: Dict[str, Dict[str, Any]] = {}
         self.entity_extractor = EntityExtractor()
         self.community_detector = CommunityDetector()
@@ -60,11 +62,15 @@ class ChronosGraphExtractor:
         self,
         events: List[ChronosEvent],
         progress_callback=None,
+        *,
+        max_new: Optional[int] = None,
     ) -> Tuple[List[Dict[str, Any]], nx.Graph]:
         """Extract entities and relationships from cleaned events.
 
         Args:
-            events: List of ChronosEvent objects
+            events: List of ChronosEvent objects, most important (newest) first
+            max_new: extract at most this many uncached events; the rest wait for a
+                later run (``pending_events``) and are left out of this graph. None = all.
 
         Returns:
             Tuple of (entities_list, networkx_graph)
@@ -81,11 +87,20 @@ class ChronosGraphExtractor:
         self._entity_stats = {}
         all_entities: List[Dict[str, Any]] = []
         self.last_failed_events = 0
+        self.pending_events = 0
 
         # Saved after every batch below, so a run killed by the unit's TimeoutStartSec
         # (900 s) keeps its progress; the first 500-event build takes ~35 min.
         self._all_events = events
         todo = self._apply_cache(events, all_entities, progress_callback)
+        if max_new is not None and len(todo) > max(0, max_new):
+            # Backfill budget: history is extracted a slice per run, newest first,
+            # so new recordings never wait behind 17k old moments (2026-10-01).
+            self.pending_events = len(todo) - max(0, max_new)
+            todo = todo[: max(0, max_new)]
+            logger.info(
+                f"Entity budget: extracting {len(todo)} now, {self.pending_events} left for later runs"
+            )
         if todo:
             if getattr(self.entity_extractor, "supports_batch", False) is True:
                 self._extract_batched(todo, all_entities, progress_callback)
@@ -154,6 +169,7 @@ class ChronosGraphExtractor:
         """Replay cached extractions; return the events that still need the model."""
         self._fresh = {}
         cache = self._load_cache()
+        self._cache = cache  # kept in memory: the full-history cache is ~25 MB of JSON
         todo = []
         for event in events:
             hit = cache.get(event.event_id)
@@ -190,8 +206,12 @@ class ChronosGraphExtractor:
         if not self.cache_path:
             return
         wanted = {e.event_id for e in events}
-        merged = {k: v for k, v in self._load_cache().items() if k in wanted}
+        cache = getattr(self, "_cache", None)
+        if cache is None:
+            cache = self._load_cache()
+        merged = {k: v for k, v in cache.items() if k in wanted}
         merged.update(self._fresh)
+        self._cache = merged
         path = Path(self.cache_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
@@ -339,11 +359,17 @@ class ChronosGraphExtractor:
                          f"Skipped {len(chunk) - len(results)} of {len(chunk)} moments in one batch",
                          level="warn")
 
-    def export_json(self, path, max_events_per_entity: int = 20) -> Dict[str, int]:
+    def export_json(
+        self, path, max_events_per_entity: int = 20, min_topic_moments: int = 2
+    ) -> Dict[str, int]:
         """Write the entity graph as plain JSON for the API, the app and Ask.
 
         nodes: id, name, type, mentions, aliases, first_seen, last_seen, events (latest first)
         edges: source, target, type, weight, evidence (up to 3 quotes)
+
+        Topics named in fewer than ``min_topic_moments`` moments are left out (they stay in
+        the pickle): on 2026-10-01 they were 932 of 1,115 topics and 2,648 of 3,749 edges,
+        and at full history they would fill the API's memory with one-off phrases.
         """
         import json
         from pathlib import Path
@@ -352,17 +378,21 @@ class ChronosGraphExtractor:
         nodes = []
         for entity_id, entity in kg.entities.items():
             stat = self._entity_stats.get(entity_id, {})
+            entity_type = getattr(entity.entity_type, "value", str(entity.entity_type))
+            if entity_type == "topic" and len(stat.get("events", [])) < min_topic_moments:
+                continue
             events = sorted(stat.get("events", []), key=lambda pair: pair[1], reverse=True)
             nodes.append({
                 "id": entity_id,
                 "name": entity.name,
-                "type": getattr(entity.entity_type, "value", str(entity.entity_type)),
+                "type": entity_type,
                 "mentions": entity.mention_count,
                 "aliases": list(entity.aliases),
                 "first_seen": stat.get("first", ""),
                 "last_seen": stat.get("last", ""),
                 "events": [event_id for event_id, _ in events[:max_events_per_entity]],
             })
+        kept = {node["id"] for node in nodes}
         edges = [
             {
                 "source": rel.source_id,
@@ -372,7 +402,7 @@ class ChronosGraphExtractor:
                 "evidence": list((rel.metadata or {}).get("evidence", []))[:3],
             }
             for rel in kg.relationships
-            if rel.source_id in kg.entities and rel.target_id in kg.entities
+            if rel.source_id in kept and rel.target_id in kept
         ]
         payload = {
             "version": 1,
