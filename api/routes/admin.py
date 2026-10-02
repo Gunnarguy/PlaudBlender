@@ -236,6 +236,36 @@ def _backup_info(path: Path, message: str = "") -> BackupInfoOut:
     )
 
 
+# On a systemd-managed deployment (the Pi) the `chronos` script is the wrong tool: its
+# stop kills whatever holds ports 8000/8050/8090/4040/6333 -- systemd's own units and
+# Qdrant's port -- and its start launches unmanaged duplicates beside them. There, stack
+# actions go through systemctl, the API restarts last, and Qdrant is never touched
+# (2026-10-02, before the phone's admin buttons were switched on).
+SYSTEMD_PUBLIC_UNITS = ("chronos-ngrok", "chronos-ui", "chronos-auto-sync", "chronos-api")
+
+
+def _systemd_managed() -> bool:
+    try:
+        state = _run_status_command(["systemctl", "is-active", "chronos-api"]).stdout.strip()
+    except Exception:
+        return False
+    return state in {"active", "activating", "reloading"}
+
+
+def _installed_units(units) -> list[str]:
+    installed = []
+    for unit in units:
+        try:
+            load = _run_status_command(
+                ["systemctl", "show", "-p", "LoadState", "--value", f"{unit}.service"]
+            ).stdout.strip()
+        except Exception:
+            continue
+        if load == "loaded":
+            installed.append(unit)
+    return installed
+
+
 @router.post("/stack/status", response_model=StackControlResponse)
 async def stack_status():
     response = await _run_chronos_async(["status"], timeout=15)
@@ -245,6 +275,18 @@ async def stack_status():
 
 @router.post("/stack/ensure-public", response_model=StackControlResponse)
 async def ensure_public_stack():
+    if _systemd_managed():
+        units = _installed_units(SYSTEMD_PUBLIC_UNITS)
+        # `start` leaves running units alone and only starts the ones that are down.
+        result = _run_status_command(["sudo", "-n", "systemctl", "start", *units], timeout=45)
+        ok = result.returncode == 0
+        return StackControlResponse(
+            action="ensure-public",
+            status="ok" if ok else "failed",
+            message=("Public services running: " if ok else "systemctl start failed for: ") + ", ".join(units),
+            output=(result.stdout + result.stderr).strip()[-4000:],
+            public_url=await _get_public_url_async(),
+        )
     response = await _run_chronos_async(["start"], timeout=45)
     response.action = "ensure-public"
     response.public_url = await _get_public_url_async()
@@ -253,6 +295,34 @@ async def ensure_public_stack():
 
 @router.post("/stack/restart-public", response_model=StackControlResponse)
 async def restart_public_stack():
+    if _systemd_managed():
+        units = _installed_units(SYSTEMD_PUBLIC_UNITS)
+        others = [u for u in units if u != "chronos-api"]
+        script = " && ".join(
+            ([f"systemctl restart {' '.join(others)}"] if others else [])
+            + (["systemctl restart chronos-api"] if "chronos-api" in units else [])
+        )
+        # A transient unit outlives this request: restarting chronos-api ends this process.
+        result = _run_status_command(
+            ["sudo", "-n", "systemd-run", "--collect", "--on-active=2",
+             f"--unit=chronos-phone-restart-{int(datetime.now().timestamp())}",
+             "/bin/sh", "-c", script],
+            timeout=15,
+        )
+        if result.returncode != 0:
+            return StackControlResponse(
+                action="restart-public",
+                status="failed",
+                message="Could not schedule the restart (sudo/systemd-run refused).",
+                output=(result.stdout + result.stderr).strip()[-4000:],
+            )
+        return StackControlResponse(
+            action="restart-public",
+            status="scheduled",
+            message="Restart scheduled in 2 s: " + ", ".join(units) + " (API last; Qdrant untouched). "
+            "The API is unavailable for a few seconds.",
+            output=f"Queued: {script}",
+        )
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_file_path = LOG_DIR / "admin-restart.log"
     log_file = open(log_file_path, "a")

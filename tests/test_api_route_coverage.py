@@ -36,8 +36,6 @@ KNOWN_UNCOVERED = frozenset([
     ("GET", "/api/v1/admin/backups"),
     ("GET", "/api/v1/admin/backups/{filename}"),
     ("POST", "/api/v1/admin/backups"),
-    ("POST", "/api/v1/admin/stack/ensure-public"),
-    ("POST", "/api/v1/admin/stack/restart-public"),
     ("POST", "/api/v1/admin/stack/status"),
     # notion -- match/override and override/bulk write override rows
     ("GET", "/api/v1/notion/import/preview"),
