@@ -6,7 +6,7 @@ Chronos/PlaudBlender is a Python pipeline that ingests Plaud voice recordings,
 processes them into events, indexes them into Qdrant, and pushes to Notion.
 
 - **Production runs on a Raspberry Pi**, not the Mac. `ssh raspberry-pi`
-  (Tailscale, `100.76.130.109`), repo at `~/PlaudBlender`, venv at `venv/bin/python`.
+  (Tailscale, MagicDNS name `gunzino`), repo at `~/PlaudBlender`, venv at `venv/bin/python`.
 - The Pi auto-deploys `origin/main` every 10 min (`chronos-auto-update.timer`).
   Push to main = deploy.
 - The Mac checkout is a dev copy. Diagnose production from the Pi, never from the
@@ -84,10 +84,10 @@ Three things it said were wrong. Verify before acting on old notes.
 
 **1. The Plaud One clip — unresolved, and upstream of this codebase.** A 10s clip
 recorded on a new Plaud One never appeared. MCP and REST both fully authenticated
-and agreeing exactly: 20 files, one serial (`888317281808436884`), 0 clips ≤60s.
+and agreeing exactly: 20 files, one serial (redacted; it starts `888`), 0 clips ≤60s.
 A 20-minute poller found nothing. The clip is not in Plaud's cloud. Next step is
 the phone app — if it is not visible there either, the One is not linked to this
-account (`96904da518ecc246db916fa8f7ac0aa7`, `apple-001535...`) or has not
+account (account ids redacted) or has not
 finished uploading. Note `list_files(page_size=50)` still returns 20 with
 `total: None`, so deep history needs pagination.
 

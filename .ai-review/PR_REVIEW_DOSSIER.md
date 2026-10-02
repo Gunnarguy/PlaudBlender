@@ -37,7 +37,7 @@
 
 ### Summary of Actual Change
 
-* **Probes Remote Qdrant Vector DB**: Introduces a bash function `_probe_qdrant` to ping a remote Qdrant database (defaulting to a Raspberry Pi at `100.76.130.109:6333` via curl) with a 1.5-second timeout.
+* **Probes Remote Qdrant Vector DB**: Introduces a bash function `_probe_qdrant` to ping a remote Qdrant database (defaulting to a Raspberry Pi at `<pi-tailscale-ip>:6333` via curl) with a 1.5-second timeout.
 * **Dynamic Config Injection**: Siphons the remote Qdrant URL from the `QDRANT_REMOTE_URL` environment variable (allowing custom overrides via `.env` or shell parameters).
 * **Fallback Database Routing**: Routes connections directly to the remote Qdrant database if online by exporting the `QDRANT_URL` environment variable. Otherwise, falls back to a local Docker container for Qdrant.
 * **Auto-Starts Docker VM**: If the remote Qdrant is offline and Docker Desktop is not running, it attempts to launch Docker Desktop in the background (`open -a Docker` on macOS) and waits up to 30 seconds for it to become ready before launching Qdrant.

@@ -92,7 +92,7 @@ def device_code(scene_source: Any) -> Optional[str]:
     """The device as a bare code string: "888", "860".
 
     Stored this way on purpose. Older syncs stored the device's full serial,
-    which begins with the same three digits (888317281808436884), and the iOS
+    which begins with the same three digits (888 then 15 more), and the iOS
     app already identifies hardware by that three-digit prefix -- so a bare
     code and a full serial read as the same device without a migration.
     """
