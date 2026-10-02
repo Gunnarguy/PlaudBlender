@@ -962,6 +962,12 @@ def run_graph(
     else:
         fingerprint_path.unlink(missing_ok=True)
     logger.info(f"Saved graph to {graph_path}")
+    # Plain-JSON copy of the entity graph for the API, the app and Ask (never fail the run on it).
+    try:
+        exported = graph_extractor.export_json(graph_cache_dir / "entity_graph.json")
+        logger.info(f"Exported entity graph: {exported['nodes']} nodes, {exported['edges']} edges")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Entity graph export failed: {exc}")
     logger.info(
         f"Graph stats: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges"
     )
