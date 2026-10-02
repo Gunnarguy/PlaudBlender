@@ -133,8 +133,11 @@ def test_check_connection_uses_responses_api(monkeypatch):
     assert "Responses API ready" in detail
 
 
-def test_ask_uses_low_reasoning_and_default_output_cap(monkeypatch):
+def test_ask_uses_default_reasoning_and_default_output_cap(monkeypatch):
+    # The default effort was "low" until it was raised on purpose (see the comment on
+    # _DEFAULT_REASONING_EFFORT); ChronosAskService passes its own, higher effort.
     monkeypatch.setattr("src.chronos.openai_service.get_settings", _make_settings)
+    monkeypatch.setattr(OpenAIResponseService, "_DEFAULT_REASONING_EFFORT", "high")
 
     captured = {}
     response = SimpleNamespace(
@@ -172,11 +175,11 @@ def test_ask_uses_low_reasoning_and_default_output_cap(monkeypatch):
         [{"date": "2026-01-01", "time": "10:00 AM", "category": "work", "text": "Did the thing"}],
     )
 
-    assert captured["reasoning"]["effort"] == "low"
+    assert captured["reasoning"]["effort"] == "high"
     assert captured["max_output_tokens"] == OpenAIResponseService._DEFAULT_MAX_OUTPUT_TOKENS
     assert "temperature" not in captured
     assert "prompt_cache_key" not in captured
-    assert result["config"]["reasoning"] == "low"
+    assert result["config"]["reasoning"] == "high"
 
 
 def test_extract_events_uses_stable_cache_key_and_reports_cache_usage(monkeypatch):

@@ -475,8 +475,8 @@ class TestChronosPipeline:
         assert reason is not None
         assert "swap used 578MB > 256MB" in reason
 
-    def test_full_pipeline_exits_nonzero_when_ingest_fails(self, monkeypatch):
-        """Full pipeline should not silently report success when ingest fails."""
+    @staticmethod
+    def _run_full_with_ingest_error(monkeypatch, message):
         import scripts.chronos_pipeline as pipeline
 
         class DummySession:
@@ -494,7 +494,7 @@ class TestChronosPipeline:
             lambda *args, **kwargs: pipeline.PhaseResult(
                 processed_count=0,
                 failure_count=0,
-                error_message="Plaud not authenticated",
+                error_message=message,
             ),
         )
         monkeypatch.setattr(pipeline, "run_process", lambda *args, **kwargs: 0)
@@ -507,11 +507,19 @@ class TestChronosPipeline:
         monkeypatch.setattr(
             pipeline, "run_backfill_summaries", lambda *args, **kwargs: 0
         )
+        pipeline.main()
 
+    def test_full_pipeline_exits_nonzero_when_ingest_fails(self, monkeypatch):
+        """Full pipeline should not silently report success when ingest fails."""
         with pytest.raises(SystemExit) as exc_info:
-            pipeline.main()
+            self._run_full_with_ingest_error(monkeypatch, "Plaud API returned HTTP 500")
 
         assert exc_info.value.code == 1
+
+    def test_full_pipeline_treats_dead_plaud_3_login_as_information(self, monkeypatch):
+        """Plaud 3.0 OAuth is gone and the 4.0 sync timer ingests (47654fb, 2026-09-04):
+        "not authenticated" from the 3.0 ingest must not fail the run."""
+        self._run_full_with_ingest_error(monkeypatch, "Plaud not authenticated")
 
     def test_ingest_all_history_flag_reaches_run_ingest(self, monkeypatch):
         """CLI should propagate --all-history into the ingest phase."""

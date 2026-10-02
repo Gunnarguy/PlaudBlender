@@ -11,7 +11,8 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PATH=/home/your-pi-username/PlaudBlender/venv/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=/home/your-pi-username/PlaudBlender/.env
 ExecStart=/home/your-pi-username/PlaudBlender/venv/bin/python scripts/chronos_pipeline.py --full
-TimeoutStartSec=900
+# A run that extracts a new batch of entities took 14.5 min on 2026-10-01; 900 s killed one.
+TimeoutStartSec=3600
 MemoryHigh=900M
 MemoryMax=1300M
 CPUQuota=125%
