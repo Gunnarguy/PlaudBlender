@@ -854,14 +854,18 @@ def run_graph(
         cache_path=Path(settings.chronos_graph_cache_dir) / "entity_cache.json"
     )
 
-    # The most recent indexed events. This used to be `limit * 10` rows in rowid
-    # order -- the same ~100 oldest events (Feb 2026) every build.
-    graph_max_events = max(1, int(os.getenv("CHRONOS_GRAPH_MAX_EVENTS", "500")))
+    # Indexed events, most recent first. This used to be `limit * 10` rows in rowid
+    # order -- the same ~100 oldest events (Feb 2026) every build -- then the 500 most
+    # recent. Now the whole history (CHRONOS_GRAPH_MAX_EVENTS=0), extracted a slice per
+    # run: CHRONOS_GRAPH_MAX_NEW_PER_RUN uncached events, newest first (0 = no limit).
+    graph_max_events = max(0, int(os.getenv("CHRONOS_GRAPH_MAX_EVENTS", "0") or 0))
+    graph_max_new = max(0, int(os.getenv("CHRONOS_GRAPH_MAX_NEW_PER_RUN", "100") or 0))
     q = session.query(ChronosEventDB).filter(ChronosEventDB.qdrant_point_id.isnot(None))
     if recording_id:
         q = q.filter(ChronosEventDB.recording_id == recording_id)
 
-    events_to_process = q.order_by(ChronosEventDB.start_ts.desc()).limit(graph_max_events).all()
+    q = q.order_by(ChronosEventDB.start_ts.desc())
+    events_to_process = (q.limit(graph_max_events) if graph_max_events else q).all()
 
     pipeline_progress.start_phase("graph", total_items=len(events_to_process))
 
@@ -941,9 +945,13 @@ def run_graph(
     def _graph_progress(event_id: str) -> None:
         pipeline_progress.advance(item=event_id, step="Extracting entities")
 
+    budget = {"max_new": graph_max_new} if graph_max_new else {}
     entities, graph = graph_extractor.extract_from_events(
-        pydantic_events, progress_callback=_graph_progress
+        pydantic_events, progress_callback=_graph_progress, **budget
     )
+    pending = int(getattr(graph_extractor, "pending_events", 0) or 0)
+    if pending:
+        logger.info(f"Entity backfill: {pending} moments left for later runs")
 
     # Detect communities
     pipeline_progress.update(step="Detecting communities")
@@ -962,8 +970,9 @@ def run_graph(
             f,
         )
 
-    # Only a clean build may be reused; a run hit by an API outage must retry.
-    if getattr(graph_extractor, "last_failed_events", 0) == 0:
+    # Only a clean, complete build may be reused; a run hit by an API outage or one that
+    # left backfill for later must run again.
+    if getattr(graph_extractor, "last_failed_events", 0) == 0 and not pending:
         fingerprint_path.write_text(fingerprint)
     else:
         fingerprint_path.unlink(missing_ok=True)

@@ -128,3 +128,18 @@ def test_speaker_labels_are_not_people():
     names = {e.name for e in gx._knowledge_graph.entities.values()}
     assert names == {"Jeff"}
     assert graph.number_of_edges() == 0
+
+
+def test_export_leaves_out_topics_named_in_only_one_moment(tmp_path):
+    answers = {
+        "e0": {"people": [{"name": "Jeff"}], "topics": ["robotic arm", "lunch order"]},
+        "e1": {"people": [{"name": "Jeff"}], "topics": ["robotic arm"]},
+    }
+    gx = _gx(answers)
+    gx.extract_from_events(_events(2))
+    data = json.loads((tmp_path / "g.json").read_text()) if gx.export_json(tmp_path / "g.json") else None
+    names = {n["name"] for n in data["nodes"]}
+    assert "robotic arm" in names and "Jeff" in names
+    assert "lunch order" not in names  # one moment only
+    ids = {n["id"] for n in data["nodes"]}
+    assert all(e["source"] in ids and e["target"] in ids for e in data["edges"])

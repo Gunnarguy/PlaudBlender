@@ -102,3 +102,37 @@ def test_progress_survives_a_killed_build(tmp_path, monkeypatch):
     resume = _CountingBatch()
     entities, _ = _gx(resume, cache).extract_from_events(_events(texts))
     assert len(resume.seen) == 30 and len(entities) == 80  # only the unfinished events go to the model
+
+
+def test_budget_extracts_newest_first_and_resumes(tmp_path):
+    """A run extracts at most max_new uncached moments; the next run picks up the rest."""
+    cache = tmp_path / "entity_cache.json"
+    texts = ["newest", "middle", "oldest"]  # callers pass events newest first
+    first = _CountingBatch()
+    gx = _gx(first, cache)
+    entities, _ = gx.extract_from_events(_events(texts), max_new=1)
+    assert first.seen == ["e0"] and gx.pending_events == 2
+    assert {e["name"] for e in entities} == {"newest"}
+
+    second = _CountingBatch()
+    gx = _gx(second, cache)
+    entities, _ = gx.extract_from_events(_events(texts), max_new=1)
+    assert second.seen == ["e1"] and gx.pending_events == 1
+    assert {e["name"] for e in entities} == {"newest", "middle"}  # cached + new
+
+    third = _CountingBatch()
+    gx = _gx(third, cache)
+    gx.extract_from_events(_events(texts), max_new=5)
+    assert third.seen == ["e2"] and gx.pending_events == 0
+
+
+def test_cache_file_is_read_once_per_build(tmp_path, monkeypatch):
+    cache = tmp_path / "entity_cache.json"
+    gx = _gx(_CountingBatch(), cache)
+    reads = []
+    real = ChronosGraphExtractor._load_cache
+    monkeypatch.setattr(ChronosGraphExtractor, "_load_cache", lambda self: reads.append(1) or real(self))
+    monkeypatch.setenv("CHRONOS_AGY_ENTITY_BATCH_SIZE", "1")  # one save per batch -> 4 saves
+    gx.extract_from_events(_events(["a", "b", "c", "d"]))
+    assert len(reads) == 1
+    assert set(json.loads(cache.read_text())["events"]) == {"e0", "e1", "e2", "e3"}
