@@ -979,7 +979,20 @@ def run_graph(
     logger.info(f"Saved graph to {graph_path}")
     # Plain-JSON copy of the entity graph for the API, the app and Ask (never fail the run on it).
     try:
-        exported = graph_extractor.export_json(graph_cache_dir / "entity_graph.json")
+        # The entity index files each moment under the day its recording is listed in the
+        # timeline (local date of chronos_recordings.created_at).
+        try:
+            from src.chronos.constellation import recording_days_from_db
+
+            recording_days = recording_days_from_db(
+                session, {getattr(e, "recording_id", None) for e in events_to_process}
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Recording days unavailable, using moment dates: {exc}")
+            recording_days = {}
+        exported = graph_extractor.export_json(
+            graph_cache_dir / "entity_graph.json", recording_days=recording_days
+        )
         logger.info(f"Exported entity graph: {exported['nodes']} nodes, {exported['edges']} edges")
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Entity graph export failed: {exc}")
