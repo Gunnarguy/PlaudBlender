@@ -69,9 +69,16 @@ def test_ask_graph_context_has_links_with_evidence_and_recent_moments(graph_file
     entries = entity_graph.ask_graph_context(_Svc(), "When is the Tahoe trip with Mike?")
     mike = next(e for e in entries if e["name"] == "Mike")
     assert mike["kind"] == "graph_entity" and mike["category"] == "person"
-    assert 'knows Gunnar (person, x3) "my buddy Mike"' in mike["text"]
-    assert "co mentioned Tahoe" in mike["text"]
+    # the edge is Gunnar -knows-> Mike: Mike's block must not say "Mike knows Gunnar"
+    assert 'Gunnar (person) knows Mike x3 "my buddy Mike"' in mike["text"]
+    assert "mentioned with Tahoe (location) x7" in mike["text"]
     assert "Called Mike about the Tahoe trip." in mike["text"] and "unrelated" not in mike["text"]
+
+
+def test_ask_graph_context_outgoing_edges_read_from_the_named_entity(graph_file):
+    entries = entity_graph.ask_graph_context(_Svc(), "How does Gunnar know Mike?")
+    gunnar = next(e for e in entries if e["name"] == "Gunnar")
+    assert 'Gunnar knows Mike (person) x3 "my buddy Mike"' in gunnar["text"]
 
 
 def test_missing_or_broken_graph_file_is_harmless(tmp_path, monkeypatch):
@@ -116,6 +123,7 @@ def test_api_entities_search_and_detail(client):
     detail = client.get(f"/api/v1/graph/entities/{MIKE}").json()
     assert detail["entity"]["name"] == "Mike"
     assert detail["neighbors"][0]["type"] == "knows" and detail["neighbors"][0]["evidence"] == ["my buddy Mike"]
+    assert detail["neighbors"][0]["direction"] == "in"  # Gunnar knows Mike
     assert [m["id"] for m in detail["recent_events"]] == ["e2", "e1"]
     assert client.get("/api/v1/graph/entities/doesnotexist").status_code == 404
 

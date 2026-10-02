@@ -543,15 +543,15 @@ class ChronosDataService:
         try:
             from src.chronos.qdrant_client import ChronosQdrantClient
             from src.chronos.embedding_service import ChronosEmbeddingService
-            from src.config import get_settings
 
-            settings = get_settings()
-
-            if settings.gemini_api_key:
-                try:
-                    self._embedder = ChronosEmbeddingService()
-                except Exception as e:
-                    logger.warning(f"Could not init embedder: {e}")
+            # No provider gate here: ChronosEmbeddingService picks its provider from
+            # CHRONOS_EMBEDDING_MODEL and raises when that provider's key is missing.
+            # A Gemini-key gate left OpenAI embeddings (text-embedding-3-large) unused,
+            # so every search fell back to whole-phrase text matching (2026-10-01).
+            try:
+                self._embedder = ChronosEmbeddingService()
+            except Exception as e:
+                logger.warning(f"Could not init embedder: {e}")
 
             try:
                 self._qdrant = ChronosQdrantClient()

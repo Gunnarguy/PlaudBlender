@@ -160,10 +160,17 @@ def ask_graph_context(
         for edge, other in graph.neighbors(node["id"], limit=neighbor_limit):
             relation = str(edge.get("type", "related_to")).replace("_", " ")
             evidence = (edge.get("evidence") or [""])[0]
-            links.append(
-                f"{relation} {other.get('name')} ({other.get('type')}, x{float(edge.get('weight') or 1):.0f})"
-                + (f' "{evidence}"' if evidence else "")
-            )
+            other_label = f"{other.get('name')} ({other.get('type')})"
+            times = f"x{float(edge.get('weight') or 1):.0f}"
+            # Whole statements keep the stated direction: "Jack member of Stryker", never
+            # "Stryker: member of Jack" for an incoming edge.
+            if edge.get("type") == "co_mentioned":
+                link = f"mentioned with {other_label} {times}"
+            elif edge.get("source") == node["id"]:
+                link = f"{node.get('name')} {relation} {other_label} {times}"
+            else:
+                link = f"{other_label} {relation} {node.get('name')} {times}"
+            links.append(link + (f' "{evidence}"' if evidence else ""))
         if links:
             lines.append("Linked: " + "; ".join(links))
         recent = [moments[eid] for eid in (node.get("events") or [])[:events_per_entity] if eid in moments]

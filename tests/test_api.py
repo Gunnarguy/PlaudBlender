@@ -659,6 +659,20 @@ class TestSearch:
         data = r.json()
         assert "couldn't find any relevant events" in data["answer"]
 
+    def test_ask_ai_answers_from_graph_evidence_alone(self, client):
+        """Search found nothing, but the entity graph knows the person: still answer."""
+        graph_only = [{"kind": "graph_entity", "text": "[Knowledge graph: Jeff (person)]"}]
+        with patch("api.routes.search.build_ask_context", return_value=([], graph_only)), \
+             patch("api.routes.search.ChronosAskService") as MockAI:
+            ai_instance = MockAI.return_value
+            ai_instance.available = True
+            ai_instance.ask.return_value = {"answer": "Jeff works with you in the OR.", "model": "m"}
+            r = client.post("/api/v1/search/ask", json={"question": "Who is Jeff?"})
+
+        assert r.status_code == 200
+        assert r.json()["answer"] == "Jeff works with you in the OR."
+        assert ai_instance.ask.call_args.kwargs["context_events"] == graph_only
+
 
 # ═══════════════════════════════════════════════════════════
 # TOPICS

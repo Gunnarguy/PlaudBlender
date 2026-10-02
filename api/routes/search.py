@@ -64,7 +64,7 @@ async def ask_ai(
             )
 
         results, context = build_ask_context(svc, body.question)
-        if not results:
+        if not results and not context:  # graph evidence alone is enough to answer
             return AIAnswerOut(
                 answer="I couldn't find any relevant events for that question.",
                 model="",

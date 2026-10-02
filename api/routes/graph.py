@@ -59,7 +59,9 @@ async def get_entity(entity_id: str, svc: ChronosDataService = Depends(get_servi
         raise HTTPException(status_code=404, detail="Entity not found")
     neighbors = [
         {"node": node_payload(other), "type": edge.get("type"), "weight": edge.get("weight"),
-         "evidence": edge.get("evidence") or []}
+         "evidence": edge.get("evidence") or [],
+         # "out": this entity -type-> node; "in": node -type-> this entity
+         "direction": "out" if edge.get("source") == entity_id else "in"}
         for edge, other in graph.neighbors(entity_id, limit=30)
     ]
     wanted = list(node.get("events") or [])[:10]
