@@ -33,6 +33,9 @@ class ChronosGraphExtractor:
     # Entity types that get co-mention links; actions/dates/metrics would only add noise.
     CO_MENTION_TYPES = ("person", "project", "organization", "location", "topic")
     CO_MENTION_CAP = 10  # entities per moment considered for co-mention links (<= 45 pairs)
+    # Bump when graph assembly changes (fed into the pipeline fingerprint): 2 = drop
+    # transcript speaker labels ("Speaker 10") that the model reported as people.
+    ASSEMBLY_VERSION = 2
 
     def __init__(self, cache_path=None):
         """Initialize graph extraction components.
@@ -195,7 +198,28 @@ class ChronosGraphExtractor:
         tmp.write_text(json.dumps({"version": self.CACHE_VERSION, "events": merged}))
         os.replace(tmp, path)
 
+    @staticmethod
+    def _drop_placeholders(entities, relationships):
+        """Remove diarization labels ("Speaker 10", "Speaker A") reported as people, and any
+        relationship touching them. They are not identities; on 2026-10-01 "Speaker 10"
+        was the most-mentioned "person" in the graph."""
+        import re
+
+        placeholder = re.compile(r"^(speaker|participant|unknown speaker|unknown)[\s_-]*[a-z0-9]{0,3}$", re.IGNORECASE)
+        dropped = {
+            e.id for e in entities
+            if getattr(e.entity_type, "value", str(e.entity_type)) == "person"
+            and placeholder.match(str(e.name).strip())
+        }
+        if not dropped:
+            return entities, relationships
+        return (
+            [e for e in entities if e.id not in dropped],
+            [r for r in relationships if r.source_id not in dropped and r.target_id not in dropped],
+        )
+
     def _add_event_result(self, event, entities, relationships, all_entities) -> None:
+        entities, relationships = self._drop_placeholders(entities, relationships)
         # Snapshot for the cache before KnowledgeGraph merges (and mutates) entities.
         self._fresh[event.event_id] = {
             "h": self._text_hash(event),

@@ -115,3 +115,16 @@ def test_graph_has_entity_edges_comentions_and_a_json_export(tmp_path):
 
 def test_cache_version_bumped_for_the_new_extraction_format():
     assert ChronosGraphExtractor.CACHE_VERSION == 2
+
+
+def test_speaker_labels_are_not_people():
+    answers = {
+        "e0": {"people": [{"name": "Speaker 10"}, {"name": "Jeff"}, {"name": "speaker_4"}],
+               "relationships": [{"source": "Speaker 10", "source_type": "person", "relation": "works_with",
+                                  "target": "Jeff", "target_type": "person", "evidence": "x"}]},
+    }
+    gx = _gx(answers)
+    _, graph = gx.extract_from_events(_events(1))
+    names = {e.name for e in gx._knowledge_graph.entities.values()}
+    assert names == {"Jeff"}
+    assert graph.number_of_edges() == 0
