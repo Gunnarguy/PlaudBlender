@@ -493,6 +493,43 @@ class TestTimeline:
         assert day["date"] == "2026-01-15"
         assert day["recording_count"] == 3
 
+    def test_day_categories_and_mood_come_from_the_real_day_summary(self, client, mock_svc):
+        """The real DaySummary has only `categories` counts; FakeDaySummary hid that the
+        API returned top_category/category_percentages as null (2026-10-06)."""
+        from app_v2.services.data_service import DaySummary, RecordingSummary
+
+        start = datetime(2026, 1, 15, 9, 0)
+        recs = [
+            RecordingSummary(recording_id="r1", start_time=start, end_time=start, duration_seconds=600,
+                             event_count=3, avg_sentiment=0.5, categories={"work": 3},
+                             keywords=["stent", "OR"], preview_text="Case one prep",
+                             sentiment_arc=[0.4, 0.5, 0.6], processing_status="completed"),
+            RecordingSummary(recording_id="r2", start_time=start, end_time=start, duration_seconds=300,
+                             event_count=1, avg_sentiment=-0.5, categories={"personal": 1}),
+            RecordingSummary(recording_id="r3", start_time=start, end_time=start, duration_seconds=60,
+                             event_count=0, avg_sentiment=0.0, processing_status="pending"),
+        ]
+        day = DaySummary(date="2026-01-15", date_display="Thursday, Jan 15", total_duration_seconds=960,
+                         recording_count=3, event_count=4, recordings=recs,
+                         categories={"work": 3, "personal": 1})
+        mock_svc.get_days.return_value = [day]
+        mock_svc.get_days_filled.return_value = [day]
+
+        d = client.get("/api/v1/timeline/days").json()["days"][0]
+        assert d["top_category"] == "work"
+        assert d["category_percentages"] == {"work": 75.0, "personal": 25.0}
+        assert d["categories"] == {"work": 3, "personal": 1}
+        assert d["avg_sentiment"] == 0.25  # (0.5*3 - 0.5*1) / 4; the moment-less r3 doesn't count
+
+        recs_out = client.get("/api/v1/timeline/days-filled").json()["days"][0]["recordings"]
+        r1 = next(r for r in recs_out if r["recording_id"] == "r1")
+        assert r1["categories"] == {"work": 3} and r1["keywords"] == ["stent", "OR"]
+        assert r1["avg_sentiment"] == 0.5 and r1["sentiment_arc"] == [0.4, 0.5, 0.6]
+        assert r1["preview_text"] == "Case one prep" and r1["processing_status"] == "completed"
+        r3 = next(r for r in recs_out if r["recording_id"] == "r3")
+        assert r3["avg_sentiment"] is None  # 0.0 without moments is not a measurement
+        assert r3["processing_status"] == "pending"
+
     def test_list_days_filled(self, client):
         r = client.get("/api/v1/timeline/days-filled")
         assert r.status_code == 200
@@ -526,6 +563,32 @@ class TestRecordings:
         data = r.json()
         assert data["summary"]["recording_id"] == "rec-001"
         assert len(data["events"]) >= 1
+
+    def test_recording_detail_fetches_transcript_summary_and_workflow_from_the_service(
+        self, client, mock_svc
+    ):
+        """The real RecordingDetail has no transcript/ai_summary/extracted_data/
+        workflow_status/plaud_transcript; FakeRecordingDetail hid that they were always
+        null (2026-10-06)."""
+        from app_v2.services.data_service import RecordingDetail, RecordingSummary
+
+        start = datetime(2026, 1, 15, 9, 0)
+        mock_svc.get_recording_detail.return_value = RecordingDetail(
+            summary=RecordingSummary(recording_id="rec-9", start_time=start, end_time=start,
+                                     duration_seconds=60, event_count=0)
+        )
+        mock_svc.get_transcript.return_value = "verbatim words"
+        mock_svc.get_ai_summary.return_value = "## Summary"
+        mock_svc.get_extracted_data.return_value = {"action_items": ["call Mike"]}
+        mock_svc.get_workflow_status_for_recording.return_value = {"status": "COMPLETED"}
+        mock_svc.get_plaud_workflow_transcript.side_effect = RuntimeError("no workflow transcript")
+
+        data = client.get("/api/v1/recordings/rec-9").json()
+        assert data["transcript"] == "verbatim words"
+        assert data["ai_summary"] == "## Summary"
+        assert data["extracted_data"] == {"action_items": ["call Mike"]}
+        assert data["workflow_status"] == {"status": "COMPLETED"}
+        assert data["plaud_transcript"] is None  # one failing piece doesn't fail the detail
 
     def test_recording_detail_404(self, client, mock_svc):
         mock_svc.get_recording_detail.return_value = None
