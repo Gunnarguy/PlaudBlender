@@ -16,7 +16,35 @@ router = APIRouter(
 )
 
 
+def _day_categories(d) -> tuple[dict, str | None, dict | None]:
+    """Moment counts per category, the top one, and percentages.
+
+    DaySummary carries only the counts (``categories``); top_category and
+    category_percentages were read with getattr from attributes it never had,
+    so they were always null and the app's category bars never drew (2026-10-06).
+    """
+    counts = {str(k): int(v) for k, v in (getattr(d, "categories", None) or {}).items() if v}
+    total = sum(counts.values())
+    if not total:
+        return counts, None, None
+    top = max(counts, key=lambda k: (counts[k], k))
+    return counts, top, {k: round(100.0 * v / total, 1) for k, v in counts.items()}
+
+
+def _day_sentiment(d) -> float | None:
+    """Moment-weighted mean of the recordings' average sentiment; None without moments."""
+    weighted = [
+        (float(getattr(r, "avg_sentiment", 0.0) or 0.0), int(getattr(r, "event_count", 0) or 0))
+        for r in (getattr(d, "recordings", None) or [])
+    ]
+    moments = sum(n for _, n in weighted)
+    if not moments:
+        return None
+    return round(sum(s * n for s, n in weighted) / moments, 3)
+
+
 def _day_to_out(d, *, recs=None) -> DaySummaryOut:
+    counts, top, percentages = _day_categories(d)
     return DaySummaryOut(
         date=d.date,
         date_display=getattr(d, "date_display", None),
@@ -25,8 +53,10 @@ def _day_to_out(d, *, recs=None) -> DaySummaryOut:
         event_count=d.event_count,
         coverage_status=getattr(d, "coverage_status", None),
         coverage_note=getattr(d, "coverage_note", None),
-        top_category=getattr(d, "top_category", None),
-        category_percentages=getattr(d, "category_percentages", None),
+        top_category=getattr(d, "top_category", None) or top,
+        category_percentages=getattr(d, "category_percentages", None) or percentages,
+        categories=counts or None,
+        avg_sentiment=_day_sentiment(d),
         top_keywords=getattr(d, "top_keywords", None),
         ai_summary=getattr(d, "ai_summary", None),
         recordings=recs,

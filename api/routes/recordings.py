@@ -67,7 +67,31 @@ def _recording_summary_to_out(r) -> RecordingSummaryOut:
         plaud_ai_summary=getattr(r, "plaud_ai_summary", None),
         device_id=getattr(r, "device_id", None),
         cloud_status=getattr(r, "cloud_status", None),
+        **_recording_extras(r),
     )
+
+
+def _recording_extras(r) -> dict:
+    """The per-recording fields the Dash day view shows (categories, keywords, mood,
+    previews, status), all computed by data_service and never sent before 2026-10-06."""
+    has_moments = int(getattr(r, "event_count", 0) or 0) > 0
+    return {
+        "categories": dict(getattr(r, "categories", None) or {}) or None,
+        "keywords": list(getattr(r, "keywords", None) or [])[:10] or None,
+        # RecordingSummary defaults avg_sentiment to 0.0; without moments that is not a measurement
+        "avg_sentiment": round(float(r.avg_sentiment), 3)
+        if has_moments and getattr(r, "avg_sentiment", None) is not None
+        else None,
+        "sentiment_arc": [round(float(x), 3) for x in (getattr(r, "sentiment_arc", None) or [])] or None,
+        "preview_text": getattr(r, "preview_text", None) or None,
+        "event_previews": list(getattr(r, "event_previews", None) or []) or None,
+        "source": getattr(r, "source", None),
+        "has_plaud_ai": getattr(r, "has_plaud_ai", None),
+        "processing_status": getattr(r, "processing_status", None),
+        "plaud_workflow_status": getattr(r, "plaud_workflow_status", None),
+        "notion_state": getattr(r, "notion_state", None),
+        "notion_page_url": getattr(r, "notion_page_url", None),
+    }
 
 
 def _trace_run_to_out(run) -> TraceRunOut:
@@ -141,15 +165,34 @@ async def recording_detail(
         [_event_to_out(e) for e in detail.events] if hasattr(detail, "events") else []
     )
 
+    # RecordingDetail carries only summary, events and category_percentages; these five
+    # were read with getattr from attributes it never had, so they were always null and
+    # the app never showed a workflow status or the Chronos summary (2026-10-06). The
+    # service has a method for each (the sub-routes below use them too).
+    def _fetch(name: str):
+        if hasattr(detail, name):  # a richer detail object (tests, future service) wins
+            return getattr(detail, name)
+        method = {
+            "transcript": "get_transcript",
+            "ai_summary": "get_ai_summary",
+            "extracted_data": "get_extracted_data",
+            "workflow_status": "get_workflow_status_for_recording",
+            "plaud_transcript": "get_plaud_workflow_transcript",
+        }[name]
+        try:
+            return getattr(svc, method)(recording_id)
+        except Exception:  # noqa: BLE001 -- one missing piece must not fail the detail
+            return None
+
     return RecordingDetailOut(
         summary=summary,
         events=events,
         category_percentages=getattr(detail, "category_percentages", None),
-        transcript=getattr(detail, "transcript", None),
-        ai_summary=getattr(detail, "ai_summary", None),
-        extracted_data=getattr(detail, "extracted_data", None),
-        workflow_status=getattr(detail, "workflow_status", None),
-        plaud_transcript=getattr(detail, "plaud_transcript", None),
+        transcript=_fetch("transcript"),
+        ai_summary=_fetch("ai_summary"),
+        extracted_data=_fetch("extracted_data"),
+        workflow_status=_fetch("workflow_status"),
+        plaud_transcript=_fetch("plaud_transcript"),
     )
 
 

@@ -64,6 +64,20 @@ class RecordingSummaryOut(BaseModel):
     device_id: Optional[str] = None
     plaud_ai_summary: Optional[str] = None
     cloud_status: Optional[str] = None
+    # What the Dash day view shows per recording, computed by data_service all along but
+    # never sent (2026-10-06). All additive; None/empty when the recording has no moments.
+    categories: Optional[Dict[str, int]] = None
+    keywords: Optional[List[str]] = None
+    avg_sentiment: Optional[float] = None
+    sentiment_arc: Optional[List[float]] = None
+    preview_text: Optional[str] = None
+    event_previews: Optional[List[str]] = None
+    source: Optional[str] = None
+    has_plaud_ai: Optional[bool] = None
+    processing_status: Optional[str] = None
+    plaud_workflow_status: Optional[str] = None
+    notion_state: Optional[str] = None
+    notion_page_url: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -92,6 +106,10 @@ class DaySummaryOut(BaseModel):
     coverage_note: Optional[str] = None
     top_category: Optional[str] = None
     category_percentages: Optional[Dict[str, float]] = None
+    # moment counts per category (the source of top_category and category_percentages)
+    categories: Optional[Dict[str, int]] = None
+    # moment-weighted mean sentiment of the day's recordings (-1..1); None without moments
+    avg_sentiment: Optional[float] = None
     top_keywords: Optional[List[str]] = None
     ai_summary: Optional[str] = None
     recordings: Optional[List[RecordingSummaryOut]] = None
