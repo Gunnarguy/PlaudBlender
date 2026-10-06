@@ -23,6 +23,7 @@ from src.plaud_client import PlaudClient
 from src.database.chronos_repository import (
     upsert_chronos_recording,
     get_chronos_recording,
+    set_chronos_recording_duration,
 )
 
 logger = logging.getLogger(__name__)
@@ -310,6 +311,10 @@ class ChronosIngestService:
                     checksum=str(existing.checksum) if existing.checksum else None,
                 )
             else:
+                # Plaud lists a new file with duration 0 until it has processed it.
+                if duration_ms and not existing.duration_seconds:
+                    if set_chronos_recording_duration(self.db, recording_id, duration_ms // 1000):
+                        logger.info(f"Recording {recording_id[:16]}: duration now {duration_ms // 1000}s")
                 logger.debug(f"Recording {recording_id} already ingested, skipping")
                 xray_log("ingest", "skip", "Already have this one, skipping")
             return (True, None)

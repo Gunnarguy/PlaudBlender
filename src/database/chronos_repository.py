@@ -122,6 +122,29 @@ def upsert_chronos_recording(
     return rec
 
 
+def set_chronos_recording_duration(
+    session: Session,
+    recording_id: str,
+    duration_seconds: int,
+) -> bool:
+    """Fill in a recording's length without touching anything else.
+
+    Plaud lists a new file with duration 0 while it is still processing it, and a
+    known recording was never revisited, so the 0 stuck (2026-10-06: 8 recordings
+    showed 0:00, one of them a 3 h 9 min meeting). Only a missing length is filled;
+    a known one is left alone.
+    """
+    seconds = int(duration_seconds or 0)
+    if seconds <= 0:
+        return False
+    rec = session.query(ChronosRecording).filter_by(recording_id=recording_id).first()
+    if rec is None or int(rec.duration_seconds or 0) > 0:
+        return False
+    rec.duration_seconds = seconds
+    session.commit()
+    return True
+
+
 def set_chronos_recording_transcript(
     session: Session,
     recording_id: str,
