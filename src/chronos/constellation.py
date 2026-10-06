@@ -33,7 +33,14 @@ from typing import Any, Iterable, Optional
 import networkx as nx
 import numpy as np
 
-LAYOUT_VERSION = 1
+# 2 (2026-10-06): the backfill grew the map from 786 to 16,605 entities over four nights;
+# each incremental build shrank everything to fit the newcomers and the one relayout copied
+# the old (already squeezed) scale, so the 800 most-mentioned entities ended up inside a
+# 0.005-wide patch (link unit 2e-05). Bumping the version forces one fresh layout.
+LAYOUT_VERSION = 2
+# An incremental build may shrink the map; once links are shorter than this share of their
+# length at the last full layout, lay it out from scratch instead of squeezing it further.
+MIN_UNIT_SHARE = 0.5
 STATED_WEIGHT = 3.0  # a stated relationship ("works_with") counts like 3 co-mentions
 LABEL_TYPES = ("person", "organization", "project", "location")  # preferred in labels
 RELAYOUT_GROWTH = 2.0  # full layout again once the map has this many times its base nodes
@@ -660,6 +667,7 @@ def read_previous_layout(path: Path) -> Optional[dict[str, Any]]:
     return {
         "version": meta.get("version"),
         "unit": meta.get("unit"),
+        "full_unit": meta.get("full_unit"),
         "base_nodes": meta.get("base_nodes"),
         "positions": positions,
         "community": community,
@@ -683,18 +691,21 @@ def plan_layout(graph: nx.Graph, previous: Optional[dict[str, Any]]) -> dict[str
     kept = {node for node in graph.nodes if node in old}
     base = int((prev or {}).get("base_nodes") or len(kept))
     unit = float((prev or {}).get("unit") or 0.0)
+    full_unit = float((prev or {}).get("full_unit") or unit or 0.0)
     n = graph.number_of_nodes()
     if (
         kept
         and 2 * len(kept) >= n
         and n < RELAYOUT_GROWTH * max(base, 1)
         and unit > 0
+        and unit >= MIN_UNIT_SHARE * full_unit
         and all(node in community for node in kept)
     ):
         alone = (prev or {}).get("isolated") or set()
         rejoin = {node for node in kept if node in alone and graph.degree(node) > 0}
         known = kept - rejoin
         return {"mode": "incremental", "known": known, "rejoin": rejoin, "base_nodes": base, "unit": unit,
+                "full_unit": full_unit,
                 "positions": {node: old[node] for node in known},
                 "community": {node: community[node] for node in known}}
     return {"mode": "relayout" if len(kept) >= 3 else "full", "known": kept, "rejoin": set(),
@@ -740,18 +751,21 @@ def layout(
         meta.update(kept=int(known.sum()), rejoined=len(plan["rejoin"]), attached=attached, packed=packed)
     else:
         pos, unit = _normalize(_cold(g))
-        if plan["mode"] == "relayout":  # turn, scale and shift the new map onto the old one
-            rotation, scale, mean_new, mean_old = _align(
+        if plan["mode"] == "relayout":  # turn and shift the new map onto the old one
+            # Keep the fresh layout's own scale: copying the old map's scale is what passed
+            # a squeezed map on to every later build (2026-10-06). Rotation and centre are
+            # enough to keep the map recognisable.
+            rotation, _scale, mean_new, mean_old = _align(
                 pos[known], np.array([old[node_id] for node_id in g.ids if node_id in old])
             )
-            pos = (pos - mean_new) @ rotation * scale + mean_old
-            unit *= scale
+            pos = (pos - mean_new) @ rotation + mean_old
             span = _reach(pos)
             if span > 1.0:
                 pos *= MARGIN / span
                 unit *= MARGIN / span
             meta["kept"] = int(known.sum())
     meta["unit"] = round(unit, 6)
+    meta["full_unit"] = round(float(plan.get("full_unit") or 0.0), 6) if plan["mode"] == "incremental" else meta["unit"]
     meta["seconds"] = round(time.perf_counter() - started, 2)
     return {node_id: (float(pos[i, 0]), float(pos[i, 1])) for i, node_id in enumerate(g.ids)}, meta
 
