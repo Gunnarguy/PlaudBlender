@@ -120,6 +120,22 @@ class DaySummaryOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DayStoryOut(BaseModel):
+    """A day's written story (src/chronos/day_story.py). Poll while `status` is pending."""
+
+    date: str
+    status: str  # ready | pending | failed | empty | unavailable
+    headline: Optional[str] = None
+    story: Optional[str] = None
+    open_threads: List[str] = []
+    moment_count: int = 0
+    model: Optional[str] = None
+    generated_at: Optional[str] = None
+    error: Optional[str] = None
+    # True while a story written from older moments is shown and a new one is being written
+    stale: bool = False
+
+
 class DaysResponse(BaseModel):
     days: List[DaySummaryOut]
     total: int = 0
