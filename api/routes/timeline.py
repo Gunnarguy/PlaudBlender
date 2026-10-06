@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from api.auth.jwt import require_auth
 from api.dependencies import get_service
-from api.schemas.responses import DaySummaryOut, DaysResponse, EventOut
+from api.schemas.responses import DayStoryOut, DaySummaryOut, DaysResponse, EventOut
 from app_v2.services.data_service import ChronosDataService
 
 router = APIRouter(
@@ -132,3 +132,40 @@ async def day_detail(date: str, svc: ChronosDataService = Depends(get_service)):
         recs = [_recording_summary_to_out(r) for r in d.recordings]
 
     return _day_to_out(d, recs=recs)
+
+
+def _day_stories():
+    from src.chronos.day_story import DayStoryService
+    from src.database.engine import SessionLocal
+
+    return DayStoryService(SessionLocal)
+
+
+async def _day_story(date: str, svc: ChronosDataService, force: bool) -> DayStoryOut:
+    import re
+
+    from fastapi import HTTPException
+    from starlette.concurrency import run_in_threadpool
+
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        raise HTTPException(status_code=422, detail="date must be YYYY-MM-DD")
+    out = await run_in_threadpool(_day_stories().get, svc, date, force=force)
+    if out is None:
+        raise HTTPException(status_code=404, detail=f"No data for {date}")
+    return DayStoryOut(**out)
+
+
+@router.get("/days/{date}/story", response_model=DayStoryOut)
+async def day_story(date: str, svc: ChronosDataService = Depends(get_service)):
+    """The day's written story: headline, paragraphs in time order, open threads.
+
+    Written by Gemini through the AGY subscription from the day's moments, cached, and
+    rewritten when the moments change. `pending` while being written (poll every few
+    seconds; a stale story may be returned meanwhile with `stale: true`)."""
+    return await _day_story(date, svc, force=False)
+
+
+@router.post("/days/{date}/story", response_model=DayStoryOut)
+async def rewrite_day_story(date: str, svc: ChronosDataService = Depends(get_service)):
+    """Write the day's story again, now."""
+    return await _day_story(date, svc, force=True)

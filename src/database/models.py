@@ -421,3 +421,25 @@ class JanitorTombstone(Base):
 
     def __repr__(self) -> str:
         return f"JanitorTombstone(recording_id={self.recording_id}, reason={self.reason})"
+
+
+class ChronosDayStory(Base):
+    """A written account of one local day, made from its moments (2026-10-06).
+
+    Cached per day and rewritten only when the day's moments change
+    (`fingerprint`); see src/chronos/day_story.py.
+    """
+
+    __tablename__ = "chronos_day_stories"
+
+    day = Column(String(10), primary_key=True)  # YYYY-MM-DD, local time
+    status = Column(String(16), nullable=False, default="pending")  # pending | ready | failed
+    headline = Column(Text, nullable=True)
+    story = Column(Text, nullable=True)
+    open_threads = Column(JSON, nullable=True)
+    fingerprint = Column(String(64), nullable=True)  # of the moments the story was written from
+    moment_count = Column(Integer, nullable=False, default=0)
+    model = Column(String(80), nullable=True)
+    error = Column(Text, nullable=True)
+    requested_at = Column(DateTime, nullable=True)  # a pending row older than the lease is retried
+    generated_at = Column(DateTime, nullable=True)
