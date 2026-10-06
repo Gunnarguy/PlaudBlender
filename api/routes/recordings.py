@@ -71,6 +71,24 @@ def _recording_summary_to_out(r) -> RecordingSummaryOut:
     )
 
 
+def _processing_note(r) -> str | None:
+    """A category for why a recording has no moments. Of 57 "failed" recordings on
+    2026-10-06 only 8 were real failures: 27 were too short to hold a moment and 22 had
+    no transcript, and the app had to show all 57 as failures."""
+    if getattr(r, "processing_status", None) in (None, "completed"):
+        return None
+    message = str(getattr(r, "processing_error", None) or "").lower()
+    if getattr(r, "processing_status", None) in ("pending", "processing") and not message:
+        return None
+    if "too short" in message:
+        return "too_short"
+    if "no cached transcript" in message or "no transcript" in message or "empty transcript" in message:
+        return "no_transcript"
+    if "404" in message or "not found" in message or "not ready" in message:
+        return "not_ready"
+    return "error"
+
+
 def _recording_extras(r) -> dict:
     """The per-recording fields the Dash day view shows (categories, keywords, mood,
     previews, status), all computed by data_service and never sent before 2026-10-06."""
@@ -88,6 +106,7 @@ def _recording_extras(r) -> dict:
         "source": getattr(r, "source", None),
         "has_plaud_ai": getattr(r, "has_plaud_ai", None),
         "processing_status": getattr(r, "processing_status", None),
+        "processing_note": _processing_note(r),
         "plaud_workflow_status": getattr(r, "plaud_workflow_status", None),
         "notion_state": getattr(r, "notion_state", None),
         "notion_page_url": getattr(r, "notion_page_url", None),

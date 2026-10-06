@@ -362,6 +362,7 @@ class RecordingSummary:
     time_is_estimated: bool = False
     time_estimate_reason: str = ""
     processing_status: str = "completed"  # pending | processing | completed | failed
+    processing_error: Optional[str] = None  # chronos_recordings.error_message, when any
     title: Optional[str] = None
     plaud_ai_summary: Optional[str] = None
     cloud_status: Optional[str] = None
@@ -1116,6 +1117,7 @@ class ChronosDataService:
                     if db_rec
                     else "completed"
                 ),
+                processing_error=(getattr(db_rec, "error_message", None) or None) if db_rec else None,
                 title=(
                     str(getattr(db_rec, "title", "") or "").strip() or None
                     if db_rec
@@ -1197,6 +1199,7 @@ class ChronosDataService:
             processing_status=str(
                 getattr(rec, "processing_status", "pending") or "pending"
             ),
+            processing_error=getattr(rec, "error_message", None) or None,
             title=title,
             plaud_ai_summary=plaud_ai_summary,
             device_id=(str(getattr(rec, "device_id", "") or "").strip() or None),

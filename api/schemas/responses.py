@@ -75,6 +75,9 @@ class RecordingSummaryOut(BaseModel):
     source: Optional[str] = None
     has_plaud_ai: Optional[bool] = None
     processing_status: Optional[str] = None
+    # Why a recording has no moments, as a category (the raw error stays server-side):
+    # too_short | no_transcript | not_ready | error. None when processing completed.
+    processing_note: Optional[str] = None
     plaud_workflow_status: Optional[str] = None
     notion_state: Optional[str] = None
     notion_page_url: Optional[str] = None
