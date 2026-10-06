@@ -31,6 +31,7 @@ from sqlalchemy import text  # noqa: E402
 from src.database import SessionLocal  # noqa: E402
 from src.database.chronos_repository import (  # noqa: E402
     get_chronos_recording,
+    set_chronos_recording_duration,
     set_chronos_recording_transcript,
     upsert_chronos_recording,
 )
@@ -183,6 +184,11 @@ def sync(client: PlaudV4Client, *, limit: int | None, dry_run: bool, refresh_com
                         print(f"  reclocked  {existing.created_at:%Y-%m-%d %H:%M} -> {true:%Y-%m-%d %H:%M}  {title[:48]}")
                         existing = get_chronos_recording(session, rid)
 
+            # A new file is listed with length 0 until Plaud has processed it; fill the
+            # length in once it shows up, even on a row that is otherwise complete (2026-10-06).
+            if existing and not dry_run and duration_s > 0 and not existing.duration_seconds:
+                set_chronos_recording_duration(session, rid, duration_s)
+
             complete = bool(existing and existing.transcript and existing.plaud_ai_summary and existing.device_id)
             if complete and not refresh_complete:
                 skipped += 1
@@ -208,7 +214,8 @@ def sync(client: PlaudV4Client, *, limit: int | None, dry_run: bool, refresh_com
                     recording_id=rid,
                     title=title,
                     created_at=created_at,
-                    duration_seconds=duration_s,
+                    # Never trade a known length for the 0 of a file Plaud is still processing.
+                    duration_seconds=duration_s or (int(existing.duration_seconds or 0) if existing else 0),
                     local_audio_path=existing.local_audio_path if existing and existing.local_audio_path else "",
                     source=existing.source if existing else SOURCE,
                     device_id=device,

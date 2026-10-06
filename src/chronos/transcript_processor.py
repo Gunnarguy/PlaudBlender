@@ -27,6 +27,7 @@ from src.database.chronos_repository import (
     upsert_chronos_recording,
     get_chronos_recording,
     delete_chronos_events_by_recording,
+    set_chronos_recording_duration,
 )
 from src.database.models import ChronosEvent as ChronosEventModel
 from src.models.chronos_schemas import ChronosEvent, EventCategory
@@ -1465,6 +1466,16 @@ Extract events from this transcript following the schema exactly."""
                     f"Got the recording info from Plaud",
                     duration_ms=round(_api_ms, 1),
                 )
+
+                # The file details carry the real length; the listing said 0 while
+                # Plaud was still processing the file (2026-10-06).
+                try:
+                    fetched_seconds = int(file_details.get("duration") or 0) // 1000
+                    if not duration_seconds and fetched_seconds > 0:
+                        if set_chronos_recording_duration(self.db, recording_id, fetched_seconds):
+                            duration_seconds = fetched_seconds
+                except Exception as exc:
+                    logger.debug(f"Duration refresh skipped for {record_id}: {exc}")
 
                 # Best-effort: refresh the recording title from Plaud if present.
                 try:
