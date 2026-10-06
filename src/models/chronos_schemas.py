@@ -139,7 +139,10 @@ class ChronosEvent(BaseModel):
         """
         start = info.data.get("start_ts")
         if start and v < start:
-            raise ValueError("end_ts must be >= start_ts")
+            # A moment that "ends before it starts" is a garbled model time, not a
+            # reason to drop the whole recording: raising here failed 7 recordings
+            # outright (2026-10-06). Keep the moment, zero-length at its start.
+            v = start
         MAX_EVENT_SECONDS = 4 * 3600  # 4 hours
         if start and (v - start).total_seconds() > MAX_EVENT_SECONDS:
             from datetime import timedelta

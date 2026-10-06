@@ -1629,3 +1629,32 @@ class TestRouteCount:
         assert "services" in data
         assert "ports" in data
         assert "plaud_auth" in data
+
+
+def test_processing_note_tells_too_short_and_no_transcript_from_real_failures():
+    """2026-10-06: 49 of 57 "failed" recordings were too short or had no transcript."""
+    from api.routes.recordings import _processing_note
+    from app_v2.services.data_service import RecordingSummary
+
+    start = datetime(2026, 1, 15, 9, 0)
+
+    def rec(status, error=None):
+        return RecordingSummary(recording_id="r", start_time=start, end_time=start, duration_seconds=1,
+                                event_count=0, processing_status=status, processing_error=error)
+
+    assert _processing_note(rec("completed")) is None
+    assert _processing_note(rec("pending")) is None
+    assert _processing_note(rec("failed", "Transcript too short to extract meaningful events")) == "too_short"
+    assert _processing_note(rec("failed", "No cached transcript available for Notion import")) == "no_transcript"
+    assert _processing_note(rec("failed", "404 Client Error: Not Found for url: https://x")) == "not_ready"
+    assert _processing_note(rec("failed", "1 validation error for _OpenAIEventOutput")) == "error"
+
+
+def test_a_moment_that_ends_before_it_starts_is_kept_not_fatal():
+    """The validator raised and one garbled moment failed 7 whole recordings (2026-10-06)."""
+    from src.models.chronos_schemas import ChronosEvent
+
+    start = datetime(2026, 1, 15, 9, 30)
+    event = ChronosEvent(event_id="e", recording_id="r", start_ts=start, end_ts=datetime(2026, 1, 15, 9, 0),
+                         day_of_week="Thursday", hour_of_day=9, clean_text="A real moment with words.")
+    assert event.end_ts == start
