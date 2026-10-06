@@ -163,6 +163,32 @@ def test_full_layout_again_when_the_map_doubled_turned_onto_the_old_one(tmp_path
         assert again["positions"][node_id] == pytest.approx(xy, abs=1e-6)
 
 
+def _spread(positions):
+    return max(math.hypot(x, y) for x, y in positions.values())
+
+
+def test_relayout_keeps_its_own_scale_when_the_old_map_was_squeezed(tmp_path):
+    """2026-10-06: a relayout copied the old map's scale, so a squeezed map stayed
+    squeezed (the 800 most-mentioned entities ended up inside a 0.005-wide patch)."""
+    first = C.build(NODES, EDGES)
+    squeezed = {**first, "positions": {i: (x * 0.01, y * 0.01) for i, (x, y) in first["positions"].items()}}
+    previous = _as_previous(tmp_path, squeezed, EDGES, base_nodes=4)
+    again = C.build(NODES, EDGES, previous)
+    assert again["layout"]["mode"] == "relayout"
+    # not squeezed (it was 0.01x before the fix); re-centring moves it a little
+    assert 0.6 * _spread(first["positions"]) < _spread(again["positions"]) <= 1.0
+
+
+def test_a_map_squeezed_by_incremental_builds_is_laid_out_again(tmp_path):
+    first = C.build(NODES, EDGES)
+    unit = first["layout"]["unit"]
+    shrunk = _as_previous(tmp_path, first, EDGES, base_nodes=len(NODES), unit=unit * 0.3, full_unit=unit)
+    assert C.build(NODES, EDGES, shrunk)["layout"]["mode"] != "incremental"
+    healthy = _as_previous(tmp_path, first, EDGES, base_nodes=len(NODES), unit=unit * 0.8, full_unit=unit)
+    again = C.build(NODES, EDGES, healthy)
+    assert again["layout"]["mode"] == "incremental" and again["layout"]["full_unit"] == pytest.approx(unit, rel=1e-3)
+
+
 def test_a_previous_map_from_another_layout_version_is_not_reused(tmp_path):
     first = C.build(NODES, EDGES)
     previous = _as_previous(tmp_path, first, EDGES, version=C.LAYOUT_VERSION + 99)
